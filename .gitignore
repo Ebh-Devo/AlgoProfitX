@@ -1,0 +1,68 @@
+# =========================
+# Environment
+# =========================
+.env
+.env.*
+!.env.example
+
+# =========================
+# Python
+# =========================
+__pycache__/
+*.py[cod]
+*.pyo
+
+.venv/
+venv/
+ENV/
+env/
+
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# =========================
+# FastAPI / local runtime
+# =========================
+*.log
+
+# =========================
+# Node / Frontend
+# =========================
+node_modules/
+dist/
+build/
+.next/
+.vite/
+
+# =========================
+# IDE / Editors
+# =========================
+.vscode/
+.idea/
+
+# =========================
+# OS
+# =========================
+.DS_Store
+Thumbs.db
+
+# =========================
+# Database / local data
+# =========================
+*.db
+*.sqlite
+*.sqlite3
+
+# =========================
+# Docker
+# =========================
+docker-data/
+
+# =========================
+# Temporary files
+# =========================
+*.tmp
+*.temp
