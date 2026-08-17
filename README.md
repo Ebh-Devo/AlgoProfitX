@@ -1,4 +1,4 @@
-\# TradEBH
+# TradEBH
 
 
 
@@ -6,7 +6,7 @@ TradEBH is a strategy marketplace and trading infrastructure platform.
 
 
 
-\## MVP
+## MVP
 
 
 
@@ -28,7 +28,7 @@ The initial MVP focuses on:
 
 
 
-\## Architecture
+## Architecture
 
 
 
@@ -36,7 +36,7 @@ TradEBH will initially use a modular monolith architecture.
 
 
 
-\### Backend
+### Backend
 
 
 
@@ -56,7 +56,7 @@ TradEBH will initially use a modular monolith architecture.
 
 
 
-\### Frontend
+### Frontend
 
 
 
@@ -66,7 +66,7 @@ TradEBH will initially use a modular monolith architecture.
 
 
 
-\## Repository Structure
+# Repository Structure
 
 
 
