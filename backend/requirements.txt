@@ -5,9 +5,10 @@ asyncpg
 alembic
 pydantic-settings
 python-jose[cryptography]
-passlib[bcrypt]
+argon2-cffi
 redis
 python-multipart
 httpx
 pytest
 pytest-asyncio
+email-validator
