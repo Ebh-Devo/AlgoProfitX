@@ -56,17 +56,17 @@ TradEBH is intended to eventually provide the following ecosystem:
 
 ```text
 ┌───────────────────────────────────────────────────────────┐
-│                         TradEBH                            │
+│                         TradEBH                           │
 ├───────────────────────────────────────────────────────────┤
 │                                                           │
-│  Strategy Creators                                       │
+│  Strategy Creators                                        │
 │       │                                                   │
-│       ├── Create strategies                              │
-│       ├── Configure rules                                │
-│       ├── Version strategies                             │
-│       ├── Backtest strategies                            │
-│       ├── Deploy strategies                              │
-│       └── Publish to marketplace                         │
+│       ├── Create strategies                               │
+│       ├── Configure rules                                 │
+│       ├── Version strategies                              │
+│       ├── Backtest strategies                             │
+│       ├── Deploy strategies                               │
+│       └── Publish to marketplace                          │
 │                                                           │
 │                         ▼                                 │
 │                  STRATEGY MARKETPLACE                     │
