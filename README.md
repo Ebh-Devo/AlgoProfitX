@@ -8,6 +8,95 @@ The platform is being developed with a **Strategy-first architecture** so that s
 
 ---
 
+# Development Setup and Operations
+
+TradEBH currently supports **CPython 3.13** on Windows x64. The dependency lock was resolved and checked against Python 3.13, including the `asyncpg` PostgreSQL driver. Use the pinned [backend/requirements.lock](backend/requirements.lock) for reproducible installs; `requirements.txt` remains the concise dependency input list.
+
+## Fresh Windows Setup
+
+1. Install CPython 3.13 x64 and PostgreSQL 16 or later, including `psql`. Add both to your `PATH` (the initializer also detects standard PostgreSQL Windows installations).
+2. Clone the repository and open PowerShell at its root.
+3. Run the bootstrap script. It creates `.venv` if needed and installs the pinned dependencies.
+
+```powershell
+./scripts/bootstrap-windows.ps1
+```
+
+4. Create your untracked backend environment file and set private local values.
+
+```powershell
+Copy-Item backend/.env.example backend/.env
+```
+
+Generate a unique `SECRET_KEY`, choose a local database password, and replace both placeholders in `backend/.env`. Never commit that file.
+
+## Native PostgreSQL Prerequisites
+
+Native PostgreSQL uses port `5432` by default. The development and test databases are deliberately separate:
+
+```text
+application role: tradebh
+development DB:   tradeebh
+test DB:          tradeebh_test
+```
+
+Start the PostgreSQL Windows service, then initialize these resources using a PostgreSQL superuser. The script only creates missing resources; it never drops databases, tables, or roles.
+
+```powershell
+./scripts/initialize-postgres.ps1
+```
+
+The script prompts once for the PostgreSQL superuser password and keeps it only in process-scoped `PGPASSWORD` while it runs, preventing repeated prompts from separate `psql` invocations. You can instead pass `-SuperuserPassword` as a PowerShell `SecureString`, or use an existing `%APPDATA%\\postgresql\\pgpass.conf` with `-UsePgPass`. If the application role does not exist, `psql` securely prompts for its password. Put that same password in both database URLs in `backend/.env`.
+
+Docker Compose remains available as an alternative and maps PostgreSQL to port `5433`. When using Docker, update both local URLs in `backend/.env` from `5432` to `5433`. Redis is not required for the current application because no implemented feature connects to it.
+
+## Environment Configuration
+
+`backend/.env` is the sole canonical local configuration file. It is resolved by the application regardless of whether a command begins at the repository root or in `backend/`.
+
+Required local values:
+
+```dotenv
+DATABASE_URL=postgresql+asyncpg://tradebh:<local-password>@localhost:5432/tradeebh
+TEST_DATABASE_URL=postgresql+asyncpg://tradebh:<local-password>@localhost:5432/tradeebh_test
+SECRET_KEY=<unique-private-local-secret>
+```
+
+`TEST_DATABASE_URL` must target exactly `tradeebh_test`. The test fixture and test script reject any other database name, preventing accidental writes to the development database.
+
+## Migrations, API, and Tests
+
+Apply development migrations:
+
+```powershell
+./scripts/migrate.ps1
+```
+
+Run the API at `http://127.0.0.1:8000` with reload enabled:
+
+```powershell
+./scripts/run-api.ps1
+```
+
+Run the isolated test suite. This migrates `tradeebh_test` to the Alembic head first, then cleans test data before and after every test.
+
+```powershell
+./scripts/test.ps1
+```
+
+## Troubleshooting
+
+| Symptom | Resolution |
+| --- | --- |
+| `Python 3.13 was not found` | Install CPython 3.13 x64 and pass its executable with `./scripts/bootstrap-windows.ps1 -PythonCommand <path-to-python.exe>`. |
+| `psql was not found` | Install PostgreSQL command-line tools and add PostgreSQL's `bin` directory to `PATH`, or pass its path to `./scripts/initialize-postgres.ps1 -PsqlPath <path-to-psql.exe>`. |
+| Connection refused on `5432` | Start the PostgreSQL service, verify its port, then update both URLs in `backend/.env` if it uses a different port. |
+| Migration cannot find configuration | Confirm `backend/.env` exists and contains a development `DATABASE_URL`. |
+| Tests refuse the database URL | Set `TEST_DATABASE_URL` to a URL whose database name is exactly `tradeebh_test`; never point it to `tradeebh`. |
+| Docker database connection fails | Docker maps PostgreSQL to `localhost:5433`, so change the two local database URLs from `5432` to `5433`. |
+
+---
+
 # 1. Project Goal
 
 The primary goal of TradEBH is to build a platform similar in concept to **TradeTron**, but with a focused MVP and a clean, extensible backend architecture.
@@ -1586,6 +1675,7 @@ Current backend structure:
 ```text
 backend/
 │
+├── .env.example
 ├── alembic/
 │   ├── versions/
 │   └── env.py
@@ -1622,10 +1712,22 @@ backend/
 │
 ├── tests/
 │
-├── .env
 ├── alembic.ini
 ├── pytest.ini
+├── requirements.lock
 └── requirements.txt
+```
+
+Root development infrastructure includes:
+
+```text
+.github/workflows/ci.yml
+scripts/
+├── bootstrap-windows.ps1
+├── initialize-postgres.ps1
+├── migrate.ps1
+├── run-api.ps1
+└── test.ps1
 ```
 
 The structure will evolve as additional domains are introduced.
