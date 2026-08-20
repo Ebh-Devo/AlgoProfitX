@@ -11,6 +11,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -117,6 +118,13 @@ class Strategy(Base):
 
 class StrategyVersion(Base):
     __tablename__ = "strategy_versions"
+    __table_args__ = (
+        UniqueConstraint(
+            "strategy_id",
+            "version_number",
+            name="uq_strategy_versions_strategy_id_version_number",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         primary_key=True,

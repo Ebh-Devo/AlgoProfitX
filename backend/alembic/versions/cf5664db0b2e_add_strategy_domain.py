@@ -163,3 +163,8 @@ def downgrade() -> None:
     )
 
     op.drop_table("strategies")
+
+    strategy_status = postgresql.ENUM(
+        name="strategy_status",
+    )
+    strategy_status.drop(op.get_bind(), checkfirst=True)

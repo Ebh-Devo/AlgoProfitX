@@ -12,12 +12,17 @@ from app.schemas.strategy import (
     StrategyCreateRequest,
     StrategyResponse,
     StrategyUpdateRequest,
+    StrategyVersionCreateRequest,
+    StrategyVersionResponse,
 )
 from app.services.strategy import (
+    create_strategy_version,
     create_strategy,
     delete_strategy,
     get_strategies_for_creator,
     get_strategy,
+    get_strategy_version,
+    get_strategy_versions,
     update_strategy,
 )
 
@@ -80,6 +85,106 @@ async def list_my_strategies(
         session=session,
         creator_id=current_user.id,
     )
+
+
+@router.post(
+    "/{strategy_id}/versions",
+    response_model=StrategyVersionResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_version(
+    strategy_id: uuid.UUID,
+    data: StrategyVersionCreateRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+):
+    strategy = await get_strategy(
+        session=session,
+        strategy_id=strategy_id,
+        creator_id=current_user.id,
+    )
+
+    if strategy is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Strategy not found",
+        )
+
+    try:
+        version = await create_strategy_version(
+            session=session,
+            strategy=strategy,
+            data=data,
+        )
+        await session.commit()
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        )
+
+    return version
+
+
+@router.get(
+    "/{strategy_id}/versions",
+    response_model=list[StrategyVersionResponse],
+)
+async def list_versions(
+    strategy_id: uuid.UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+):
+    strategy = await get_strategy(
+        session=session,
+        strategy_id=strategy_id,
+        creator_id=current_user.id,
+    )
+
+    if strategy is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Strategy not found",
+        )
+
+    return await get_strategy_versions(session=session, strategy_id=strategy.id)
+
+
+@router.get(
+    "/{strategy_id}/versions/{version_id}",
+    response_model=StrategyVersionResponse,
+)
+async def get_version(
+    strategy_id: uuid.UUID,
+    version_id: uuid.UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+):
+    strategy = await get_strategy(
+        session=session,
+        strategy_id=strategy_id,
+        creator_id=current_user.id,
+    )
+
+    if strategy is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Strategy not found",
+        )
+
+    version = await get_strategy_version(
+        session=session,
+        strategy_id=strategy.id,
+        version_id=version_id,
+    )
+
+    if version is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Strategy version not found",
+        )
+
+    return version
 
 
 @router.get(
