@@ -1,3 +1,8 @@
+from app.schemas.allocation import (
+    AllocationCreateRequest,
+    AllocationResponse,
+    AllocationUpdateRequest,
+)
 from app.schemas.backtest import (
     BacktestAnalyticsResponse,
     BacktestCreateRequest,
@@ -12,6 +17,9 @@ from app.schemas.strategy import (
 )
 
 __all__ = [
+    "AllocationCreateRequest",
+    "AllocationUpdateRequest",
+    "AllocationResponse",
     "StrategyCreateRequest",
     "StrategyUpdateRequest",
     "StrategyResponse",

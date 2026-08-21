@@ -13,6 +13,7 @@ from app.models.user import User
 
 bearer_scheme = HTTPBearer()
 CREATOR_ROLE = "CREATOR"
+INVESTOR_ROLE = "INVESTOR"
 
 
 async def get_current_user(
@@ -55,6 +56,18 @@ async def require_creator(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Creator role is required",
+        )
+
+    return current_user
+
+
+async def require_investor(
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> User:
+    if not any(role.name == INVESTOR_ROLE for role in current_user.roles):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Investor role is required",
         )
 
     return current_user
