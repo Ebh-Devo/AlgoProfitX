@@ -11,7 +11,9 @@ from app.schemas.execution import ExecutionIntentCreateRequest, ExecutionIntentR
 from app.services.execution import (
     ExecutionIntentConflict,
     ExecutionIntentEligibilityError,
+    PaperExecutionConflict,
     create_execution_intent,
+    execute_paper_execution_intent,
     get_execution_intent,
     get_execution_intents_for_investor,
 )
@@ -78,3 +80,24 @@ async def get_execution_intent_request(
             detail="Execution intent not found",
         )
     return execution_intent
+
+
+@router.post(
+    "/execution-intents/{execution_intent_id}/execute",
+    response_model=ExecutionIntentResponse,
+)
+async def execute_paper_execution_intent_request(
+    execution_intent_id: uuid.UUID,
+    current_user: Annotated[User, Depends(require_investor)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+):
+    try:
+        return await execute_paper_execution_intent(
+            session,
+            execution_intent_id,
+            current_user.id,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+    except PaperExecutionConflict as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))

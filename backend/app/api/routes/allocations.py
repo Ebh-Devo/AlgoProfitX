@@ -13,6 +13,7 @@ from app.schemas.allocation import (
     AllocationUpdateRequest,
 )
 from app.services.allocation import (
+    AllocationConflict,
     AllocationEligibilityError,
     create_allocation,
     delete_allocation,
@@ -76,8 +77,11 @@ async def delete_allocation_intent(
     session: Annotated[AsyncSession, Depends(get_session)],
 ):
     allocation = await _get_owned_allocation(session, allocation_id, current_user.id)
-    await delete_allocation(session, allocation)
-    await session.commit()
+    try:
+        await delete_allocation(session, allocation)
+        await session.commit()
+    except AllocationConflict as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
 
 
 async def _get_owned_allocation(

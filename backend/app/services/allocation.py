@@ -12,6 +12,10 @@ class AllocationEligibilityError(Exception):
     pass
 
 
+class AllocationConflict(Exception):
+    pass
+
+
 async def create_allocation(
     session: AsyncSession,
     investor_user_id: uuid.UUID,
@@ -76,6 +80,17 @@ async def delete_allocation(
     session: AsyncSession,
     allocation: AllocationIntent,
 ) -> None:
+    from app.models.execution import ExecutionIntent
+
+    existing_execution_intent = await session.scalar(
+        select(ExecutionIntent.id)
+        .where(ExecutionIntent.allocation_intent_id == allocation.id)
+        .limit(1)
+    )
+    if existing_execution_intent is not None:
+        raise AllocationConflict(
+            "Allocation with execution intents cannot be deleted"
+        )
     await session.delete(allocation)
     await session.flush()
 

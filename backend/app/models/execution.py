@@ -2,6 +2,7 @@ import enum
 import uuid
 from datetime import datetime
 from decimal import Decimal
+from typing import Any
 
 from sqlalchemy import (
     CheckConstraint,
@@ -14,6 +15,7 @@ from sqlalchemy import (
     String,
     text,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
 
@@ -66,7 +68,7 @@ class ExecutionIntent(Base):
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
 
     allocation_intent_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("allocation_intents.id", ondelete="CASCADE"),
+        ForeignKey("allocation_intents.id", ondelete="RESTRICT"),
         nullable=False,
         index=True,
     )
@@ -114,3 +116,7 @@ class ExecutionIntent(Base):
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     error_code: Mapped[str | None] = mapped_column(String(100))
     error_message: Mapped[str | None] = mapped_column(String(500))
+    paper_result_summary: Mapped[dict[str, Any] | None] = mapped_column(
+        JSONB,
+        nullable=True,
+    )

@@ -1,6 +1,7 @@
 import uuid
 from datetime import datetime
 from decimal import Decimal
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
@@ -31,6 +32,7 @@ class ExecutionIntentResponse(BaseModel):
     completed_at: datetime | None
     error_code: str | None
     error_message: str | None
+    paper_result_summary: dict[str, Any] | None
 
     @field_serializer("notional_amount_snapshot")
     def serialize_notional_amount_snapshot(self, value: Decimal) -> str:
