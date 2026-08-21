@@ -16,13 +16,16 @@ from app.schemas.strategy import (
     StrategyVersionResponse,
 )
 from app.services.strategy import (
+    archive_strategy,
     create_strategy_version,
     create_strategy,
     delete_strategy,
+    deploy_strategy,
     get_strategies_for_creator,
     get_strategy,
     get_strategy_version,
     get_strategy_versions,
+    publish_strategy,
     update_strategy,
 )
 
@@ -185,6 +188,105 @@ async def get_version(
         )
 
     return version
+
+
+@router.post(
+    "/{strategy_id}/publish",
+    response_model=StrategyResponse,
+)
+async def publish(
+    strategy_id: uuid.UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+):
+    strategy = await get_strategy(
+        session=session,
+        strategy_id=strategy_id,
+        creator_id=current_user.id,
+    )
+
+    if strategy is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Strategy not found",
+        )
+
+    try:
+        strategy = await publish_strategy(session=session, strategy=strategy)
+        await session.commit()
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        )
+
+    return strategy
+
+
+@router.post(
+    "/{strategy_id}/deploy",
+    response_model=StrategyResponse,
+)
+async def deploy(
+    strategy_id: uuid.UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+):
+    strategy = await get_strategy(
+        session=session,
+        strategy_id=strategy_id,
+        creator_id=current_user.id,
+    )
+
+    if strategy is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Strategy not found",
+        )
+
+    try:
+        strategy = await deploy_strategy(session=session, strategy=strategy)
+        await session.commit()
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        )
+
+    return strategy
+
+
+@router.post(
+    "/{strategy_id}/archive",
+    response_model=StrategyResponse,
+)
+async def archive(
+    strategy_id: uuid.UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+):
+    strategy = await get_strategy(
+        session=session,
+        strategy_id=strategy_id,
+        creator_id=current_user.id,
+    )
+
+    if strategy is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Strategy not found",
+        )
+
+    try:
+        strategy = await archive_strategy(session=session, strategy=strategy)
+        await session.commit()
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        )
+
+    return strategy
 
 
 @router.get(
