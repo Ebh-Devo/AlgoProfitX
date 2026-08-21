@@ -4,7 +4,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.dependencies import get_current_user
+from app.core.dependencies import require_creator
 from app.db.session import get_session
 from app.models.strategy import Strategy
 from app.models.user import User
@@ -45,7 +45,7 @@ async def create(
     data: StrategyCreateRequest,
     current_user: Annotated[
         User,
-        Depends(get_current_user),
+        Depends(require_creator),
     ],
     session: Annotated[
         AsyncSession,
@@ -77,7 +77,7 @@ async def create(
 async def list_my_strategies(
     current_user: Annotated[
         User,
-        Depends(get_current_user),
+        Depends(require_creator),
     ],
     session: Annotated[
         AsyncSession,
@@ -98,7 +98,7 @@ async def list_my_strategies(
 async def create_version(
     strategy_id: uuid.UUID,
     data: StrategyVersionCreateRequest,
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(require_creator)],
     session: Annotated[AsyncSession, Depends(get_session)],
 ):
     strategy = await get_strategy(
@@ -135,7 +135,7 @@ async def create_version(
 )
 async def list_versions(
     strategy_id: uuid.UUID,
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(require_creator)],
     session: Annotated[AsyncSession, Depends(get_session)],
 ):
     strategy = await get_strategy(
@@ -160,7 +160,7 @@ async def list_versions(
 async def get_version(
     strategy_id: uuid.UUID,
     version_id: uuid.UUID,
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(require_creator)],
     session: Annotated[AsyncSession, Depends(get_session)],
 ):
     strategy = await get_strategy(
@@ -196,7 +196,7 @@ async def get_version(
 )
 async def publish(
     strategy_id: uuid.UUID,
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(require_creator)],
     session: Annotated[AsyncSession, Depends(get_session)],
 ):
     strategy = await get_strategy(
@@ -229,7 +229,7 @@ async def publish(
 )
 async def deploy(
     strategy_id: uuid.UUID,
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(require_creator)],
     session: Annotated[AsyncSession, Depends(get_session)],
 ):
     strategy = await get_strategy(
@@ -262,7 +262,7 @@ async def deploy(
 )
 async def archive(
     strategy_id: uuid.UUID,
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(require_creator)],
     session: Annotated[AsyncSession, Depends(get_session)],
 ):
     strategy = await get_strategy(
@@ -297,7 +297,7 @@ async def get_my_strategy(
     strategy_id: uuid.UUID,
     current_user: Annotated[
         User,
-        Depends(get_current_user),
+        Depends(require_creator),
     ],
     session: Annotated[
         AsyncSession,
@@ -328,7 +328,7 @@ async def update_my_strategy(
     data: StrategyUpdateRequest,
     current_user: Annotated[
         User,
-        Depends(get_current_user),
+        Depends(require_creator),
     ],
     session: Annotated[
         AsyncSession,
@@ -373,7 +373,7 @@ async def delete_my_strategy(
     strategy_id: uuid.UUID,
     current_user: Annotated[
         User,
-        Depends(get_current_user),
+        Depends(require_creator),
     ],
     session: Annotated[
         AsyncSession,

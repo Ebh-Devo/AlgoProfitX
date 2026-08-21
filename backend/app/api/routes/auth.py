@@ -13,7 +13,7 @@ from app.schemas.auth import (
     TokenResponse,
     UserResponse,
 )
-from app.services.auth import authenticate_user, register_user
+from app.services.auth import authenticate_user, enroll_creator, register_user
 
 
 router = APIRouter(
@@ -74,6 +74,26 @@ async def login(
     return TokenResponse(
         access_token=access_token,
     )
+
+
+@router.post(
+    "/creator/enroll",
+    response_model=UserResponse,
+)
+async def enroll_as_creator(
+    current_user: Annotated[User, Depends(get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+):
+    try:
+        user = await enroll_creator(session, current_user)
+        await session.commit()
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(exc),
+        )
+
+    return user
 
 
 @router.get(

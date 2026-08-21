@@ -38,7 +38,10 @@ async def register_and_login(client: AsyncClient) -> dict[str, str]:
     )
     assert login.status_code == 200
 
-    return {"Authorization": f"Bearer {login.json()['access_token']}"}
+    headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+    enrollment = await client.post("/api/v1/auth/creator/enroll", headers=headers)
+    assert enrollment.status_code == 200
+    return headers
 
 
 async def create_strategy(

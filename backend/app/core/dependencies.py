@@ -12,6 +12,7 @@ from app.models.user import User
 
 
 bearer_scheme = HTTPBearer()
+CREATOR_ROLE = "CREATOR"
 
 
 async def get_current_user(
@@ -45,3 +46,15 @@ async def get_current_user(
         )
 
     return user
+
+
+async def require_creator(
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> User:
+    if not any(role.name == CREATOR_ROLE for role in current_user.roles):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Creator role is required",
+        )
+
+    return current_user
