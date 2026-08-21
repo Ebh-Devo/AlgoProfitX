@@ -6,6 +6,7 @@ import { AccountPage, AppPage, CreatorEnrollPage } from "../features/account/Acc
 import { LoginPage, RegisterPage } from "../features/account/AuthPages";
 import { MarketplaceDetailPage, MarketplaceListPage } from "../features/marketplace/MarketplacePages";
 import { StrategyDetailPage, StrategyEditPage, StrategyListPage, StrategyNewPage, StrategyVersionPage } from "../features/creator/StrategyPages";
+import { BacktestDetailPage } from "../features/creator/BacktestPages";
 
 function HomePage() {
   return <section className="hero"><p className="eyebrow">Strategy marketplace</p><h1>Build, discover, and evaluate systematic strategies.</h1><p className="lead">TradeEBH separates creator strategy work from investor discovery. Paper Execution is synthetic reference infrastructure, not real NSE data or live broker execution.</p></section>;
@@ -30,6 +31,7 @@ export const router = createBrowserRouter([
         { path: "creator/strategies/:strategyId", element: <StrategyDetailPage /> },
         { path: "creator/strategies/:strategyId/edit", element: <StrategyEditPage /> },
         { path: "creator/strategies/:strategyId/versions/:versionId", element: <StrategyVersionPage /> },
+        { path: "creator/strategies/:strategyId/versions/:versionId/backtests/:backtestId", element: <BacktestDetailPage /> },
       ] },
     ] },
     { path: "*", element: <NotFoundPage /> },

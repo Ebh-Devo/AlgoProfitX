@@ -8,6 +8,9 @@ export type StrategyCreateRequest = components["schemas"]["StrategyCreateRequest
 export type StrategyUpdateRequest = components["schemas"]["StrategyUpdateRequest"];
 export type StrategyVersion = components["schemas"]["StrategyVersionResponse"];
 export type StrategyVersionCreateRequest = components["schemas"]["StrategyVersionCreateRequest"];
+export type Backtest = components["schemas"]["BacktestResponse"];
+export type BacktestCreateRequest = components["schemas"]["BacktestCreateRequest"];
+export type BacktestAnalytics = components["schemas"]["BacktestAnalyticsResponse"];
 
 export interface RegisterRequest {
   email: string;

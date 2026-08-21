@@ -19,4 +19,9 @@ describe("RequireCreator", () => {
     render(<MemoryRouter initialEntries={["/creator/strategies"]}><Routes><Route element={<RequireCreator />}><Route path="/creator/strategies" element={<p>Creator strategies</p>} /></Route><Route path="/app" element={<p>Workspace</p>} /></Routes></MemoryRouter>);
     expect(screen.getByText("Workspace")).toBeInTheDocument();
   });
+  it("protects the Creator Backtest route", () => {
+    auth.value = { isAuthenticated: true, isLoading: false, user: { roles: ["INVESTOR"] } } as typeof auth.value;
+    render(<MemoryRouter initialEntries={["/creator/strategies/s1/versions/v1/backtests/b1"]}><Routes><Route element={<RequireCreator />}><Route path="/creator/strategies/:strategyId/versions/:versionId/backtests/:backtestId" element={<p>Backtest detail</p>} /></Route><Route path="/app" element={<p>Workspace</p>} /></Routes></MemoryRouter>);
+    expect(screen.getByText("Workspace")).toBeInTheDocument();
+  });
 });
