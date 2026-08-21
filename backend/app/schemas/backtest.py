@@ -26,3 +26,24 @@ class BacktestResponse(BaseModel):
     created_at: datetime
     started_at: datetime | None
     completed_at: datetime | None
+
+
+class AnalyticsEquityCurvePoint(BaseModel):
+    timestamp: str
+    equity: str
+
+
+class BacktestAnalyticsResponse(BaseModel):
+    backtest_id: uuid.UUID
+    engine_identifier: str
+    provider_identifier: str
+    initial_capital: str
+    final_equity: str
+    total_return: str
+    trade_count: int
+    win_rate: str | None
+    profit_factor: str | None
+    average_win: str | None
+    average_loss: str | None
+    max_drawdown: str
+    equity_curve: list[AnalyticsEquityCurvePoint]

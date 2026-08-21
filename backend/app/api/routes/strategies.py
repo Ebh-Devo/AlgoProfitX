@@ -8,7 +8,16 @@ from app.core.dependencies import require_creator
 from app.db.session import get_session
 from app.models.strategy import Strategy
 from app.models.user import User
-from app.schemas.backtest import BacktestCreateRequest, BacktestResponse
+from app.schemas.backtest import (
+    BacktestAnalyticsResponse,
+    BacktestCreateRequest,
+    BacktestResponse,
+)
+from app.services.analytics import (
+    BacktestAnalyticsConflict,
+    BacktestAnalyticsDataError,
+    build_backtest_analytics,
+)
 from app.schemas.strategy import (
     StrategyCreateRequest,
     StrategyResponse,
@@ -344,6 +353,43 @@ async def execute_backtest_request(
     try:
         return await execute_backtest(session, backtest.id)
     except BacktestExecutionConflict as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        )
+
+
+@router.get(
+    "/{strategy_id}/versions/{version_id}/backtests/{backtest_id}/analytics",
+    response_model=BacktestAnalyticsResponse,
+)
+async def get_backtest_analytics(
+    strategy_id: uuid.UUID,
+    version_id: uuid.UUID,
+    backtest_id: uuid.UUID,
+    current_user: Annotated[User, Depends(require_creator)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+):
+    version = await _get_owned_strategy_version(
+        session=session,
+        strategy_id=strategy_id,
+        version_id=version_id,
+        creator_id=current_user.id,
+    )
+    backtest = await get_backtest(
+        session=session,
+        strategy_version_id=version.id,
+        backtest_id=backtest_id,
+    )
+    if backtest is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Backtest not found",
+        )
+
+    try:
+        return build_backtest_analytics(backtest)
+    except (BacktestAnalyticsConflict, BacktestAnalyticsDataError) as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=str(exc),
