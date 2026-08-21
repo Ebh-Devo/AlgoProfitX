@@ -30,7 +30,9 @@ from app.services.strategy import (
     update_strategy,
 )
 from app.services.backtest import (
+    BacktestExecutionConflict,
     create_backtest,
+    execute_backtest,
     get_backtest,
     get_backtests_for_strategy_version,
 )
@@ -309,6 +311,43 @@ async def get_backtest_request(
             detail="Backtest not found",
         )
     return backtest
+
+
+@router.post(
+    "/{strategy_id}/versions/{version_id}/backtests/{backtest_id}/execute",
+    response_model=BacktestResponse,
+)
+async def execute_backtest_request(
+    strategy_id: uuid.UUID,
+    version_id: uuid.UUID,
+    backtest_id: uuid.UUID,
+    current_user: Annotated[User, Depends(require_creator)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+):
+    version = await _get_owned_strategy_version(
+        session=session,
+        strategy_id=strategy_id,
+        version_id=version_id,
+        creator_id=current_user.id,
+    )
+    backtest = await get_backtest(
+        session=session,
+        strategy_version_id=version.id,
+        backtest_id=backtest_id,
+    )
+    if backtest is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Backtest not found",
+        )
+
+    try:
+        return await execute_backtest(session, backtest.id)
+    except BacktestExecutionConflict as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        )
 
 
 @router.post(
