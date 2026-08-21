@@ -71,7 +71,7 @@ async def create_strategy_version(
         headers=headers,
         json={
             "configuration": {
-                "instrument": "XAUUSD",
+                "instrument": "TRADEEBH_TEST_EQ",
                 "entry": {"fast_period": 20},
             },
             "backtest_configuration": {

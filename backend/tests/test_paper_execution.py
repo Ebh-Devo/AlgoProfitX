@@ -1,6 +1,7 @@
 import asyncio
 import json
 import uuid
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from sqlalchemy import select
@@ -33,7 +34,7 @@ async def create_paper_execution_intent(
     client,
     slug: str,
     configuration: dict | None = None,
-    currency: str = "USD",
+    currency: str = "INR",
     amount: str = "1000.5",
 ):
     creator_headers = await register_and_login(client)
@@ -86,24 +87,31 @@ async def test_paper_execution_completes_with_deterministic_bounded_buy_result(c
     assert completed["error_message"] is None
     assert result == {
         "engine_identifier": "ema-crossover-paper-reference-v1",
-        "provider_identifier": "synthetic-paper-local-v1",
-        "instrument": "XAUUSD",
-        "quote_currency": "USD",
+        "provider_identifier": "synthetic-paper-nse-equity-v1",
+        "market": "NSE",
+        "symbol": "TRADEEBH_TEST_EQ",
+        "instrument_type": "equity",
+        "quote_currency": "INR",
+        "exchange_timezone": "Asia/Kolkata",
+        "lot_size": 1,
+        "tick_size": "0.01",
         "signal": "buy",
+        "execution_outcome": "filled",
+        "no_fill_reason": None,
         "notional_amount": "1000.50000000",
         "order": {
             "side": "buy",
-            "quantity": "125.06250000",
-            "requested_price": "8.00000000",
-            "reference_price": "8.00000000",
-            "timestamp": "2025-01-01T08:00:00+00:00",
+            "quantity": "9",
+            "requested_price": "108.00",
+            "reference_price": "108.00",
+            "timestamp": "2025-01-01T11:45:00+00:00",
         },
         "fill": {
-            "quantity": "125.06250000",
-            "price": "8.00000000",
-            "timestamp": "2025-01-01T08:00:00+00:00",
+            "quantity": "9",
+            "price": "108.00",
+            "timestamp": "2025-01-01T11:45:00+00:00",
         },
-        "position": {"quantity": "125.06250000", "average_price": "8.00000000"},
+        "position": {"quantity": "9", "average_price": "108.00"},
     }
     assert len(json.dumps(result, sort_keys=True).encode("utf-8")) <= 8_192
     assert completed["strategy_id"] == strategy["id"]
@@ -117,12 +125,17 @@ async def test_paper_execution_completes_with_deterministic_bounded_buy_result(c
     assert persisted is not None
     assert persisted.status == ExecutionStatus.COMPLETED
     assert persisted.paper_result_summary == result
+    fill_timestamp = datetime.fromisoformat(result["fill"]["timestamp"])
+    assert fill_timestamp.tzinfo is not None
+    assert fill_timestamp.utcoffset() == timezone.utc.utcoffset(fill_timestamp)
+    india_standard_time = timezone(timedelta(hours=5, minutes=30))
+    assert fill_timestamp.astimezone(india_standard_time).isoformat() == "2025-01-01T17:15:00+05:30"
 
 
 @pytest.mark.asyncio
 async def test_paper_execution_latest_only_and_decimal_rounding(client):
     configuration = {
-        "instrument": "XAUUSD",
+        "instrument": "TRADEEBH_TEST_EQ",
         "entry": {"type": "ema_crossover", "fast_period": 3, "slow_period": 5},
         "paper_execution_scenario": "historical_crossover",
     }
@@ -139,10 +152,11 @@ async def test_paper_execution_latest_only_and_decimal_rounding(client):
     assert historical["signal"] == "none"
     assert historical["order"] is None
     assert historical["fill"] is None
-    assert historical["position"] == {"quantity": "0.00000000", "average_price": None}
+    assert historical["execution_outcome"] == "no_signal"
+    assert historical["position"] == {"quantity": "0", "average_price": None}
 
     no_signal_configuration = {
-        "instrument": "XAUUSD",
+        "instrument": "TRADEEBH_TEST_EQ",
         "entry": {"type": "ema_crossover", "fast_period": 3, "slow_period": 5},
         "paper_execution_scenario": "no_signal",
     }
@@ -160,17 +174,34 @@ async def test_paper_execution_latest_only_and_decimal_rounding(client):
     _, investor_headers, _, _, _, rounded_intent = await create_paper_execution_intent(
         client,
         "paper-rounding",
-        amount="1000.00000001",
+        amount="1079.99999999",
     )
     response = await client.post(execute_path(rounded_intent["id"]), headers=investor_headers)
     assert response.status_code == 200
-    assert response.json()["paper_result_summary"]["order"]["quantity"] == "125.00000000"
+    assert response.json()["paper_result_summary"]["order"]["quantity"] == "9"
+
+    _, investor_headers, _, _, _, insufficient_intent = await create_paper_execution_intent(
+        client,
+        "paper-insufficient-notional",
+        amount="107.99",
+    )
+    response = await client.post(
+        execute_path(insufficient_intent["id"]), headers=investor_headers
+    )
+    assert response.status_code == 200
+    insufficient = response.json()["paper_result_summary"]
+    assert insufficient["signal"] == "buy"
+    assert insufficient["execution_outcome"] == "no_fill"
+    assert insufficient["no_fill_reason"] == "insufficient_notional_for_one_share"
+    assert insufficient["order"] is None
+    assert insufficient["fill"] is None
+    assert insufficient["position"] == {"quantity": "0", "average_price": None}
 
 
 @pytest.mark.asyncio
 async def test_paper_execution_failures_are_terminal_and_sanitized(client):
     invalid_configuration = {
-        "instrument": "XAUUSD",
+        "instrument": "TRADEEBH_TEST_EQ",
         "entry": {"type": "unsupported"},
     }
     _, investor_headers, _, _, _, invalid_intent = await create_paper_execution_intent(
@@ -190,7 +221,7 @@ async def test_paper_execution_failures_are_terminal_and_sanitized(client):
     assert response.status_code == 409
 
     unsupported_configuration = {
-        "instrument": "EURUSD",
+        "instrument": "OTHER_TEST_EQ",
         "entry": {"type": "ema_crossover", "fast_period": 3, "slow_period": 5},
     }
     _, investor_headers, _, _, _, unsupported_intent = await create_paper_execution_intent(
@@ -205,7 +236,7 @@ async def test_paper_execution_failures_are_terminal_and_sanitized(client):
     _, investor_headers, _, _, _, currency_intent = await create_paper_execution_intent(
         client,
         "paper-currency",
-        currency="INR",
+        currency="USD",
     )
     response = await client.post(execute_path(currency_intent["id"]), headers=investor_headers)
     assert response.status_code == 200

@@ -18,7 +18,6 @@ from app.paper_execution.reference import (
 
 
 MAX_PAPER_RESULT_BYTES = 8_192
-SUPPORTED_PAPER_CURRENCY = "USD"
 
 
 class ExecutionIntentConflict(Exception):
@@ -136,26 +135,21 @@ async def execute_paper_execution_intent(
     )
 
     try:
-        allocation, strategy, version = await _revalidate_execution_intent(
+        _, _, version = await _revalidate_execution_intent(
             session,
             execution_intent,
         )
-        if execution_intent.currency_snapshot != SUPPORTED_PAPER_CURRENCY:
-            raise PaperExecutionError(
-                "unsupported_currency",
-                "Paper execution supports only allocation currency USD",
-            )
         provider = SyntheticPaperMarketDataProvider()
         adapter = EmaCrossoverPaperAdapter(provider.identifier)
         candles = provider.load(version.configuration)
         result = adapter.execute(
             version.configuration,
             execution_intent.notional_amount_snapshot,
+            execution_intent.currency_snapshot,
             candles,
         )
         result_summary = _paper_result_summary(
             execution_intent,
-            version.configuration,
             result,
         )
         _validate_result_size(result_summary)
@@ -393,13 +387,14 @@ async def _get_locked_execution_intent(
     return result.scalar_one()
 
 
-def _paper_result_summary(execution_intent, configuration, result) -> dict:
+def _paper_result_summary(execution_intent, result) -> dict:
     return {
         "engine_identifier": result.engine_identifier,
         "provider_identifier": result.provider_identifier,
-        "instrument": configuration["instrument"],
-        "quote_currency": SUPPORTED_PAPER_CURRENCY,
+        **result.reference_instrument,
         "signal": result.signal,
+        "execution_outcome": result.execution_outcome,
+        "no_fill_reason": result.no_fill_reason,
         "notional_amount": _decimal_string(execution_intent.notional_amount_snapshot),
         "order": result.order,
         "fill": result.fill,

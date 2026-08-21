@@ -60,7 +60,7 @@ async def create_strategy(
 
 def version_payload(**overrides: object) -> dict[str, object]:
     payload: dict[str, object] = {
-        "configuration": {"instrument": "XAUUSD", "timeframe": "15m"},
+        "configuration": {"instrument": "TRADEEBH_TEST_EQ", "timeframe": "15m"},
         "backtest_configuration": {"initial_capital": 100000},
     }
     payload.update(overrides)
@@ -105,7 +105,7 @@ async def test_create_first_version_is_server_numbered_and_persisted(client):
     }
     assert data["strategy_id"] == strategy["id"]
     assert data["version_number"] == 1
-    assert data["configuration"] == {"instrument": "XAUUSD", "timeframe": "15m"}
+    assert data["configuration"] == {"instrument": "TRADEEBH_TEST_EQ", "timeframe": "15m"}
     assert data["backtest_configuration"] == {"initial_capital": 100000}
 
     async with AsyncSessionLocal() as session:

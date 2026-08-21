@@ -617,7 +617,7 @@ Example conceptual configuration:
 
 ```json
 {
-  "instrument": "XAUUSD",
+  "instrument": "TRADEEBH_TEST_EQ",
   "timeframe": "15m",
   "entry": {
     "type": "ema_crossover",
@@ -634,6 +634,10 @@ Example conceptual configuration:
 This approach intentionally avoids prematurely defining a rigid strategy language.
 
 The strategy engine can evolve independently as strategy types become clearer.
+
+The Paper Execution reference uses `TRADEEBH_TEST_EQ`, a synthetic NSE cash-equity
+fixture quoted in INR. It is not a real NSE-listed security and its local candle
+data is not real NSE market data.
 
 ---
 

@@ -69,7 +69,7 @@ async def create_strategy_version(
         json={
             "configuration": configuration
             or {
-                "instrument": "XAUUSD",
+                "instrument": "TRADEEBH_TEST_EQ",
                 "entry": {
                     "type": "ema_crossover",
                     "fast_period": 3,
