@@ -14,7 +14,7 @@ TradEBH currently supports **CPython 3.13** on Windows x64. The dependency lock 
 
 ## Fresh Windows Setup
 
-1. Install CPython 3.13 x64 and PostgreSQL 16 or later, including `psql`. Add both to your `PATH` (the initializer also detects standard PostgreSQL Windows installations).
+1. Install CPython 3.13 x64, PostgreSQL 16 or later (including `psql`), and Node.js 22 LTS x64. Add them to your `PATH` (the initializer also detects standard PostgreSQL Windows installations).
 2. Clone the repository and open PowerShell at its root.
 3. Run the bootstrap script. It creates `.venv` if needed and installs the pinned dependencies.
 
@@ -64,6 +64,8 @@ SECRET_KEY=<unique-private-local-secret>
 
 `TEST_DATABASE_URL` must target exactly `tradeebh_test`. The test fixture and test script reject any other database name, preventing accidental writes to the development database.
 
+`CORS_ALLOWED_ORIGINS` is a comma-separated allowlist for browser applications. The development default is `http://localhost:5173`; do not use `*`, and explicitly add the deployed frontend origin in production. The current Bearer-token design does not use browser credentials/cookies, so CORS credentials remain disabled.
+
 ## Migrations, API, and Tests
 
 Apply development migrations:
@@ -83,6 +85,36 @@ Run the isolated test suite. This migrates `tradeebh_test` to the Alembic head f
 ```powershell
 ./scripts/test.ps1
 ```
+
+## Frontend
+
+The `frontend/` application is a Vite + React + TypeScript browser client. It requires Node.js 22 LTS and pnpm (Corepack can provide pnpm with modern Node.js installations).
+
+```powershell
+cd frontend
+Copy-Item .env.example .env
+corepack enable
+pnpm install --frozen-lockfile
+pnpm dev
+```
+
+Run the backend separately with `./scripts/run-api.ps1`. Configure `backend/.env` with a matching explicit `CORS_ALLOWED_ORIGINS` value and set `VITE_API_BASE_URL` in `frontend/.env`; neither value should be hard-coded throughout the client.
+
+The frontend source types are generated from FastAPI's OpenAPI document. With the local API running, regenerate them deterministically with:
+
+```powershell
+cd frontend
+pnpm generate:api-types
+pnpm typecheck
+pnpm test
+pnpm build
+```
+
+`pnpm generate:api-types` uses `http://127.0.0.1:8000/openapi.json` only as its local default. Set `OPENAPI_URL` for a different local API endpoint; the browser application itself always reads its API base URL from `VITE_API_BASE_URL`.
+
+The development frontend stores the 30-minute access token in `sessionStorage`, clears it on a `401`, and has no refresh-token flow. It never places tokens in URLs or logs. This is appropriate only for the current development MVP; a production session redesign is required before deployment.
+
+Paper Execution remains synthetic/reference infrastructure only: `TRADEEBH_TEST_EQ` is not a real NSE security, its data is not real NSE market data, and TradeEBH does not perform live broker execution.
 
 ## Troubleshooting
 
