@@ -150,6 +150,25 @@ async def test_published_strategy_can_be_deployed_and_persists_timestamp(client)
 
 
 @pytest.mark.asyncio
+async def test_ordinary_update_cannot_make_published_strategy_private(client):
+    headers = await register_and_login(client)
+    strategy = await create_strategy(client, headers, "published-stays-public")
+    await create_version(client, headers, strategy["id"], "version")
+    await publish_strategy(client, headers, strategy["id"])
+
+    response = await client.patch(
+        f"/api/v1/strategies/{strategy['id']}",
+        headers=headers,
+        json={"name": "Updated Published Strategy", "is_public": False},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["name"] == "Updated Published Strategy"
+    assert response.json()["status"] == "published"
+    assert response.json()["is_public"] is True
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("initial_state", ["draft", "published", "deployed"])
 async def test_allowed_states_can_be_archived_and_become_private(
     client, initial_state

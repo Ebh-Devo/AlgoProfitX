@@ -37,7 +37,6 @@ async def create_strategy(
         name=data.name,
         slug=data.slug,
         description=data.description,
-        is_public=data.is_public,
     )
 
     session.add(strategy)

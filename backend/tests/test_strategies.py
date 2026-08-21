@@ -28,7 +28,6 @@ def strategy_payload(slug: str, **overrides: object) -> dict[str, object]:
         "name": "Momentum Strategy",
         "slug": slug,
         "description": "A deterministic test strategy.",
-        "is_public": False,
     }
     payload.update(overrides)
     return payload
@@ -67,7 +66,7 @@ async def create_strategy(
 
 
 @pytest.mark.asyncio
-async def test_create_strategy_returns_persisted_response_contract(client):
+async def test_create_strategy_cannot_force_public_visibility(client):
     headers = await register_and_login(client)
 
     response = await client.post(
@@ -95,7 +94,7 @@ async def test_create_strategy_returns_persisted_response_contract(client):
     assert data["name"] == "Momentum Strategy"
     assert data["slug"] == "momentum-create"
     assert data["status"] == "draft"
-    assert data["is_public"] is True
+    assert data["is_public"] is False
     assert data["current_version_id"] is None
     assert data["published_at"] is None
     assert data["deployed_at"] is None
@@ -108,7 +107,7 @@ async def test_create_strategy_returns_persisted_response_contract(client):
     assert persisted is not None
     assert str(persisted.creator_id) == data["creator_id"]
     assert persisted.slug == "momentum-create"
-    assert persisted.is_public is True
+    assert persisted.is_public is False
 
 
 @pytest.mark.asyncio
@@ -144,7 +143,7 @@ async def test_list_returns_only_authenticated_users_strategies(client):
 
 
 @pytest.mark.asyncio
-async def test_owner_can_update_strategy_and_changes_persist(client):
+async def test_owner_update_cannot_force_public_visibility(client):
     headers = await register_and_login(client)
     created = await create_strategy(client, headers, "before-update")
 
@@ -165,7 +164,7 @@ async def test_owner_can_update_strategy_and_changes_persist(client):
     assert data["name"] == "Updated Momentum Strategy"
     assert data["slug"] == "after-update"
     assert data["description"] == "Updated configuration notes."
-    assert data["is_public"] is True
+    assert data["is_public"] is False
     assert data["status"] == "draft"
 
     async with AsyncSessionLocal() as session:
@@ -177,7 +176,7 @@ async def test_owner_can_update_strategy_and_changes_persist(client):
     assert persisted.name == "Updated Momentum Strategy"
     assert persisted.slug == "after-update"
     assert persisted.description == "Updated configuration notes."
-    assert persisted.is_public is True
+    assert persisted.is_public is False
 
 
 @pytest.mark.asyncio
