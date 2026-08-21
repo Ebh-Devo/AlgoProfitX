@@ -22,7 +22,7 @@ export function AppShell() {
           <NavLink to="/marketplace">Marketplace</NavLink>
           {isAuthenticated && <NavLink to="/app">Workspace</NavLink>}
           {creator && <><NavLink to="/creator/strategies">Strategies</NavLink><span className="role-nav">Creator</span></>}
-          {investor && <span className="role-nav">Investor</span>}
+          {investor && <><NavLink to="/investor/allocations">Allocations</NavLink><NavLink to="/investor/execution-intents">Executions</NavLink><span className="role-nav">Investor</span></>}
         </nav>
         <div className="header-actions">
           {isAuthenticated ? (

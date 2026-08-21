@@ -1,7 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 
-import { RequireAuth, RequireCreator } from "./guards";
+import { RequireAuth, RequireCreator, RequireInvestor } from "./guards";
 
 const auth = vi.hoisted(() => ({ value: { isAuthenticated: false, isLoading: false } }));
 vi.mock("./auth-context", () => ({ useAuth: () => auth.value }));
@@ -12,6 +12,7 @@ describe("RequireAuth", () => {
     expect(screen.getByText("Login page")).toBeInTheDocument();
   });
 });
+describe("RequireInvestor", () => { it("redirects Creator-only users from Investor routes", () => { auth.value = { isAuthenticated: true, isLoading: false, user: { roles: ["CREATOR"] } } as typeof auth.value; render(<MemoryRouter initialEntries={["/investor/allocations"]}><Routes><Route element={<RequireInvestor />}><Route path="/investor/allocations" element={<p>Allocations</p>} /></Route><Route path="/app" element={<p>Workspace</p>} /></Routes></MemoryRouter>); expect(screen.getByText("Workspace")).toBeInTheDocument(); }); });
 
 describe("RequireCreator", () => {
   it("redirects authenticated non-Creators", () => {

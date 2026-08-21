@@ -11,6 +11,11 @@ export type StrategyVersionCreateRequest = components["schemas"]["StrategyVersio
 export type Backtest = components["schemas"]["BacktestResponse"];
 export type BacktestCreateRequest = components["schemas"]["BacktestCreateRequest"];
 export type BacktestAnalytics = components["schemas"]["BacktestAnalyticsResponse"];
+export type Allocation = components["schemas"]["AllocationResponse"];
+export type AllocationCreateRequest = components["schemas"]["AllocationCreateRequest"];
+export type AllocationUpdateRequest = components["schemas"]["AllocationUpdateRequest"];
+export type ExecutionIntent = components["schemas"]["ExecutionIntentResponse"];
+export type ExecutionIntentCreateRequest = components["schemas"]["ExecutionIntentCreateRequest"];
 
 export interface RegisterRequest {
   email: string;

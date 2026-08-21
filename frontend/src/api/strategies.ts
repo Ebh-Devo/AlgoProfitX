@@ -1,7 +1,7 @@
 import { apiRequest } from "./client";
 import type { Backtest, BacktestAnalytics, BacktestCreateRequest, Strategy, StrategyCreateRequest, StrategyUpdateRequest, StrategyVersion, StrategyVersionCreateRequest } from "./types";
 
-const root = "/api/v1/strategies";
+const root = "/strategies";
 
 export const strategiesApi = {
   list: () => apiRequest<Strategy[]>(root),

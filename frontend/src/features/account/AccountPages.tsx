@@ -13,7 +13,7 @@ export function AppPage() {
     <div className="card-grid">
       {hasRole(user, CREATOR_ROLE) ? <article className="card"><h2>Creator</h2><p>Create, version, and manage the lifecycle of your strategies.</p><Link className="button" to="/creator/strategies">Manage strategies</Link></article> :
         <article className="card"><h2>Become a Creator</h2><p>Creator enrollment keeps your Investor role.</p><Link className="button" to="/creator/enroll">Enroll as Creator</Link></article>}
-      <article className="card"><h2>Investor</h2><p>Browse published strategies in the Marketplace.</p><Link className="button button-secondary" to="/marketplace">Browse Marketplace</Link></article>
+      <article className="card"><h2>Investor</h2><p>Browse strategies and manage paper allocation and execution intents.</p><div className="inline-actions"><Link className="button button-secondary" to="/marketplace">Browse Marketplace</Link><Link className="button" to="/investor/allocations">Manage allocations</Link></div></article>
     </div>
   </section>;
 }

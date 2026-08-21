@@ -19,5 +19,8 @@ describe("AppShell", () => {
     expect(screen.getByText("Creator")).toBeInTheDocument();
     expect(screen.getByText("Investor")).toBeInTheDocument();
     expect(screen.getByText("Workspace")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Strategies" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Allocations" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Executions" })).toBeInTheDocument();
   });
 });
