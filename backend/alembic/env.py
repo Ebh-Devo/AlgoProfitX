@@ -8,6 +8,8 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 from app.core.config import get_settings
 from app.db.base import Base
 from app.models import (
+    Backtest,
+    BacktestStatus,
     Role,
     Strategy,
     StrategyStatus,

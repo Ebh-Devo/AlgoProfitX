@@ -1,3 +1,4 @@
+from app.schemas.backtest import BacktestCreateRequest, BacktestResponse
 from app.schemas.strategy import (
     StrategyCreateRequest,
     StrategyResponse,
@@ -12,4 +13,6 @@ __all__ = [
     "StrategyResponse",
     "StrategyVersionCreateRequest",
     "StrategyVersionResponse",
+    "BacktestCreateRequest",
+    "BacktestResponse",
 ]
