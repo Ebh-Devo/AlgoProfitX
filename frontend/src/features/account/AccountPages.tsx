@@ -11,7 +11,7 @@ export function AppPage() {
   if (isLoading) return <LoadingState />;
   return <section><h1>Workspace</h1><p>Choose a product journey from your available roles.</p>
     <div className="card-grid">
-      {hasRole(user, CREATOR_ROLE) ? <article className="card"><h2>Creator</h2><p>Strategy management screens are the next frontend milestone.</p></article> :
+      {hasRole(user, CREATOR_ROLE) ? <article className="card"><h2>Creator</h2><p>Create, version, and manage the lifecycle of your strategies.</p><Link className="button" to="/creator/strategies">Manage strategies</Link></article> :
         <article className="card"><h2>Become a Creator</h2><p>Creator enrollment keeps your Investor role.</p><Link className="button" to="/creator/enroll">Enroll as Creator</Link></article>}
       <article className="card"><h2>Investor</h2><p>Browse published strategies in the Marketplace.</p><Link className="button button-secondary" to="/marketplace">Browse Marketplace</Link></article>
     </div>

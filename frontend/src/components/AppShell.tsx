@@ -21,7 +21,7 @@ export function AppShell() {
         <nav aria-label="Primary navigation">
           <NavLink to="/marketplace">Marketplace</NavLink>
           {isAuthenticated && <NavLink to="/app">Workspace</NavLink>}
-          {creator && <span className="role-nav">Creator</span>}
+          {creator && <><NavLink to="/creator/strategies">Strategies</NavLink><span className="role-nav">Creator</span></>}
           {investor && <span className="role-nav">Investor</span>}
         </nav>
         <div className="header-actions">

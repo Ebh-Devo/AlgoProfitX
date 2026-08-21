@@ -1,10 +1,11 @@
 import { createBrowserRouter } from "react-router-dom";
 
-import { RequireAuth } from "../auth/guards";
+import { RequireAuth, RequireCreator } from "../auth/guards";
 import { AppShell } from "../components/AppShell";
 import { AccountPage, AppPage, CreatorEnrollPage } from "../features/account/AccountPages";
 import { LoginPage, RegisterPage } from "../features/account/AuthPages";
 import { MarketplaceDetailPage, MarketplaceListPage } from "../features/marketplace/MarketplacePages";
+import { StrategyDetailPage, StrategyEditPage, StrategyListPage, StrategyNewPage, StrategyVersionPage } from "../features/creator/StrategyPages";
 
 function HomePage() {
   return <section className="hero"><p className="eyebrow">Strategy marketplace</p><h1>Build, discover, and evaluate systematic strategies.</h1><p className="lead">TradeEBH separates creator strategy work from investor discovery. Paper Execution is synthetic reference infrastructure, not real NSE data or live broker execution.</p></section>;
@@ -23,6 +24,13 @@ export const router = createBrowserRouter([
       { path: "app", element: <AppPage /> },
       { path: "account", element: <AccountPage /> },
       { path: "creator/enroll", element: <CreatorEnrollPage /> },
+      { element: <RequireCreator />, children: [
+        { path: "creator/strategies", element: <StrategyListPage /> },
+        { path: "creator/strategies/new", element: <StrategyNewPage /> },
+        { path: "creator/strategies/:strategyId", element: <StrategyDetailPage /> },
+        { path: "creator/strategies/:strategyId/edit", element: <StrategyEditPage /> },
+        { path: "creator/strategies/:strategyId/versions/:versionId", element: <StrategyVersionPage /> },
+      ] },
     ] },
     { path: "*", element: <NotFoundPage /> },
   ] },
