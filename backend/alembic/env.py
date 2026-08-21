@@ -12,6 +12,8 @@ from app.models import (
     AllocationStatus,
     Backtest,
     BacktestStatus,
+    ExecutionIntent,
+    ExecutionStatus,
     Role,
     Strategy,
     StrategyStatus,

@@ -38,7 +38,7 @@ async def _reset_database() -> None:
     async with engine.begin() as connection:
         await connection.execute(
             text(
-                "TRUNCATE TABLE user_roles, user_profiles, allocation_intents, backtests, strategy_versions, "
+                "TRUNCATE TABLE user_roles, user_profiles, execution_intents, allocation_intents, backtests, strategy_versions, "
                 "strategies, users, roles CASCADE"
             )
         )
