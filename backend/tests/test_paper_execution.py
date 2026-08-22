@@ -303,6 +303,32 @@ async def test_allocation_delete_is_blocked_when_execution_history_exists(client
     )
     assert response.status_code == 409
     assert response.json() == {"detail": "Allocation with execution intents cannot be deleted"}
+
+
+@pytest.mark.asyncio
+async def test_strategy_delete_is_blocked_and_preserves_investor_history(client):
+    creator_headers, investor_headers, strategy, _, allocation, intent = (
+        await create_paper_execution_intent(client, "strategy-delete-history")
+    )
+
+    response = await client.delete(
+        f"/api/v1/strategies/{strategy['id']}", headers=creator_headers
+    )
+
+    assert response.status_code == 409
+    assert response.json() == {
+        "detail": "Strategy with allocation or execution history cannot be deleted"
+    }
+    assert (
+        await client.get(
+            f"/api/v1/allocations/{allocation['id']}", headers=investor_headers
+        )
+    ).status_code == 200
+    assert (
+        await client.get(
+            f"/api/v1/execution-intents/{intent['id']}", headers=investor_headers
+        )
+    ).status_code == 200
     assert (
         await client.get(f"{EXECUTION_INTENTS_PATH}/{intent['id']}", headers=investor_headers)
     ).status_code == 200

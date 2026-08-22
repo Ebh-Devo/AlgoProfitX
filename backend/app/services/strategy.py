@@ -27,6 +27,10 @@ ALLOWED_LIFECYCLE_TRANSITIONS = {
 }
 
 
+class StrategyConflict(Exception):
+    pass
+
+
 async def create_strategy(
     session: AsyncSession,
     creator_id: uuid.UUID,
@@ -103,8 +107,33 @@ async def delete_strategy(
     session: AsyncSession,
     strategy: Strategy,
 ) -> None:
+    from app.models.allocation import AllocationIntent
+    from app.models.execution import ExecutionIntent
+
+    strategy = await _lock_strategy(session, strategy)
+    protected_history = await session.scalar(
+        select(AllocationIntent.id)
+        .where(AllocationIntent.strategy_id == strategy.id)
+        .limit(1)
+    )
+    if protected_history is None:
+        protected_history = await session.scalar(
+            select(ExecutionIntent.id)
+            .where(ExecutionIntent.strategy_id == strategy.id)
+            .limit(1)
+        )
+    if protected_history is not None:
+        raise StrategyConflict(
+            "Strategy with allocation or execution history cannot be deleted"
+        )
     await session.delete(strategy)
-    await session.flush()
+    try:
+        await session.flush()
+    except IntegrityError as exc:
+        await session.rollback()
+        raise StrategyConflict(
+            "Strategy with allocation or execution history cannot be deleted"
+        ) from exc
 
 
 async def create_strategy_version(
@@ -188,6 +217,7 @@ async def publish_strategy(
     session: AsyncSession,
     strategy: Strategy,
 ) -> Strategy:
+    strategy = await _lock_strategy(session, strategy)
     _require_transition(strategy, StrategyStatus.PUBLISHED)
 
     latest_version_result = await session.execute(
@@ -215,6 +245,7 @@ async def deploy_strategy(
     session: AsyncSession,
     strategy: Strategy,
 ) -> Strategy:
+    strategy = await _lock_strategy(session, strategy)
     _require_transition(strategy, StrategyStatus.DEPLOYED)
 
     strategy.status = StrategyStatus.DEPLOYED
@@ -229,6 +260,7 @@ async def archive_strategy(
     session: AsyncSession,
     strategy: Strategy,
 ) -> Strategy:
+    strategy = await _lock_strategy(session, strategy)
     _require_transition(strategy, StrategyStatus.ARCHIVED)
 
     strategy.status = StrategyStatus.ARCHIVED
@@ -237,3 +269,13 @@ async def archive_strategy(
     await session.flush()
     await session.refresh(strategy)
     return strategy
+
+
+async def _lock_strategy(session: AsyncSession, strategy: Strategy) -> Strategy:
+    result = await session.execute(
+        select(Strategy)
+        .where(Strategy.id == strategy.id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    return result.scalar_one()

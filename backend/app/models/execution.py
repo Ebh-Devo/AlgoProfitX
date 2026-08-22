@@ -80,7 +80,7 @@ class ExecutionIntent(Base):
     )
 
     strategy_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("strategies.id", ondelete="CASCADE"),
+        ForeignKey("strategies.id", ondelete="RESTRICT"),
         nullable=False,
         index=True,
     )

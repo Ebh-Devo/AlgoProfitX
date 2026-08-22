@@ -163,7 +163,7 @@ Preferred command from `TradeEBH\`:
 .\scripts\migrate.ps1
 ```
 
-The current Alembic head is `e3f8a1c5d2b6` (`add_paper_execution_results`). Direct manual-venv commands:
+The current Alembic head is `f4b2c9d7e1a3` (`protect_investor_history`). Direct manual-venv commands:
 
 ```powershell
 cd backend
@@ -298,10 +298,11 @@ Configuration example:
 ```json
 {
   "instrument": "TRADEEBH_TEST_EQ",
-  "timeframe": "1h",
-  "strategy_type": "ema_crossover",
-  "fast_period": 5,
-  "slow_period": 12
+  "entry": {
+    "type": "ema_crossover",
+    "fast_period": 5,
+    "slow_period": 12
+  }
 }
 ```
 

@@ -1,3 +1,4 @@
+import asyncio
 import uuid
 
 import pytest
@@ -299,3 +300,25 @@ async def test_execution_intent_idempotency_and_active_constraint(client):
         with pytest.raises(IntegrityError):
             await session.commit()
         await session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_allocation_delete_and_intent_creation_are_serialized(client):
+    _, investor_headers, _, _, allocation = await create_eligible_allocation(
+        client, "allocation-delete-race"
+    )
+    allocation_path = f"/api/v1/allocations/{allocation['id']}"
+
+    create_response, delete_response = await asyncio.gather(
+        client.post(execution_intents_path(allocation["id"]), headers=investor_headers, json={}),
+        client.delete(allocation_path, headers=investor_headers),
+    )
+
+    assert (create_response.status_code, delete_response.status_code) in {
+        (201, 409),
+        (404, 204),
+    }
+    if create_response.status_code == 201:
+        assert delete_response.json() == {
+            "detail": "Allocation with execution intents cannot be deleted"
+        }

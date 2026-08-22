@@ -66,3 +66,6 @@ docker-data/
 # =========================
 *.tmp
 *.temp
+
+# Generated documentation exports (README.md is authoritative)
+/README.pdf

@@ -1,3 +1,4 @@
+import asyncio
 import uuid
 
 import pytest
@@ -150,6 +151,25 @@ async def test_published_strategy_can_be_deployed_and_persists_timestamp(client)
     assert persisted is not None
     assert persisted.status.value == "deployed"
     assert persisted.deployed_at is not None
+
+
+@pytest.mark.asyncio
+async def test_concurrent_lifecycle_transition_allows_only_one_deploy(client):
+    headers = await register_and_login(client)
+    strategy = await create_strategy(client, headers, "concurrent-deploy")
+    await create_version(client, headers, strategy["id"], "version")
+    await publish_strategy(client, headers, strategy["id"])
+    path = f"/api/v1/strategies/{strategy['id']}/deploy"
+
+    first, second = await asyncio.gather(
+        client.post(path, headers=headers),
+        client.post(path, headers=headers),
+    )
+
+    assert sorted((first.status_code, second.status_code)) == [200, 409]
+    persisted = await client.get(f"/api/v1/strategies/{strategy['id']}", headers=headers)
+    assert persisted.status_code == 200
+    assert persisted.json()["status"] == "deployed"
 
 
 @pytest.mark.asyncio

@@ -1,6 +1,7 @@
 import uuid
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.allocation import AllocationIntent, AllocationStatus
@@ -82,6 +83,15 @@ async def delete_allocation(
 ) -> None:
     from app.models.execution import ExecutionIntent
 
+    locked = await session.scalar(
+        select(AllocationIntent)
+        .where(AllocationIntent.id == allocation.id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    if locked is None:
+        raise AllocationConflict("Allocation not found")
+
     existing_execution_intent = await session.scalar(
         select(ExecutionIntent.id)
         .where(ExecutionIntent.allocation_intent_id == allocation.id)
@@ -91,8 +101,14 @@ async def delete_allocation(
         raise AllocationConflict(
             "Allocation with execution intents cannot be deleted"
         )
-    await session.delete(allocation)
-    await session.flush()
+    await session.delete(locked)
+    try:
+        await session.flush()
+    except IntegrityError as exc:
+        await session.rollback()
+        raise AllocationConflict(
+            "Allocation with execution intents cannot be deleted"
+        ) from exc
 
 
 async def _get_eligible_strategy(

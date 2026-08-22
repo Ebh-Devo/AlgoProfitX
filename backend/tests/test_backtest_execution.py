@@ -169,6 +169,31 @@ async def test_execution_result_is_deterministic_and_terminal_attempts_conflict(
 
 
 @pytest.mark.asyncio
+async def test_documented_strategy_configuration_executes_reference_path(client):
+    headers = await register_and_login(client)
+    strategy, version = await create_strategy_version(
+        client,
+        headers,
+        "documented-reference-config",
+        configuration={
+            "instrument": "TRADEEBH_TEST_EQ",
+            "entry": {
+                "type": "ema_crossover",
+                "fast_period": 5,
+                "slow_period": 12,
+            },
+        },
+    )
+    backtest = await create_backtest(client, headers, strategy, version)
+
+    response = await client.post(execute_path(strategy, version, backtest), headers=headers)
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "completed"
+    assert response.json()["result_summary"]["engine_identifier"] == "ema-crossover-reference-v1"
+
+
+@pytest.mark.asyncio
 async def test_engine_failure_is_sanitized_persisted_and_terminal(client):
     headers = await register_and_login(client)
     strategy, version = await create_strategy_version(

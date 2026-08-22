@@ -28,13 +28,16 @@ export function CreatorEnrollPage() {
   const { user, enrollCreator } = useAuth();
   const [error, setError] = useState<string | null>(null);
   const [complete, setComplete] = useState(false);
+  const [pending, setPending] = useState(false);
   const alreadyCreator = hasRole(user, CREATOR_ROLE);
   const enroll = async () => {
     setError(null);
-    try { await enrollCreator(); setComplete(true); } catch (reason) { setError(reason instanceof ApiError ? reason.message : "Creator enrollment failed."); }
+    if (pending) return;
+    setPending(true);
+    try { await enrollCreator(); setComplete(true); } catch (reason) { setError(reason instanceof ApiError ? reason.message : "Creator enrollment failed."); } finally { setPending(false); }
   };
   return <section className="auth-card card"><h1>Creator enrollment</h1><p>Creator enrollment adds CREATOR alongside your existing INVESTOR role.</p>
-    {alreadyCreator || complete ? <div className="alert alert-success">Your account has the Creator role.</div> : <button className="button" onClick={enroll}>Enroll as Creator</button>}
+    {alreadyCreator || complete ? <div className="alert alert-success">Your account has the Creator role.</div> : <button className="button" disabled={pending} onClick={enroll}>{pending ? "Enrolling…" : "Enroll as Creator"}</button>}
     {error && <ErrorAlert>{error}</ErrorAlert>}
   </section>;
 }

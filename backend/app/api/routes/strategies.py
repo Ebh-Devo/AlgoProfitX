@@ -26,6 +26,7 @@ from app.schemas.strategy import (
     StrategyVersionResponse,
 )
 from app.services.strategy import (
+    StrategyConflict,
     archive_strategy,
     create_strategy_version,
     create_strategy,
@@ -598,9 +599,14 @@ async def delete_my_strategy(
             detail="Strategy not found",
         )
 
-    await delete_strategy(
-        session=session,
-        strategy=strategy,
-    )
-
-    await session.commit()
+    try:
+        await delete_strategy(
+            session=session,
+            strategy=strategy,
+        )
+        await session.commit()
+    except StrategyConflict as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        )

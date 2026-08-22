@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 
 import { ApiError } from "../../api/client";
 import { marketplaceApi } from "../../api/marketplace";
+import { queryKeys } from "../../api/queryKeys";
 import { EmptyState, ErrorAlert, LoadingState } from "../../components/PageState";
 
 function displayDate(value: string | null): string {
@@ -10,7 +11,7 @@ function displayDate(value: string | null): string {
 }
 
 export function MarketplaceListPage() {
-  const query = useQuery({ queryKey: ["marketplace", 20, 0], queryFn: () => marketplaceApi.list(20, 0) });
+  const query = useQuery({ queryKey: queryKeys.marketplaceList(20, 0), queryFn: () => marketplaceApi.list(20, 0) });
   if (query.isLoading) return <LoadingState label="Loading marketplace strategies…" />;
   if (query.isError) return <ErrorAlert>{query.error instanceof ApiError ? query.error.message : "Marketplace is unavailable."}</ErrorAlert>;
   if (!query.data?.length) return <EmptyState>No published public strategies are available yet.</EmptyState>;
@@ -23,7 +24,7 @@ export function MarketplaceListPage() {
 
 export function MarketplaceDetailPage() {
   const { slug = "" } = useParams();
-  const query = useQuery({ queryKey: ["marketplace", slug], queryFn: () => marketplaceApi.getBySlug(slug), enabled: Boolean(slug) });
+  const query = useQuery({ queryKey: queryKeys.marketplaceDetail(slug), queryFn: () => marketplaceApi.getBySlug(slug), enabled: Boolean(slug) });
   if (query.isLoading) return <LoadingState label="Loading strategy…" />;
   if (query.isError) {
     const message = query.error instanceof ApiError && query.error.status === 404 ? "This marketplace strategy is not available." : "Unable to load this strategy.";
