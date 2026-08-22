@@ -1,6 +1,7 @@
 import uuid
 
 import pytest
+from app.bootstrap.instruments import SYNTHETIC_EQUITY_ID
 from sqlalchemy import delete, select
 
 from app.db.session import AsyncSessionLocal
@@ -74,7 +75,7 @@ async def test_investor_creates_persisted_allocation_pinned_to_current_version(c
     response = await client.post(
         f"/api/v1/strategies/{strategy['id']}/versions",
         headers=owner_headers,
-        json={"configuration": {}, "backtest_configuration": {}},
+        json={"instrument_id": str(SYNTHETIC_EQUITY_ID), "configuration": {}, "backtest_configuration": {}},
     )
     assert response.status_code == 201
     second_version = response.json()

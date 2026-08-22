@@ -2,6 +2,7 @@ import asyncio
 import uuid
 
 import pytest
+from app.bootstrap.instruments import SYNTHETIC_EQUITY_ID
 from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 
@@ -77,7 +78,7 @@ async def test_investor_creates_persisted_pending_paper_intent_with_snapshots(cl
     response = await client.post(
         f"/api/v1/strategies/{strategy['id']}/versions",
         headers=creator_headers,
-        json={"configuration": {}, "backtest_configuration": {}},
+        json={"instrument_id": str(SYNTHETIC_EQUITY_ID), "configuration": {}, "backtest_configuration": {}},
     )
     assert response.status_code == 201
     newer_version = response.json()

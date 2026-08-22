@@ -101,7 +101,7 @@ async def test_creator_enrollment_requires_authentication(client):
         ("get", "/api/v1/strategies/00000000-0000-0000-0000-000000000001", None),
         ("patch", "/api/v1/strategies/00000000-0000-0000-0000-000000000001", {"name": "Updated Strategy"}),
         ("delete", "/api/v1/strategies/00000000-0000-0000-0000-000000000001", None),
-        ("post", "/api/v1/strategies/00000000-0000-0000-0000-000000000001/versions", {"configuration": {}}),
+        ("post", "/api/v1/strategies/00000000-0000-0000-0000-000000000001/versions", {"instrument_id": "20000000-0000-4000-8000-000000000001", "configuration": {}}),
         ("get", "/api/v1/strategies/00000000-0000-0000-0000-000000000001/versions", None),
         ("get", "/api/v1/strategies/00000000-0000-0000-0000-000000000001/versions/00000000-0000-0000-0000-000000000002", None),
         ("post", "/api/v1/strategies/00000000-0000-0000-0000-000000000001/publish", None),

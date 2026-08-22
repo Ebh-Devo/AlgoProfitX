@@ -863,6 +863,11 @@ export interface components {
         };
         /** StrategyVersionCreateRequest */
         StrategyVersionCreateRequest: {
+            /**
+             * Instrument Id
+             * Format: uuid
+             */
+            instrument_id: string;
             /** Configuration */
             configuration?: {
                 [key: string]: unknown;
@@ -884,6 +889,9 @@ export interface components {
              * Format: uuid
              */
             strategy_id: string;
+            /** Instrument Id */
+            instrument_id: string | null;
+            instrument: components["schemas"]["InstrumentResponse"] | null;
             /** Version Number */
             version_number: number;
             /** Configuration */

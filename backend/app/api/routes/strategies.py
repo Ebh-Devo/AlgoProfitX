@@ -27,6 +27,7 @@ from app.schemas.strategy import (
 )
 from app.services.strategy import (
     StrategyConflict,
+    StrategyVersionValidationError,
     archive_strategy,
     create_strategy_version,
     create_strategy,
@@ -138,6 +139,11 @@ async def create_version(
             data=data,
         )
         await session.commit()
+    except StrategyVersionValidationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(exc),
+        )
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,

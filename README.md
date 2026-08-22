@@ -309,13 +309,12 @@ Open <http://localhost:5173>.
 2. Log in.
 3. Enroll as a Creator if needed; the Investor role is preserved.
 4. Create a draft Strategy.
-5. Create an immutable Strategy Version.
+5. Create an immutable Strategy Version by selecting the canonical Instrument (for this reference walkthrough, `TRADEEBH_TEST_EQ`).
 
 Configuration example:
 
 ```json
 {
-  "instrument": "TRADEEBH_TEST_EQ",
   "entry": {
     "type": "ema_crossover",
     "fast_period": 5,
@@ -336,7 +335,7 @@ Backtest configuration example:
 }
 ```
 
-6. Save both Version JSON objects.
+6. Save both Version JSON objects. Instrument identity is stored separately from the algorithm JSON; a matching legacy `configuration.instrument` value is accepted only for transitional compatibility.
 7. Publish the Strategy.
 8. Deploy the Strategy.
 9. Create/execute a Backtest and inspect Analytics.

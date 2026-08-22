@@ -10,6 +10,7 @@ from app.db.session import AsyncSessionLocal
 from app.main import app
 from app.models.backtest import Backtest
 from app.models.strategy import StrategyVersion
+from app.bootstrap.instruments import SYNTHETIC_EQUITY_ID
 
 
 @pytest_asyncio.fixture
@@ -70,6 +71,7 @@ async def create_strategy_version(
         f"/api/v1/strategies/{strategy['id']}/versions",
         headers=headers,
         json={
+            "instrument_id": str(SYNTHETIC_EQUITY_ID),
             "configuration": {
                 "instrument": "TRADEEBH_TEST_EQ",
                 "entry": {"fast_period": 20},

@@ -221,7 +221,6 @@ async def test_paper_execution_failures_are_terminal_and_sanitized(client):
     assert response.status_code == 409
 
     unsupported_configuration = {
-        "instrument": "OTHER_TEST_EQ",
         "entry": {"type": "ema_crossover", "fast_period": 3, "slow_period": 5},
     }
     _, investor_headers, _, _, _, unsupported_intent = await create_paper_execution_intent(

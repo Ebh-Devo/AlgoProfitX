@@ -5,6 +5,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.strategy import StrategyStatus
+from app.schemas.instrument import InstrumentResponse
 
 
 class StrategyCreateRequest(BaseModel):
@@ -53,6 +54,7 @@ class StrategyResponse(BaseModel):
 
 
 class StrategyVersionCreateRequest(BaseModel):
+    instrument_id: uuid.UUID
     configuration: dict[str, Any] = Field(default_factory=dict)
     backtest_configuration: dict[str, Any] = Field(
         default_factory=dict
@@ -64,6 +66,8 @@ class StrategyVersionResponse(BaseModel):
 
     id: uuid.UUID
     strategy_id: uuid.UUID
+    instrument_id: uuid.UUID | None
+    instrument: InstrumentResponse | None
     version_number: int
     configuration: dict[str, Any]
     backtest_configuration: dict[str, Any]

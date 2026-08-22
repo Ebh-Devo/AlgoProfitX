@@ -1,6 +1,7 @@
 import uuid
 
 import pytest
+from app.bootstrap.instruments import SYNTHETIC_EQUITY_ID
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
@@ -67,6 +68,7 @@ async def create_strategy_version(
         f"/api/v1/strategies/{strategy['id']}/versions",
         headers=headers,
         json={
+            "instrument_id": str(SYNTHETIC_EQUITY_ID),
             "configuration": configuration
             or {
                 "instrument": "TRADEEBH_TEST_EQ",
@@ -248,6 +250,7 @@ async def test_execution_hides_backtest_version_mismatch(client):
         f"/api/v1/strategies/{strategy['id']}/versions",
         headers=headers,
         json={
+            "instrument_id": str(SYNTHETIC_EQUITY_ID),
             "configuration": {
                 "entry": {
                     "type": "ema_crossover",

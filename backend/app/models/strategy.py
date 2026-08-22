@@ -19,6 +19,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
 from app.db.base import Base
+from app.models.instrument import Instrument
 
 
 class StrategyStatus(str, enum.Enum):
@@ -147,6 +148,12 @@ class StrategyVersion(Base):
         index=True,
     )
 
+    instrument_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("instruments.id", ondelete="RESTRICT"),
+        nullable=True,
+        index=True,
+    )
+
     version_number: Mapped[int] = mapped_column(
         Integer,
         nullable=False,
@@ -174,3 +181,4 @@ class StrategyVersion(Base):
         back_populates="versions",
         foreign_keys=[strategy_id],
     )
+    instrument: Mapped[Instrument | None] = relationship()

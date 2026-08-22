@@ -6,6 +6,7 @@ export const queryKeys = {
   strategy: (id: string) => ["creator-strategy", id] as const,
   versions: (strategyId: string) => ["strategy-versions", strategyId] as const,
   version: (strategyId: string, versionId: string) => ["strategy-version", strategyId, versionId] as const,
+  instruments: (search: string) => ["instruments", search] as const,
   backtests: (strategyId: string, versionId: string) => ["backtests", strategyId, versionId] as const,
   backtest: (strategyId: string, versionId: string, backtestId: string) => ["backtest", strategyId, versionId, backtestId] as const,
   backtestAnalytics: (strategyId: string, versionId: string, backtestId: string) => ["backtest-analytics", strategyId, versionId, backtestId] as const,

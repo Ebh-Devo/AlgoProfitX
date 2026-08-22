@@ -2,6 +2,7 @@ import asyncio
 import uuid
 
 import pytest
+from app.bootstrap.instruments import SYNTHETIC_EQUITY_ID
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
@@ -67,7 +68,7 @@ async def create_version(
     response = await client.post(
         f"/api/v1/strategies/{strategy_id}/versions",
         headers=headers,
-        json={"configuration": {"marker": marker}},
+        json={"instrument_id": str(SYNTHETIC_EQUITY_ID), "configuration": {"marker": marker}},
     )
     assert response.status_code == 201
     return response.json()

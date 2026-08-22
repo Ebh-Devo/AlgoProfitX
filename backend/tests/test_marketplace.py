@@ -1,6 +1,7 @@
 import uuid
 
 import pytest
+from app.bootstrap.instruments import SYNTHETIC_EQUITY_ID
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
@@ -67,7 +68,7 @@ async def publish_strategy(
     response = await client.post(
         f"/api/v1/strategies/{strategy['id']}/versions",
         headers=headers,
-        json={"configuration": {"private_rule": "do-not-publish"}},
+        json={"instrument_id": str(SYNTHETIC_EQUITY_ID), "configuration": {"private_rule": "do-not-publish"}},
     )
     assert response.status_code == 201
     version = response.json()
