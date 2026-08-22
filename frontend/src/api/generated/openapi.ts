@@ -403,6 +403,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/instruments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Instruments */
+        get: operations["list_instruments_api_v1_instruments_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/instruments/{instrument_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Instrument Detail */
+        get: operations["get_instrument_detail_api_v1_instruments__instrument_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -583,6 +617,28 @@ export interface components {
          * @enum {string}
          */
         BacktestStatus: "queued" | "running" | "completed" | "failed";
+        /** ExchangeSummaryResponse */
+        ExchangeSummaryResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Code */
+            code: string;
+            /** Name */
+            name: string;
+            /** Country Code */
+            country_code: string;
+            /** Timezone */
+            timezone: string;
+            /** Default Currency */
+            default_currency: string;
+            /** Calendar Code */
+            calendar_code: string;
+            /** Is Active */
+            is_active: boolean;
+        };
         /** ExecutionIntentCreateRequest */
         ExecutionIntentCreateRequest: {
             /** Idempotency Key */
@@ -656,6 +712,51 @@ export interface components {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
         };
+        /** InstrumentResponse */
+        InstrumentResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            exchange: components["schemas"]["ExchangeSummaryResponse"];
+            /** Canonical Symbol */
+            canonical_symbol: string;
+            /** Exchange Symbol */
+            exchange_symbol: string;
+            /** Name */
+            name: string;
+            instrument_type: components["schemas"]["InstrumentType"];
+            /** Quote Currency */
+            quote_currency: string;
+            /** Tick Size */
+            tick_size: string | null;
+            /** Lot Size */
+            lot_size: number | null;
+            /** Is Tradeable */
+            is_tradeable: boolean;
+            /** Isin */
+            isin: string | null;
+            /** Is Synthetic */
+            is_synthetic: boolean;
+            /** Is Active */
+            is_active: boolean;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /**
+         * InstrumentType
+         * @enum {string}
+         */
+        InstrumentType: "equity" | "index";
         /** LoginRequest */
         LoginRequest: {
             /**
@@ -1780,6 +1881,75 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ExecutionIntentResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_instruments_api_v1_instruments_get: {
+        parameters: {
+            query?: {
+                exchange?: string | null;
+                instrument_type?: components["schemas"]["InstrumentType"] | null;
+                symbol?: string | null;
+                search?: string | null;
+                is_tradeable?: boolean | null;
+                is_active?: boolean;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InstrumentResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_instrument_detail_api_v1_instruments__instrument_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                instrument_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InstrumentResponse"];
                 };
             };
             /** @description Validation Error */

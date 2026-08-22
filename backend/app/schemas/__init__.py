@@ -9,6 +9,7 @@ from app.schemas.backtest import (
     BacktestResponse,
 )
 from app.schemas.execution import ExecutionIntentCreateRequest, ExecutionIntentResponse
+from app.schemas.instrument import ExchangeSummaryResponse, InstrumentResponse
 from app.schemas.strategy import (
     StrategyCreateRequest,
     StrategyResponse,
@@ -23,6 +24,8 @@ __all__ = [
     "AllocationResponse",
     "ExecutionIntentCreateRequest",
     "ExecutionIntentResponse",
+    "ExchangeSummaryResponse",
+    "InstrumentResponse",
     "StrategyCreateRequest",
     "StrategyUpdateRequest",
     "StrategyResponse",
