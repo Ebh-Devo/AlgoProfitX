@@ -580,6 +580,12 @@ export interface components {
              * Format: uuid
              */
             strategy_version_id: string;
+            /** Instrument Id */
+            instrument_id: string | null;
+            /** Instrument Snapshot */
+            instrument_snapshot: {
+                [key: string]: unknown;
+            } | null;
             /**
              * Requested By User Id
              * Format: uuid
@@ -596,6 +602,24 @@ export interface components {
             };
             /** Market Data Reference */
             market_data_reference: string | null;
+            /** Market Data Provider */
+            market_data_provider: string | null;
+            /** Dataset Reference */
+            dataset_reference: string | null;
+            /** Timeframe */
+            timeframe: string | null;
+            /** Range Start */
+            range_start: string | null;
+            /** Range End */
+            range_end: string | null;
+            /** Adjustment Policy */
+            adjustment_policy: string | null;
+            /** Data Fetched At */
+            data_fetched_at: string | null;
+            /** Market Data Provenance */
+            market_data_provenance: {
+                [key: string]: unknown;
+            } | null;
             /** Result Summary */
             result_summary: {
                 [key: string]: unknown;

@@ -6,6 +6,8 @@ from app.backtesting.contracts import (
     BacktestExecutionError,
     BacktestExecutionResult,
     Candle,
+    HistoricalCandleRequest,
+    MarketDataBatch,
 )
 
 
@@ -15,21 +17,28 @@ class SyntheticMarketDataProvider:
     identifier = "synthetic-local-v1"
     max_candles = 64
 
-    def load(
-        self,
-        configuration: dict,
-        backtest_configuration: dict,
-        reference: str | None,
-    ) -> Sequence[Candle]:
+    def load(self, request: HistoricalCandleRequest) -> MarketDataBatch:
+        reference = request.metadata.get("requested_reference")
         if reference not in (None, self.identifier):
             raise BacktestExecutionError("Unsupported synthetic data reference")
+        if request.instrument.canonical_symbol != "TRADEEBH_TEST_EQ":
+            raise BacktestExecutionError("Unsupported synthetic Instrument")
+        if request.timeframe != "1h":
+            raise BacktestExecutionError("Synthetic provider supports only timeframe=1h")
+        if request.adjustment_policy != "unadjusted":
+            raise BacktestExecutionError("Synthetic provider supports only unadjusted data")
 
-        start = self._start_timestamp(backtest_configuration)
+        start = request.start or datetime(2025, 1, 1, tzinfo=timezone.utc)
+        self._require_utc(start, "Historical request start")
+        if request.end is not None:
+            self._require_utc(request.end, "Historical request end")
+            if request.end < start:
+                raise BacktestExecutionError("Historical request end precedes start")
         closes = self._closes()
         if len(closes) > self.max_candles:
             raise BacktestExecutionError("Synthetic dataset exceeds its limit")
 
-        return tuple(
+        candles = tuple(
             Candle(
                 timestamp=start + timedelta(hours=index),
                 open=close,
@@ -40,21 +49,27 @@ class SyntheticMarketDataProvider:
             )
             for index, close in enumerate(closes)
         )
+        return MarketDataBatch(
+            candles=candles,
+            provider_code=self.identifier,
+            dataset_reference="synthetic-reference-candles-v1",
+            fetched_at=datetime.now(timezone.utc),
+            timeframe=request.timeframe,
+            actual_range_start=candles[0].timestamp,
+            actual_range_end=candles[-1].timestamp,
+            adjustment_policy=request.adjustment_policy,
+            provenance={
+                "generator": "tradeebh-deterministic-reference",
+                "generator_version": 1,
+                "candle_count": len(candles),
+                "synthetic": True,
+            },
+        )
 
     @staticmethod
-    def _start_timestamp(backtest_configuration: dict) -> datetime:
-        start_date = backtest_configuration.get("start_date")
-        if start_date is None:
-            return datetime(2025, 1, 1, tzinfo=timezone.utc)
-
-        try:
-            parsed = datetime.fromisoformat(str(start_date).replace("Z", "+00:00"))
-        except ValueError as exc:
-            raise BacktestExecutionError("Invalid synthetic start_date") from exc
-
-        if parsed.tzinfo is None:
-            return parsed.replace(tzinfo=timezone.utc)
-        return parsed.astimezone(timezone.utc)
+    def _require_utc(value: datetime, label: str) -> None:
+        if value.tzinfo is None or value.utcoffset() != timedelta(0):
+            raise BacktestExecutionError(f"{label} must be UTC-aware")
 
     @staticmethod
     def _closes() -> tuple[Decimal, ...]:
