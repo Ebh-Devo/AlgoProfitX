@@ -1,0 +1,281 @@
+import { FormEvent, useRef, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link, useNavigate, useParams } from "react-router-dom";
+import { ApiError } from "../../api/client";
+import { investorApi } from "../../api/investor";
+import { marketplaceApi } from "../../api/marketplace";
+import { queryKeys } from "../../api/queryKeys";
+import { EmptyState, ErrorAlert, LoadingState } from "../../components/PageState";
+import { formatMoney, shortId, versionLabel } from "./presentation";
+
+const date = (value: string) =>
+  new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(value));
+const message = (error: unknown, fallback: string) => (error instanceof ApiError ? error.message : fallback);
+const Status = ({ value }: { value: string }) => <span className={`badge badge-${value}`}>{value}</span>;
+
+export function AllocationListPage() {
+  const client = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [strategyId, setStrategyId] = useState("");
+  const [amount, setAmount] = useState("");
+  const [currency, setCurrency] = useState("INR");
+  const [error, setError] = useState<string | null>(null);
+  const allocations = useQuery({
+    queryKey: queryKeys.allocations,
+    queryFn: investorApi.listAllocations,
+  });
+  const marketplace = useQuery({
+    queryKey: queryKeys.marketplaceList(100, 0),
+    queryFn: () => marketplaceApi.list(100, 0),
+    enabled: open,
+  });
+  const eligible = marketplace.data?.filter((item) => item.status === "deployed") ?? [];
+  const create = useMutation({
+    mutationFn: () =>
+      investorApi.createAllocation({
+        strategy_id: strategyId,
+        notional_amount: amount,
+        currency,
+      }),
+    onSuccess: async () => {
+      setOpen(false);
+      setAmount("");
+      setStrategyId("");
+      setError(null);
+      await client.invalidateQueries({ queryKey: queryKeys.allocations });
+    },
+    onError: (reason) => setError(message(reason, "Unable to create allocation.")),
+  });
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    setError(null);
+    if (!(Number(amount) > 0)) return setError("Notional amount must be greater than zero.");
+    if (!/^[A-Za-z]{3}$/.test(currency.trim())) return setError("Currency must be a three-letter code.");
+    create.mutate();
+  };
+  if (allocations.isLoading) return <LoadingState label="Loading allocations…" />;
+  if (allocations.isError) return <ErrorAlert>{message(allocations.error, "Unable to load allocations.")}</ErrorAlert>;
+  return (
+    <section>
+      <div className="page-heading">
+        <div>
+          <p className="eyebrow">Investor workspace</p>
+          <h1>Allocations</h1>
+          <p>Paper allocation intents pin the deployed Strategy Version selected by the server.</p>
+        </div>
+        <button className="button" onClick={() => setOpen(true)}>
+          Create allocation
+        </button>
+      </div>
+      {open && (
+        <form className="card form-stack investor-form" onSubmit={submit}>
+          <h2>Create allocation</h2>
+          {marketplace.isLoading ? (
+            <LoadingState label="Loading eligible strategies…" />
+          ) : (
+            <label>
+              Deployed strategy
+              <select required value={strategyId} onChange={(e) => setStrategyId(e.target.value)}>
+                <option value="">Select strategy</option>
+                {eligible.map((item) => (
+                  <option value={item.id} key={item.id}>
+                    {item.name} · Version {item.current_version_number ?? "current"}
+                  </option>
+                ))}
+              </select>
+              {!marketplace.isLoading && !eligible.length && <span className="field-help">No deployed public strategies are currently eligible.</span>}
+            </label>
+          )}
+          <label>
+            Notional amount
+            <input required type="number" min="0.00000001" step="0.00000001" value={amount} onChange={(e) => setAmount(e.target.value)} />
+          </label>
+          <label>
+            Currency
+            <input required minLength={3} maxLength={3} value={currency} onChange={(e) => setCurrency(e.target.value.toUpperCase())} />
+          </label>
+          {error && <ErrorAlert>{error}</ErrorAlert>}
+          <div className="inline-actions">
+            <button className="button" disabled={create.isPending || !eligible.length}>
+              Create allocation
+            </button>
+            <button type="button" className="button button-secondary" onClick={() => setOpen(false)}>
+              Cancel
+            </button>
+          </div>
+        </form>
+      )}
+      {!allocations.data?.length ? (
+        <EmptyState>No allocation intents yet.</EmptyState>
+      ) : (
+        <div className="card run-list">
+          {allocations.data.map((item) => (
+            <Link to={`/investor/allocations/${item.id}`} key={item.id}>
+              <div>
+                <strong>{formatMoney(item.notional_amount, item.currency)}</strong>
+                <small>
+                  {item.strategy_name} · {versionLabel(item.strategy_version_number)}
+                </small>
+              </div>
+              <Status value={item.status} />
+              <span>{date(item.created_at)}</span>
+            </Link>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+export function AllocationDetailPage() {
+  const { allocationId = "" } = useParams();
+  const navigate = useNavigate();
+  const client = useQueryClient();
+  const [edit, setEdit] = useState(false);
+  const [amount, setAmount] = useState("");
+  const [currency, setCurrency] = useState("");
+  const [confirm, setConfirm] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const deletionRequest = useRef<Promise<void> | null>(null);
+  const query = useQuery({
+    queryKey: queryKeys.allocation(allocationId),
+    queryFn: () => investorApi.getAllocation(allocationId),
+  });
+  const update = useMutation({
+    mutationFn: () =>
+      investorApi.updateAllocation(allocationId, {
+        notional_amount: amount,
+        currency,
+      }),
+    onSuccess: async () => {
+      setEdit(false);
+      setError(null);
+      await Promise.all([
+        client.invalidateQueries({
+          queryKey: queryKeys.allocation(allocationId),
+        }),
+        client.invalidateQueries({ queryKey: queryKeys.allocations }),
+      ]);
+    },
+    onError: (reason) => setError(message(reason, "Unable to update allocation.")),
+  });
+  const remove = useMutation({
+    mutationFn: () => {
+      if (!deletionRequest.current)
+        deletionRequest.current = investorApi.deleteAllocation(allocationId).finally(() => {
+          deletionRequest.current = null;
+        });
+      return deletionRequest.current;
+    },
+    onSuccess: async () => {
+      await client.invalidateQueries({ queryKey: queryKeys.allocations });
+      navigate("/investor/allocations");
+    },
+    onError: (reason) => setError(message(reason, "Unable to delete allocation.")),
+  });
+  const intent = useMutation({
+    mutationFn: () => investorApi.createExecutionIntent(allocationId),
+    onSuccess: async (result) => {
+      client.setQueryData(queryKeys.executionIntent(result.id), result);
+      await client.invalidateQueries({ queryKey: queryKeys.executionIntents });
+      navigate(`/investor/execution-intents/${result.id}`);
+    },
+    onError: (reason) => setError(message(reason, "Unable to create execution intent.")),
+  });
+  if (query.isLoading) return <LoadingState label="Loading allocation…" />;
+  if (query.isError || !query.data) return <ErrorAlert>{query.error instanceof ApiError && query.error.status === 404 ? "Allocation not found." : "Unable to load allocation."}</ErrorAlert>;
+  const allocation = query.data;
+  const beginEdit = () => {
+    setAmount(allocation.notional_amount);
+    setCurrency(allocation.currency);
+    setEdit(true);
+  };
+  return (
+    <section>
+      <Link to="/investor/allocations">← Allocations</Link>
+      <div className="page-heading">
+        <div>
+          <p className="eyebrow">Pinned paper allocation</p>
+          <div className="card-title-row">
+            <h1>{formatMoney(allocation.notional_amount, allocation.currency)}</h1>
+            <Status value={allocation.status} />
+          </div>
+        </div>
+        <button className="button" onClick={() => intent.mutate()} disabled={intent.isPending}>
+          Create Execution Intent
+        </button>
+      </div>
+      <div className="card">
+        <dl className="details-list">
+          <dt>Strategy</dt>
+          <dd>
+            {allocation.strategy_name}
+            <small className="identity-meta">ID {shortId(allocation.strategy_id)}</small>
+          </dd>
+          <dt>Pinned Version</dt>
+          <dd>
+            {versionLabel(allocation.strategy_version_number)}
+            <small className="identity-meta">ID {shortId(allocation.strategy_version_id)}</small>
+          </dd>
+          <dt>Created</dt>
+          <dd>{date(allocation.created_at)}</dd>
+          <dt>Updated</dt>
+          <dd>{date(allocation.updated_at)}</dd>
+        </dl>
+      </div>
+      {edit ? (
+        <form
+          className="card form-stack investor-form"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (!(Number(amount) > 0)) return setError("Notional amount must be greater than zero.");
+            if (!/^[A-Za-z]{3}$/.test(currency)) return setError("Currency must be a three-letter code.");
+            update.mutate();
+          }}
+        >
+          <h2>Edit amount and currency</h2>
+          <label>
+            Notional amount
+            <input type="number" min="0.00000001" step="0.00000001" value={amount} onChange={(e) => setAmount(e.target.value)} />
+          </label>
+          <label>
+            Currency
+            <input minLength={3} maxLength={3} value={currency} onChange={(e) => setCurrency(e.target.value.toUpperCase())} />
+          </label>
+          <div className="inline-actions">
+            <button className="button">Save allocation</button>
+            <button type="button" className="button button-secondary" onClick={() => setEdit(false)}>
+              Cancel
+            </button>
+          </div>
+        </form>
+      ) : (
+        <button className="button button-secondary" onClick={beginEdit}>
+          Edit allocation
+        </button>
+      )}
+      {error && <ErrorAlert>{error}</ErrorAlert>}
+      <div className="danger-zone card">
+        <h2>Delete allocation</h2>
+        <p>Allocations with execution history cannot be deleted.</p>
+        {confirm ? (
+          <div className="inline-actions">
+            <button className="button button-danger" onClick={() => remove.mutate()}>
+              Delete permanently
+            </button>
+            <button className="button button-secondary" onClick={() => setConfirm(false)}>
+              Cancel
+            </button>
+          </div>
+        ) : (
+          <button className="button button-danger" onClick={() => setConfirm(true)}>
+            Delete allocation
+          </button>
+        )}
+      </div>
+    </section>
+  );
+}

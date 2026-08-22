@@ -18,7 +18,6 @@ class StrategyCreateRequest(BaseModel):
         pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$",
     )
     description: str | None = None
-    is_public: bool = False
 
 
 class StrategyUpdateRequest(BaseModel):
@@ -34,7 +33,6 @@ class StrategyUpdateRequest(BaseModel):
         pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$",
     )
     description: str | None = None
-    is_public: bool | None = None
 
 
 class StrategyResponse(BaseModel):

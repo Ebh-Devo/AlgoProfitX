@@ -1,6 +1,6 @@
 import uuid
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 
 class RegisterRequest(BaseModel):
@@ -21,6 +21,12 @@ class UserResponse(BaseModel):
     email: EmailStr
     is_active: bool
     is_verified: bool
+    roles: list[str]
+
+    @field_validator("roles", mode="before")
+    @classmethod
+    def serialize_roles(cls, roles: object) -> list[str]:
+        return sorted(role.name for role in roles)
 
 
 class TokenResponse(BaseModel):

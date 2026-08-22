@@ -8,9 +8,11 @@ from sqlalchemy import (
     DateTime,
     Enum,
     ForeignKey,
+    ForeignKeyConstraint,
     Integer,
     String,
     Text,
+    UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -28,6 +30,14 @@ class StrategyStatus(str, enum.Enum):
 
 class Strategy(Base):
     __tablename__ = "strategies"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["id", "current_version_id"],
+            ["strategy_versions.strategy_id", "strategy_versions.id"],
+            name="fk_strategies_current_version_same_strategy",
+            ondelete="SET NULL (current_version_id)",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         primary_key=True,
@@ -77,10 +87,6 @@ class Strategy(Base):
     )
 
     current_version_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey(
-            "strategy_versions.id",
-            ondelete="SET NULL",
-        ),
         nullable=True,
     )
 
@@ -117,6 +123,18 @@ class Strategy(Base):
 
 class StrategyVersion(Base):
     __tablename__ = "strategy_versions"
+    __table_args__ = (
+        UniqueConstraint(
+            "strategy_id",
+            "version_number",
+            name="uq_strategy_versions_strategy_id_version_number",
+        ),
+        UniqueConstraint(
+            "strategy_id",
+            "id",
+            name="uq_strategy_versions_strategy_id_id",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         primary_key=True,

@@ -1,0 +1,16 @@
+export const queryKeys = {
+  marketplace: ["marketplace"] as const,
+  marketplaceList: (limit: number, offset: number) => ["marketplace", limit, offset] as const,
+  marketplaceDetail: (slug: string) => ["marketplace", slug] as const,
+  strategies: ["creator-strategies"] as const,
+  strategy: (id: string) => ["creator-strategy", id] as const,
+  versions: (strategyId: string) => ["strategy-versions", strategyId] as const,
+  version: (strategyId: string, versionId: string) => ["strategy-version", strategyId, versionId] as const,
+  backtests: (strategyId: string, versionId: string) => ["backtests", strategyId, versionId] as const,
+  backtest: (strategyId: string, versionId: string, backtestId: string) => ["backtest", strategyId, versionId, backtestId] as const,
+  backtestAnalytics: (strategyId: string, versionId: string, backtestId: string) => ["backtest-analytics", strategyId, versionId, backtestId] as const,
+  allocations: ["allocations"] as const,
+  allocation: (id: string) => ["allocation", id] as const,
+  executionIntents: ["execution-intents"] as const,
+  executionIntent: (id: string) => ["execution-intent", id] as const,
+};
