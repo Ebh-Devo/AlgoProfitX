@@ -5,6 +5,7 @@ import { RequireAuth, RequireCreator, RequireInvestor } from "../auth/guards";
 import { AppShell } from "../components/AppShell";
 import { AccountPage, AppPage, CreatorEnrollPage } from "../features/account/AccountPages";
 import { LoginPage, RegisterPage } from "../features/account/AuthPages";
+import { HomePage, NotFoundPage } from "../features/home/HomePage";
 import { MarketplaceDetailPage, MarketplaceListPage } from "../features/marketplace/MarketplacePages";
 import { LoadingState } from "../components/PageState";
 
@@ -25,12 +26,6 @@ const ExecutionIntentListPage = lazy(async () => ({ default: (await investorExec
 function deferred(page: ReactNode) {
   return <Suspense fallback={<LoadingState label="Loading page…" />}>{page}</Suspense>;
 }
-
-function HomePage() {
-  return <section className="hero"><p className="eyebrow">Strategy marketplace</p><h1>Build, discover, and evaluate systematic strategies.</h1><p className="lead">TradeEBH separates creator strategy work from investor discovery. Paper Execution is synthetic reference infrastructure, not real NSE data or live broker execution.</p></section>;
-}
-
-function NotFoundPage() { return <section><h1>Page not found</h1></section>; }
 
 export const router = createBrowserRouter([
   { path: "/", element: <AppShell />, children: [

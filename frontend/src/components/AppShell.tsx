@@ -17,12 +17,26 @@ export function AppShell() {
   return (
     <div className="app-shell">
       <header className="site-header">
-        <Link className="brand" to="/">TradeEBH</Link>
+        <Link className="brand" to="/">
+          <span className="brand-mark" aria-hidden="true" />
+          TradeEBH
+        </Link>
         <nav aria-label="Primary navigation">
           <NavLink to="/marketplace">Marketplace</NavLink>
           {isAuthenticated && <NavLink to="/app">Workspace</NavLink>}
-          {creator && <><NavLink to="/creator/strategies">Strategies</NavLink><span className="role-nav">Creator</span></>}
-          {investor && <><NavLink to="/investor/allocations">Allocations</NavLink><NavLink to="/investor/execution-intents">Executions</NavLink><span className="role-nav">Investor</span></>}
+          {creator && (
+            <>
+              <NavLink to="/creator/strategies">Strategies</NavLink>
+              <span className="role-nav">Creator</span>
+            </>
+          )}
+          {investor && (
+            <>
+              <NavLink to="/investor/allocations">Allocations</NavLink>
+              <NavLink to="/investor/execution-intents">Executions</NavLink>
+              <span className="role-nav">Investor</span>
+            </>
+          )}
         </nav>
         <div className="header-actions">
           {isAuthenticated ? (
@@ -39,6 +53,9 @@ export function AppShell() {
         </div>
       </header>
       <main className="page-container"><Outlet /></main>
+      <footer className="site-footer">
+        Paper execution uses synthetic NSE/INR reference data · <span>TradeEBH</span>
+      </footer>
     </div>
   );
 }

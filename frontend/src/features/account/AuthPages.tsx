@@ -1,5 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useForm } from "react-hook-form";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { z } from "zod";
@@ -30,6 +30,32 @@ function applyFieldErrors<T extends Record<string, unknown>>(
   });
 }
 
+function AuthFrame({
+  title,
+  body,
+  children,
+}: {
+  title: string;
+  body: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="auth-layout">
+      <aside className="auth-aside">
+        <p className="eyebrow">TradeEBH</p>
+        <h2>{title}</h2>
+        <p className="lead">{body}</p>
+        <ul className="auth-points">
+          <li><strong>Investor from day one</strong>Discover published strategies and paper allocations.</li>
+          <li><strong>Creator when you are ready</strong>Enrollment keeps your existing investor role.</li>
+          <li><strong>Reference infrastructure</strong>Synthetic NSE/INR data only — never live capital.</li>
+        </ul>
+      </aside>
+      {children}
+    </div>
+  );
+}
+
 export function LoginPage() {
   const { login } = useAuth();
   const navigate = useNavigate();
@@ -51,17 +77,23 @@ export function LoginPage() {
     }
   });
 
-  return <section className="auth-card card"><h1>Log in</h1><p>Access your TradeEBH workspace.</p>
-    {error && <ErrorAlert>{error}</ErrorAlert>}
-    <form onSubmit={submit} noValidate>
-      <label>Email<input type="email" autoComplete="email" {...form.register("email")} /></label>
-      {form.formState.errors.email && <small>{form.formState.errors.email.message}</small>}
-      <label>Password<input type="password" autoComplete="current-password" {...form.register("password")} /></label>
-      {form.formState.errors.password && <small>{form.formState.errors.password.message}</small>}
-      <button className="button" disabled={form.formState.isSubmitting}>Log in</button>
-    </form>
-    <p>New to TradeEBH? <Link to="/register">Create an account</Link>.</p>
-  </section>;
+  return (
+    <AuthFrame title="Return to your workspace." body="Access creator tools, marketplace discovery, and paper execution from one account.">
+      <section className="auth-card card">
+        <h1>Log in</h1>
+        <p>Access your TradeEBH workspace.</p>
+        {error && <ErrorAlert>{error}</ErrorAlert>}
+        <form onSubmit={submit} noValidate>
+          <label>Email<input type="email" autoComplete="email" {...form.register("email")} /></label>
+          {form.formState.errors.email && <small>{form.formState.errors.email.message}</small>}
+          <label>Password<input type="password" autoComplete="current-password" {...form.register("password")} /></label>
+          {form.formState.errors.password && <small>{form.formState.errors.password.message}</small>}
+          <button className="button" disabled={form.formState.isSubmitting}>Log in</button>
+        </form>
+        <p>New to TradeEBH? <Link to="/register">Create an account</Link>.</p>
+      </section>
+    </AuthFrame>
+  );
 }
 
 export function RegisterPage() {
@@ -80,17 +112,23 @@ export function RegisterPage() {
       } else setError("Unable to create the account. Please try again.");
     }
   });
-  return <section className="auth-card card"><h1>Create account</h1><p>New accounts begin with the Investor role.</p>
-    {error && <ErrorAlert>{error}</ErrorAlert>}
-    <form onSubmit={submit} noValidate>
-      <label>Name (optional)<input autoComplete="name" {...form.register("full_name")} /></label>
-      {form.formState.errors.full_name && <small>{form.formState.errors.full_name.message}</small>}
-      <label>Email<input type="email" autoComplete="email" {...form.register("email")} /></label>
-      {form.formState.errors.email && <small>{form.formState.errors.email.message}</small>}
-      <label>Password<input type="password" autoComplete="new-password" {...form.register("password")} /></label>
-      {form.formState.errors.password && <small>{form.formState.errors.password.message}</small>}
-      <button className="button" disabled={form.formState.isSubmitting}>Create account</button>
-    </form>
-    <p>Already registered? <Link to="/login">Log in</Link>.</p>
-  </section>;
+  return (
+    <AuthFrame title="Open an investor workspace." body="Create an account to browse strategies and pin paper allocations. Live trading is not part of this MVP.">
+      <section className="auth-card card">
+        <h1>Create account</h1>
+        <p>New accounts begin with the Investor role.</p>
+        {error && <ErrorAlert>{error}</ErrorAlert>}
+        <form onSubmit={submit} noValidate>
+          <label>Name (optional)<input autoComplete="name" {...form.register("full_name")} /></label>
+          {form.formState.errors.full_name && <small>{form.formState.errors.full_name.message}</small>}
+          <label>Email<input type="email" autoComplete="email" {...form.register("email")} /></label>
+          {form.formState.errors.email && <small>{form.formState.errors.email.message}</small>}
+          <label>Password<input type="password" autoComplete="new-password" {...form.register("password")} /></label>
+          {form.formState.errors.password && <small>{form.formState.errors.password.message}</small>}
+          <button className="button" disabled={form.formState.isSubmitting}>Create account</button>
+        </form>
+        <p>Already registered? <Link to="/login">Log in</Link>.</p>
+      </section>
+    </AuthFrame>
+  );
 }
