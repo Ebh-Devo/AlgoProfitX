@@ -22,6 +22,8 @@ class ExecutionIntentResponse(BaseModel):
     investor_user_id: uuid.UUID
     strategy_id: uuid.UUID
     strategy_version_id: uuid.UUID
+    strategy_name: str
+    strategy_version_number: int
     notional_amount_snapshot: Decimal
     currency_snapshot: str
     mode: str

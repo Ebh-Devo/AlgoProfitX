@@ -71,6 +71,8 @@ class AllocationResponse(BaseModel):
     investor_user_id: uuid.UUID
     strategy_id: uuid.UUID
     strategy_version_id: uuid.UUID
+    strategy_name: str
+    strategy_version_number: int
     notional_amount: Decimal
     currency: str
     status: AllocationStatus

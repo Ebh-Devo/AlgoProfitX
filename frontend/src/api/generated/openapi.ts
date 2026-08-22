@@ -458,6 +458,10 @@ export interface components {
              * Format: uuid
              */
             strategy_version_id: string;
+            /** Strategy Name */
+            strategy_name: string;
+            /** Strategy Version Number */
+            strategy_version_number: number;
             /** Notional Amount */
             notional_amount: string;
             /** Currency */
@@ -611,6 +615,10 @@ export interface components {
              * Format: uuid
              */
             strategy_version_id: string;
+            /** Strategy Name */
+            strategy_name: string;
+            /** Strategy Version Number */
+            strategy_version_number: number;
             /** Notional Amount Snapshot */
             notional_amount_snapshot: string;
             /** Currency Snapshot */

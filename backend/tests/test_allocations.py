@@ -65,6 +65,8 @@ async def test_investor_creates_persisted_allocation_pinned_to_current_version(c
     allocation = response.json()
     assert allocation["strategy_id"] == strategy["id"]
     assert allocation["strategy_version_id"] == first_version["id"]
+    assert allocation["strategy_name"] == strategy["name"]
+    assert allocation["strategy_version_number"] == first_version["version_number"]
     assert allocation["notional_amount"] == "1000.50000000"
     assert allocation["currency"] == "USD"
     assert allocation["status"] == "active"
@@ -90,6 +92,8 @@ async def test_investor_creates_persisted_allocation_pinned_to_current_version(c
     )
     assert response.status_code == 200
     assert response.json()["strategy_version_id"] == first_version["id"]
+    assert response.json()["strategy_name"] == strategy["name"]
+    assert response.json()["strategy_version_number"] == first_version["version_number"]
 
     async with AsyncSessionLocal() as session:
         persisted = await session.scalar(

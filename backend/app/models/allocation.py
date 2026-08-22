@@ -10,12 +10,14 @@ from sqlalchemy import (
     ForeignKey,
     ForeignKeyConstraint,
     Numeric,
+    select,
     String,
 )
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, column_property, mapped_column
 from sqlalchemy.sql import func
 
 from app.db.base import Base
+from app.models.strategy import Strategy, StrategyVersion
 
 
 class AllocationStatus(str, enum.Enum):
@@ -59,6 +61,15 @@ class AllocationIntent(Base):
     )
 
     strategy_version_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
+
+    strategy_name: Mapped[str] = column_property(
+        select(Strategy.name).where(Strategy.id == strategy_id).scalar_subquery()
+    )
+    strategy_version_number: Mapped[int] = column_property(
+        select(StrategyVersion.version_number)
+        .where(StrategyVersion.id == strategy_version_id)
+        .scalar_subquery()
+    )
 
     notional_amount: Mapped[Decimal] = mapped_column(
         Numeric(18, 8),

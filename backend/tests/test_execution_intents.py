@@ -49,6 +49,8 @@ async def test_investor_creates_persisted_pending_paper_intent_with_snapshots(cl
     assert intent["allocation_intent_id"] == allocation["id"]
     assert intent["strategy_id"] == strategy["id"]
     assert intent["strategy_version_id"] == version["id"]
+    assert intent["strategy_name"] == strategy["name"]
+    assert intent["strategy_version_number"] == version["version_number"]
     assert intent["notional_amount_snapshot"] == "1000.50000000"
     assert intent["currency_snapshot"] == "USD"
     assert intent["mode"] == "paper"
