@@ -4,6 +4,7 @@ from decimal import Decimal
 from typing import Protocol, Sequence
 
 from app.backtesting.contracts import Candle
+from app.market_calendar.contracts import TradingSession
 
 
 @dataclass(frozen=True)
@@ -22,7 +23,7 @@ class PaperExecutionResult:
 class PaperMarketDataProvider(Protocol):
     identifier: str
 
-    def load(self, configuration: dict, instrument: dict) -> Sequence[Candle]: ...
+    def load(self, configuration: dict, instrument: dict, session: TradingSession) -> Sequence[Candle]: ...
 
 
 class PaperExecutionAdapter(Protocol):

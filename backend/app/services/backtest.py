@@ -1,7 +1,7 @@
 import uuid
 import json
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 from sqlalchemy import select
@@ -18,7 +18,10 @@ from app.backtesting.reference import (
     SyntheticMarketDataProvider,
 )
 from app.models.backtest import Backtest, BacktestStatus
+from app.models.instrument import Exchange
 from app.models.strategy import StrategyVersion
+from app.market_calendar.contracts import CalendarError
+from app.market_calendar.reference import IndianReferenceTradingCalendar
 from app.schemas.backtest import BacktestCreateRequest
 
 
@@ -108,7 +111,7 @@ async def execute_backtest(
     engine = EmaCrossoverReferenceEngine(provider.identifier)
 
     try:
-        batch = provider.load(_historical_request(backtest))
+        batch = provider.load(await _historical_request(session, backtest))
         await _persist_market_data_batch(session, backtest_id, batch)
         result = engine.run(
             backtest.configuration_snapshot,
@@ -236,6 +239,8 @@ def _instrument_snapshot(strategy_version: StrategyVersion) -> dict | None:
         "tick_size": format(instrument.tick_size, "f") if instrument.tick_size is not None else None,
         "lot_size": instrument.lot_size,
         "is_tradeable": instrument.is_tradeable,
+        "exchange_timezone": instrument.exchange.timezone,
+        "exchange_is_active": instrument.exchange.is_active,
     }
 
 
@@ -258,7 +263,7 @@ def _configuration_datetime(value: object) -> datetime | None:
     return parsed.astimezone(timezone.utc)
 
 
-def _historical_request(backtest: Backtest) -> HistoricalCandleRequest:
+async def _historical_request(session: AsyncSession, backtest: Backtest) -> HistoricalCandleRequest:
     snapshot = backtest.instrument_snapshot
     if snapshot is None:
         if backtest.configuration_snapshot.get("instrument") != "TRADEEBH_TEST_EQ":
@@ -274,16 +279,37 @@ def _historical_request(backtest: Backtest) -> HistoricalCandleRequest:
             tick_size="0.01",
             lot_size=1,
             is_tradeable=True,
+            exchange_timezone="Asia/Kolkata",
+            exchange_is_active=True,
         )
     else:
         identity = InstrumentIdentity(id=str(backtest.instrument_id), **snapshot)
+    exchange_result = await session.execute(
+        select(Exchange).where(Exchange.code == identity.exchange_code)
+    )
+    exchange = exchange_result.scalar_one_or_none()
+    if exchange is None:
+        raise BacktestExecutionError("Historical request Exchange is unavailable")
+    calendar = IndianReferenceTradingCalendar()
+    start = backtest.range_start or datetime(2025, 1, 1, tzinfo=timezone.utc)
+    end = backtest.range_end or start + timedelta(days=30)
+    try:
+        sessions = calendar.sessions_between(exchange, start, end)
+    except CalendarError as exc:
+        raise BacktestExecutionError(str(exc)) from exc
+    if not sessions:
+        raise BacktestExecutionError("Historical request contains no trading sessions")
     return HistoricalCandleRequest(
         instrument=identity,
         timeframe=backtest.timeframe or "1h",
         start=backtest.range_start,
         end=backtest.range_end,
         adjustment_policy=backtest.adjustment_policy or "unadjusted",
-        metadata={"requested_reference": backtest.market_data_reference},
+        sessions=sessions,
+        metadata={
+            "requested_reference": backtest.market_data_reference,
+            "calendar": calendar.provenance(exchange, sessions),
+        },
     )
 
 

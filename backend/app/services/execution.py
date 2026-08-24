@@ -11,7 +11,9 @@ from sqlalchemy.orm import joinedload
 
 from app.models.allocation import AllocationIntent, AllocationStatus
 from app.models.execution import ExecutionIntent, ExecutionStatus
-from app.models.instrument import Instrument
+from app.models.instrument import Exchange, Instrument
+from app.market_calendar.contracts import CalendarError, TradingSession
+from app.market_calendar.reference import IndianReferenceTradingCalendar
 from app.models.strategy import Strategy, StrategyStatus, StrategyVersion
 from app.paper_execution.contracts import PaperExecutionError
 from app.paper_execution.reference import (
@@ -153,7 +155,8 @@ async def execute_paper_execution_intent(
         adapter = EmaCrossoverPaperAdapter(provider.identifier)
         instrument = await _execution_instrument_snapshot(session, execution_intent, version)
         adapter.validate_instrument(instrument, execution_intent.currency_snapshot)
-        candles = provider.load(version.configuration, instrument)
+        reference_session = await _paper_reference_session(session, instrument)
+        candles = provider.load(version.configuration, instrument, reference_session)
         result = adapter.execute(
             version.configuration,
             instrument,
@@ -404,6 +407,33 @@ def _instrument_snapshot(instrument: Instrument) -> dict:
         "lot_size": instrument.lot_size,
         "is_tradeable": instrument.is_tradeable,
     }
+
+
+async def _paper_reference_session(
+    session: AsyncSession, instrument: dict
+) -> TradingSession:
+    result = await session.execute(
+        select(Exchange).where(Exchange.code == instrument.get("exchange_code"))
+    )
+    exchange = result.scalar_one_or_none()
+    if exchange is None:
+        raise PaperExecutionError(
+            "exchange_unavailable", "Instrument Exchange is unavailable"
+        )
+    calendar = IndianReferenceTradingCalendar()
+    try:
+        sessions = calendar.sessions_between(
+            exchange,
+            datetime(2025, 1, 1, tzinfo=timezone.utc),
+            datetime(2025, 1, 2, tzinfo=timezone.utc),
+        )
+    except CalendarError as exc:
+        raise PaperExecutionError("calendar_unavailable", str(exc)) from exc
+    if not sessions:
+        raise PaperExecutionError(
+            "calendar_unavailable", "No reference trading session is available"
+        )
+    return sessions[0]
 
 
 async def _mark_execution_intent_completed(

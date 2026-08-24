@@ -7,6 +7,7 @@ from app.paper_execution.contracts import (
     PaperExecutionError,
     PaperExecutionResult,
 )
+from app.market_calendar.contracts import TradingSession
 
 
 class SyntheticPaperMarketDataProvider:
@@ -15,7 +16,9 @@ class SyntheticPaperMarketDataProvider:
     identifier = "synthetic-paper-nse-equity-v1"
     max_candles = 64
 
-    def load(self, configuration: dict, instrument: dict) -> Sequence[Candle]:
+    def load(
+        self, configuration: dict, instrument: dict, session: TradingSession
+    ) -> Sequence[Candle]:
         if instrument.get("canonical_symbol") != "TRADEEBH_TEST_EQ":
             raise PaperExecutionError(
                 "unsupported_instrument",
@@ -29,19 +32,9 @@ class SyntheticPaperMarketDataProvider:
                 "Synthetic paper dataset exceeds its limit",
             )
 
-        # NSE-style 09:15 local time represented canonically as 03:45 UTC.
-        local_start = datetime(
-            2025,
-            1,
-            1,
-            9,
-            15,
-            tzinfo=timezone(timedelta(hours=5, minutes=30)),
-        )
-        start = local_start.astimezone(timezone.utc)
-        return tuple(
+        candles = tuple(
             Candle(
-                timestamp=start + timedelta(hours=index),
+                timestamp=session.open_utc + timedelta(minutes=30 * index),
                 open=close,
                 high=close + Decimal(str(instrument["tick_size"])),
                 low=close - Decimal(str(instrument["tick_size"])),
@@ -50,6 +43,12 @@ class SyntheticPaperMarketDataProvider:
             )
             for index, close in enumerate(closes)
         )
+        if any(candle.timestamp >= session.close_utc for candle in candles):
+            raise PaperExecutionError(
+                "provider_reference_data_failure",
+                "Synthetic paper dataset exceeds the canonical trading session",
+            )
+        return candles
 
     @staticmethod
     def _closes(scenario: object) -> tuple[Decimal, ...]:

@@ -122,12 +122,12 @@ async def test_paper_execution_completes_with_deterministic_bounded_buy_result(c
             "quantity": "9",
             "requested_price": "108.00",
             "reference_price": "108.00",
-            "timestamp": "2025-01-01T11:45:00+00:00",
+            "timestamp": "2025-01-01T07:45:00+00:00",
         },
         "fill": {
             "quantity": "9",
             "price": "108.00",
-            "timestamp": "2025-01-01T11:45:00+00:00",
+            "timestamp": "2025-01-01T07:45:00+00:00",
         },
         "position": {"quantity": "9", "average_price": "108.00"},
     }
@@ -147,7 +147,7 @@ async def test_paper_execution_completes_with_deterministic_bounded_buy_result(c
     assert fill_timestamp.tzinfo is not None
     assert fill_timestamp.utcoffset() == timezone.utc.utcoffset(fill_timestamp)
     india_standard_time = timezone(timedelta(hours=5, minutes=30))
-    assert fill_timestamp.astimezone(india_standard_time).isoformat() == "2025-01-01T17:15:00+05:30"
+    assert fill_timestamp.astimezone(india_standard_time).isoformat() == "2025-01-01T13:15:00+05:30"
 
 
 @pytest.mark.asyncio

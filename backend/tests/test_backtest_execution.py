@@ -18,6 +18,8 @@ from app.backtesting.contracts import (
 )
 from app.backtesting.reference import SyntheticMarketDataProvider
 from app.models.strategy import StrategyVersion
+from app.market_calendar.reference import IndianReferenceTradingCalendar
+from app.models.instrument import Exchange
 
 
 @pytest_asyncio.fixture
@@ -152,8 +154,8 @@ async def test_execute_claims_queued_backtest_then_completes_with_bounded_result
     assert completed["market_data_provider"] == "synthetic-local-v1"
     assert completed["dataset_reference"] == "synthetic-reference-candles-v1"
     assert completed["timeframe"] == "1h"
-    assert completed["range_start"] == "2025-01-01T00:00:00Z"
-    assert completed["range_end"] == "2025-01-03T15:00:00Z"
+    assert completed["range_start"] == "2025-01-01T03:45:00Z"
+    assert completed["range_end"] == "2025-01-14T03:45:00Z"
     assert completed["adjustment_policy"] == "unadjusted"
     assert completed["data_fetched_at"].endswith("Z")
     assert completed["market_data_provenance"] == {
@@ -161,6 +163,17 @@ async def test_execute_claims_queued_backtest_then_completes_with_bounded_result
         "generator_version": 1,
         "candle_count": 64,
         "synthetic": True,
+        "calendar": {
+            "calendar_identifier": "indian-cash-reference-calendar",
+            "calendar_policy_version": "v1",
+            "exception_manifest_version": "indian-reference-exceptions-v1",
+            "exchange_code": "NSE",
+            "exchange_timezone": "Asia/Kolkata",
+            "regular_local_open": "09:15",
+            "regular_local_close": "15:30",
+            "session_count": 22,
+            "holiday_policy": "weekdays-plus-explicit-reference-exceptions",
+        },
     }
     assert len(completed["result_summary"]["trades"]) <= 100
     assert len(completed["result_summary"]["equity_curve"]) <= 256
@@ -329,6 +342,14 @@ def test_synthetic_provider_requires_canonical_identity_and_utc_request():
         tick_size="0.01",
         lot_size=1,
         is_tradeable=True,
+        exchange_timezone="Asia/Kolkata",
+        exchange_is_active=True,
+    )
+    nse = Exchange(code="NSE", timezone="Asia/Kolkata", is_active=True)
+    sessions = IndianReferenceTradingCalendar().sessions_between(
+        nse,
+        datetime(2025, 1, 1, tzinfo=timezone.utc),
+        datetime(2025, 2, 1, tzinfo=timezone.utc),
     )
     request = HistoricalCandleRequest(
         instrument=identity,
@@ -336,6 +357,7 @@ def test_synthetic_provider_requires_canonical_identity_and_utc_request():
         start=datetime(2025, 1, 1, tzinfo=timezone.utc),
         end=None,
         adjustment_policy="unadjusted",
+        sessions=sessions,
         metadata={},
     )
     batch = provider.load(request)
@@ -343,6 +365,10 @@ def test_synthetic_provider_requires_canonical_identity_and_utc_request():
     assert batch.dataset_reference == "synthetic-reference-candles-v1"
     assert batch.fetched_at.tzinfo is timezone.utc
     assert all(candle.timestamp.tzinfo is timezone.utc for candle in batch.candles)
+    assert all(
+        any(session.open_utc <= candle.timestamp < session.close_utc for session in sessions)
+        for candle in batch.candles
+    )
     assert batch.provenance["synthetic"] is True
 
     with pytest.raises(BacktestExecutionError, match="must be UTC-aware"):
@@ -353,6 +379,7 @@ def test_synthetic_provider_requires_canonical_identity_and_utc_request():
                 start=datetime(2025, 1, 1),
                 end=None,
                 adjustment_policy="unadjusted",
+                sessions=sessions,
                 metadata={},
             )
         )
@@ -366,6 +393,7 @@ def test_synthetic_provider_requires_canonical_identity_and_utc_request():
                 start=datetime(2025, 1, 1, tzinfo=timezone.utc),
                 end=None,
                 adjustment_policy="unadjusted",
+                sessions=sessions,
                 metadata={},
             )
         )

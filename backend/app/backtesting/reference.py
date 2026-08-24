@@ -38,9 +38,20 @@ class SyntheticMarketDataProvider:
         if len(closes) > self.max_candles:
             raise BacktestExecutionError("Synthetic dataset exceeds its limit")
 
+        timestamps = tuple(
+            timestamp
+            for session in request.sessions
+            for timestamp in self._session_timestamps(
+                session.open_utc, session.close_utc
+            )
+        )[: len(closes)]
+        if len(timestamps) < len(closes):
+            raise BacktestExecutionError(
+                "Historical request has insufficient trading-session coverage"
+            )
         candles = tuple(
             Candle(
-                timestamp=start + timedelta(hours=index),
+                timestamp=timestamps[index],
                 open=close,
                 high=close + Decimal("0.5"),
                 low=close - Decimal("0.5"),
@@ -63,8 +74,20 @@ class SyntheticMarketDataProvider:
                 "generator_version": 1,
                 "candle_count": len(candles),
                 "synthetic": True,
+                "calendar": request.metadata.get("calendar"),
             },
         )
+
+    @staticmethod
+    def _session_timestamps(
+        open_utc: datetime, close_utc: datetime
+    ) -> tuple[datetime, ...]:
+        timestamps: list[datetime] = []
+        current = open_utc
+        while current < close_utc:
+            timestamps.append(current)
+            current += timedelta(hours=1)
+        return tuple(timestamps)
 
     @staticmethod
     def _require_utc(value: datetime, label: str) -> None:

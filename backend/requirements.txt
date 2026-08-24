@@ -12,3 +12,4 @@ httpx
 pytest
 pytest-asyncio
 email-validator
+tzdata

@@ -3,6 +3,8 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any, Protocol, Sequence
 
+from app.market_calendar.contracts import TradingSession
+
 
 @dataclass(frozen=True)
 class Candle:
@@ -26,6 +28,8 @@ class InstrumentIdentity:
     tick_size: str | None
     lot_size: int | None
     is_tradeable: bool
+    exchange_timezone: str
+    exchange_is_active: bool
 
 
 @dataclass(frozen=True)
@@ -35,6 +39,7 @@ class HistoricalCandleRequest:
     start: datetime | None
     end: datetime | None
     adjustment_policy: str
+    sessions: tuple[TradingSession, ...]
     metadata: dict[str, Any]
 
 
