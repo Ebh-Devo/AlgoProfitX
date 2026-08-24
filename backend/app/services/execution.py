@@ -1,4 +1,5 @@
 import uuid
+from copy import deepcopy
 from datetime import datetime, timezone
 from decimal import Decimal
 import json
@@ -6,9 +7,11 @@ import json
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import joinedload
 
 from app.models.allocation import AllocationIntent, AllocationStatus
 from app.models.execution import ExecutionIntent, ExecutionStatus
+from app.models.instrument import Instrument
 from app.models.strategy import Strategy, StrategyStatus, StrategyVersion
 from app.paper_execution.contracts import PaperExecutionError
 from app.paper_execution.reference import (
@@ -61,12 +64,19 @@ async def create_execution_intent(
     if allocation.status != AllocationStatus.ACTIVE:
         raise ExecutionIntentEligibilityError("Allocation is not active")
 
-    await _require_eligible_strategy(session, allocation)
+    version = await _require_eligible_strategy(session, allocation)
+    instrument = await _canonical_instrument_for_version(session, version)
+    if instrument is None:
+        raise ExecutionIntentEligibilityError(
+            "Pinned Strategy Version Instrument is unresolved"
+        )
     execution_intent = ExecutionIntent(
         allocation_intent_id=allocation.id,
         investor_user_id=investor_user_id,
         strategy_id=allocation.strategy_id,
         strategy_version_id=allocation.strategy_version_id,
+        instrument_id=instrument.id,
+        instrument_snapshot=_instrument_snapshot(instrument),
         notional_amount_snapshot=allocation.notional_amount,
         currency_snapshot=allocation.currency,
         mode="paper",
@@ -141,9 +151,12 @@ async def execute_paper_execution_intent(
         )
         provider = SyntheticPaperMarketDataProvider()
         adapter = EmaCrossoverPaperAdapter(provider.identifier)
-        candles = provider.load(version.configuration)
+        instrument = await _execution_instrument_snapshot(session, execution_intent, version)
+        adapter.validate_instrument(instrument, execution_intent.currency_snapshot)
+        candles = provider.load(version.configuration, instrument)
         result = adapter.execute(
             version.configuration,
+            instrument,
             execution_intent.notional_amount_snapshot,
             execution_intent.currency_snapshot,
             candles,
@@ -241,7 +254,7 @@ async def _get_by_idempotency_key(
 async def _require_eligible_strategy(
     session: AsyncSession,
     allocation: AllocationIntent,
-) -> None:
+) -> StrategyVersion:
     strategy_result = await session.execute(
         select(Strategy).where(Strategy.id == allocation.strategy_id).with_for_update()
     )
@@ -256,15 +269,19 @@ async def _require_eligible_strategy(
         )
 
     version_result = await session.execute(
-        select(StrategyVersion).where(
+        select(StrategyVersion)
+        .where(
             StrategyVersion.id == allocation.strategy_version_id,
             StrategyVersion.strategy_id == allocation.strategy_id,
         )
+        .options(joinedload(StrategyVersion.instrument).joinedload(Instrument.exchange))
     )
-    if version_result.scalar_one_or_none() is None:
+    version = version_result.scalar_one_or_none()
+    if version is None:
         raise ExecutionIntentEligibilityError(
             "Allocation strategy version is not valid"
         )
+    return version
 
 
 async def _revalidate_execution_intent(
@@ -330,7 +347,7 @@ async def _revalidate_execution_intent(
         select(StrategyVersion).where(
             StrategyVersion.id == execution_intent.strategy_version_id,
             StrategyVersion.strategy_id == execution_intent.strategy_id,
-        )
+        ).options(joinedload(StrategyVersion.instrument).joinedload(Instrument.exchange))
     )
     version = version_result.scalar_one_or_none()
     if version is None:
@@ -339,6 +356,54 @@ async def _revalidate_execution_intent(
             "Execution intent strategy version is unavailable",
         )
     return allocation, strategy, version
+
+
+async def _canonical_instrument_for_version(
+    session: AsyncSession, version: StrategyVersion
+) -> Instrument | None:
+    if version.instrument is not None:
+        return version.instrument
+    if version.configuration.get("instrument") != "TRADEEBH_TEST_EQ":
+        return None
+    result = await session.execute(
+        select(Instrument)
+        .where(Instrument.canonical_symbol == "TRADEEBH_TEST_EQ")
+        .options(joinedload(Instrument.exchange))
+    )
+    return result.scalar_one_or_none()
+
+
+async def _execution_instrument_snapshot(
+    session: AsyncSession,
+    execution_intent: ExecutionIntent,
+    version: StrategyVersion,
+) -> dict:
+    if execution_intent.instrument_id is not None and execution_intent.instrument_snapshot is not None:
+        return {
+            "instrument_id": str(execution_intent.instrument_id),
+            **deepcopy(execution_intent.instrument_snapshot),
+        }
+    instrument = await _canonical_instrument_for_version(session, version)
+    if instrument is None:
+        raise PaperExecutionError(
+            "unresolved_legacy_instrument",
+            "Legacy Execution Intent Instrument is unresolved",
+        )
+    return {"instrument_id": str(instrument.id), **_instrument_snapshot(instrument)}
+
+
+def _instrument_snapshot(instrument: Instrument) -> dict:
+    return {
+        "canonical_symbol": instrument.canonical_symbol,
+        "exchange_symbol": instrument.exchange_symbol,
+        "name": instrument.name,
+        "exchange_code": instrument.exchange.code,
+        "instrument_type": instrument.instrument_type.value,
+        "quote_currency": instrument.quote_currency,
+        "tick_size": format(instrument.tick_size.normalize(), "f") if instrument.tick_size is not None else None,
+        "lot_size": instrument.lot_size,
+        "is_tradeable": instrument.is_tradeable,
+    }
 
 
 async def _mark_execution_intent_completed(
@@ -388,7 +453,7 @@ async def _get_locked_execution_intent(
 
 
 def _paper_result_summary(execution_intent, result) -> dict:
-    return {
+    summary = {
         "engine_identifier": result.engine_identifier,
         "provider_identifier": result.provider_identifier,
         **result.reference_instrument,
@@ -400,6 +465,8 @@ def _paper_result_summary(execution_intent, result) -> dict:
         "fill": result.fill,
         "position": result.position,
     }
+    summary["exchange"] = summary.get("exchange_code")
+    return summary
 
 
 def _validate_result_size(result_summary: dict) -> None:

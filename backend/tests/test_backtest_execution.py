@@ -64,6 +64,7 @@ async def create_strategy_version(
     headers: dict[str, str],
     slug: str,
     configuration: dict | None = None,
+    instrument_id: uuid.UUID = SYNTHETIC_EQUITY_ID,
 ) -> tuple[dict, dict]:
     response = await client.post(
         "/api/v1/strategies",
@@ -76,7 +77,7 @@ async def create_strategy_version(
         f"/api/v1/strategies/{strategy['id']}/versions",
         headers=headers,
         json={
-            "instrument_id": str(SYNTHETIC_EQUITY_ID),
+            "instrument_id": str(instrument_id),
             "configuration": configuration
             or {
                 "instrument": "TRADEEBH_TEST_EQ",

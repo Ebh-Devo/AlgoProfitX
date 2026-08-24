@@ -24,6 +24,8 @@ class ExecutionIntentResponse(BaseModel):
     strategy_version_id: uuid.UUID
     strategy_name: str
     strategy_version_number: int
+    instrument_id: uuid.UUID | None
+    instrument_snapshot: dict[str, Any] | None
     notional_amount_snapshot: Decimal
     currency_snapshot: str
     mode: str

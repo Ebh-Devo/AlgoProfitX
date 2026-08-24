@@ -52,6 +52,18 @@ async def test_investor_creates_persisted_pending_paper_intent_with_snapshots(cl
     assert intent["strategy_version_id"] == version["id"]
     assert intent["strategy_name"] == strategy["name"]
     assert intent["strategy_version_number"] == version["version_number"]
+    assert intent["instrument_id"] == str(SYNTHETIC_EQUITY_ID)
+    assert intent["instrument_snapshot"] == {
+        "canonical_symbol": "TRADEEBH_TEST_EQ",
+        "exchange_symbol": "TRADEEBH_TEST_EQ",
+        "name": "TradeEBH Synthetic Reference Equity (not a real security)",
+        "exchange_code": "NSE",
+        "instrument_type": "equity",
+        "quote_currency": "INR",
+        "tick_size": "0.01",
+        "lot_size": 1,
+        "is_tradeable": True,
+    }
     assert intent["notional_amount_snapshot"] == "1000.50000000"
     assert intent["currency_snapshot"] == "USD"
     assert intent["mode"] == "paper"

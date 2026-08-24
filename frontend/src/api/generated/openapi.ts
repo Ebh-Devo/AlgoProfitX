@@ -699,6 +699,12 @@ export interface components {
             strategy_name: string;
             /** Strategy Version Number */
             strategy_version_number: number;
+            /** Instrument Id */
+            instrument_id: string | null;
+            /** Instrument Snapshot */
+            instrument_snapshot: {
+                [key: string]: unknown;
+            } | null;
             /** Notional Amount Snapshot */
             notional_amount_snapshot: string;
             /** Currency Snapshot */

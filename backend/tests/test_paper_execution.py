@@ -2,8 +2,10 @@ import asyncio
 import json
 import uuid
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 
 import pytest
+from app.bootstrap.instruments import NIFTY_50_INDEX_ID, SYNTHETIC_EQUITY_ID
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
@@ -11,6 +13,7 @@ from app.db.session import AsyncSessionLocal
 from app.models.allocation import AllocationIntent
 from app.models.execution import ExecutionIntent, ExecutionStatus
 from app.models.strategy import Strategy, StrategyStatus
+from app.paper_execution.reference import EmaCrossoverPaperAdapter
 from tests.test_allocations import create_allocation
 from tests.test_backtest_execution import (
     client,
@@ -20,6 +23,15 @@ from tests.test_backtest_execution import (
 
 
 EXECUTION_INTENTS_PATH = "/api/v1/execution-intents"
+
+
+def test_lot_sizing_and_tick_quantization_use_canonical_metadata():
+    assert EmaCrossoverPaperAdapter._quantity_for_notional(
+        Decimal("1099"), Decimal("108.05"), Decimal("5")
+    ) == Decimal("10")
+    assert EmaCrossoverPaperAdapter._quantize_to_tick(
+        Decimal("108.03"), Decimal("0.05")
+    ) == Decimal("108.05")
 
 
 def create_intent_path(allocation_id: str) -> str:
@@ -36,6 +48,7 @@ async def create_paper_execution_intent(
     configuration: dict | None = None,
     currency: str = "INR",
     amount: str = "1000.5",
+    instrument_id: uuid.UUID = SYNTHETIC_EQUITY_ID,
 ):
     creator_headers = await register_and_login(client)
     investor_headers = await register_and_login(client, enroll=False)
@@ -44,6 +57,7 @@ async def create_paper_execution_intent(
         creator_headers,
         slug,
         configuration=configuration,
+        instrument_id=instrument_id,
     )
     assert (
         await client.post(
@@ -88,11 +102,15 @@ async def test_paper_execution_completes_with_deterministic_bounded_buy_result(c
     assert result == {
         "engine_identifier": "ema-crossover-paper-reference-v1",
         "provider_identifier": "synthetic-paper-nse-equity-v1",
-        "market": "NSE",
-        "symbol": "TRADEEBH_TEST_EQ",
+        "instrument_id": str(SYNTHETIC_EQUITY_ID),
+        "canonical_symbol": "TRADEEBH_TEST_EQ",
+        "exchange_symbol": "TRADEEBH_TEST_EQ",
+        "name": "TradeEBH Synthetic Reference Equity (not a real security)",
+        "exchange_code": "NSE",
+        "exchange": "NSE",
         "instrument_type": "equity",
         "quote_currency": "INR",
-        "exchange_timezone": "Asia/Kolkata",
+        "is_tradeable": True,
         "lot_size": 1,
         "tick_size": "0.01",
         "signal": "buy",
@@ -192,7 +210,7 @@ async def test_paper_execution_latest_only_and_decimal_rounding(client):
     insufficient = response.json()["paper_result_summary"]
     assert insufficient["signal"] == "buy"
     assert insufficient["execution_outcome"] == "no_fill"
-    assert insufficient["no_fill_reason"] == "insufficient_notional_for_one_share"
+    assert insufficient["no_fill_reason"] == "insufficient_notional_for_one_lot"
     assert insufficient["order"] is None
     assert insufficient["fill"] is None
     assert insufficient["position"] == {"quantity": "0", "average_price": None}
@@ -230,7 +248,8 @@ async def test_paper_execution_failures_are_terminal_and_sanitized(client):
     )
     response = await client.post(execute_path(unsupported_intent["id"]), headers=investor_headers)
     assert response.status_code == 200
-    assert response.json()["error_code"] == "unsupported_instrument"
+    assert response.json()["status"] == "completed"
+    assert response.json()["paper_result_summary"]["canonical_symbol"] == "TRADEEBH_TEST_EQ"
 
     _, investor_headers, _, _, _, currency_intent = await create_paper_execution_intent(
         client,
@@ -239,7 +258,25 @@ async def test_paper_execution_failures_are_terminal_and_sanitized(client):
     )
     response = await client.post(execute_path(currency_intent["id"]), headers=investor_headers)
     assert response.status_code == 200
-    assert response.json()["error_code"] == "unsupported_currency"
+    assert response.json()["error_code"] == "currency_mismatch"
+
+
+@pytest.mark.asyncio
+async def test_non_tradeable_index_is_pinned_but_rejected_for_execution(client):
+    _, investor_headers, _, _, _, intent = await create_paper_execution_intent(
+        client,
+        "paper-index",
+        configuration={"entry": {"type": "ema_crossover", "fast_period": 3, "slow_period": 5}},
+        instrument_id=NIFTY_50_INDEX_ID,
+    )
+    assert intent["instrument_snapshot"]["instrument_type"] == "index"
+    assert intent["instrument_snapshot"]["is_tradeable"] is False
+
+    response = await client.post(execute_path(intent["id"]), headers=investor_headers)
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "failed"
+    assert response.json()["error_code"] == "instrument_not_tradeable"
 
 
 @pytest.mark.asyncio

@@ -46,6 +46,18 @@ class ExecutionIntent(Base):
             "mode = 'paper'",
             name="ck_execution_intents_paper_mode",
         ),
+        CheckConstraint(
+            "(instrument_id IS NULL) = (instrument_snapshot IS NULL)",
+            name="ck_execution_intents_instrument_identity_pair",
+        ),
+        CheckConstraint(
+            "instrument_snapshot IS NULL OR jsonb_typeof(instrument_snapshot) = 'object'",
+            name="ck_execution_intents_instrument_snapshot_object",
+        ),
+        CheckConstraint(
+            "instrument_snapshot IS NULL OR octet_length(instrument_snapshot::text) <= 4096",
+            name="ck_execution_intents_instrument_snapshot_size",
+        ),
         ForeignKeyConstraint(
             ["strategy_id", "strategy_version_id"],
             ["strategy_versions.strategy_id", "strategy_versions.id"],
@@ -88,6 +100,14 @@ class ExecutionIntent(Base):
     )
 
     strategy_version_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
+
+    instrument_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("instruments.id", ondelete="RESTRICT"), nullable=True, index=True
+    )
+
+    instrument_snapshot: Mapped[dict[str, Any] | None] = mapped_column(
+        JSONB, nullable=True
+    )
 
     strategy_name: Mapped[str] = column_property(
         select(Strategy.name).where(Strategy.id == strategy_id).scalar_subquery()
