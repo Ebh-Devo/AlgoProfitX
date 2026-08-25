@@ -3,12 +3,15 @@ import uuid
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 
 from app.db.session import AsyncSessionLocal
 from app.main import app
 from app.models.strategy import Strategy, StrategyVersion
+from app.models.instrument import Exchange, Instrument, InstrumentVendorMapping
+from app.bootstrap.instruments import NIFTY_50_INDEX_ID, NSE_EXCHANGE_ID, SYNTHETIC_EQUITY_ID
+from app.db.migration_support import SYNTHETIC_STRATEGY_VERSION_BACKFILL_SQL
 
 
 @pytest_asyncio.fixture
@@ -60,6 +63,7 @@ async def create_strategy(
 
 def version_payload(**overrides: object) -> dict[str, object]:
     payload: dict[str, object] = {
+        "instrument_id": str(SYNTHETIC_EQUITY_ID),
         "configuration": {"instrument": "TRADEEBH_TEST_EQ", "timeframe": "15m"},
         "backtest_configuration": {"initial_capital": 100000},
     }
@@ -98,12 +102,16 @@ async def test_create_first_version_is_server_numbered_and_persisted(client):
     assert set(data) == {
         "id",
         "strategy_id",
+        "instrument_id",
+        "instrument",
         "version_number",
         "configuration",
         "backtest_configuration",
         "created_at",
     }
     assert data["strategy_id"] == strategy["id"]
+    assert data["instrument_id"] == str(SYNTHETIC_EQUITY_ID)
+    assert data["instrument"]["canonical_symbol"] == "TRADEEBH_TEST_EQ"
     assert data["version_number"] == 1
     assert data["configuration"] == {"instrument": "TRADEEBH_TEST_EQ", "timeframe": "15m"}
     assert data["backtest_configuration"] == {"initial_capital": 100000}
@@ -135,7 +143,7 @@ async def test_subsequent_versions_increment_and_list_in_version_order(client):
         client,
         headers,
         strategy["id"],
-        configuration={"instrument": "NIFTY", "timeframe": "5m"},
+        configuration={"timeframe": "5m"},
     )
 
     response = await client.get(
@@ -285,3 +293,166 @@ async def test_database_enforces_unique_version_number_per_strategy(client):
         with pytest.raises(IntegrityError):
             await session.flush()
         await session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_create_version_rejects_unknown_inactive_instrument_and_exchange(client):
+    headers = await register_and_login(client)
+    strategy = await create_strategy(client, headers, "version-instrument-state")
+    path = f"/api/v1/strategies/{strategy['id']}/versions"
+
+    unknown = await client.post(path, headers=headers, json=version_payload(instrument_id=str(uuid.uuid4())))
+    assert unknown.status_code == 422
+    assert unknown.json() == {"detail": "Instrument not found"}
+
+    async with AsyncSessionLocal() as session:
+        selected = await session.get(Instrument, SYNTHETIC_EQUITY_ID)
+        assert selected is not None
+        selected.is_active = False
+        await session.commit()
+    inactive = await client.post(path, headers=headers, json=version_payload())
+    assert inactive.status_code == 422
+    assert inactive.json() == {"detail": "Instrument is inactive"}
+
+    async with AsyncSessionLocal() as session:
+        selected = await session.get(Instrument, SYNTHETIC_EQUITY_ID)
+        exchange = await session.get(Exchange, NSE_EXCHANGE_ID)
+        assert selected is not None and exchange is not None
+        selected.is_active = True
+        exchange.is_active = False
+        await session.commit()
+    inactive_exchange = await client.post(path, headers=headers, json=version_payload())
+    assert inactive_exchange.status_code == 422
+    assert inactive_exchange.json() == {"detail": "Instrument Exchange is inactive"}
+
+
+@pytest.mark.asyncio
+async def test_non_tradeable_index_is_allowed_and_conflicting_json_identity_is_rejected(client):
+    headers = await register_and_login(client)
+    strategy = await create_strategy(client, headers, "version-index")
+    path = f"/api/v1/strategies/{strategy['id']}/versions"
+
+    conflict = await client.post(
+        path,
+        headers=headers,
+        json=version_payload(configuration={"instrument": "OTHER"}),
+    )
+    assert conflict.status_code == 422
+    assert "conflicts" in conflict.json()["detail"]
+
+    created = await client.post(
+        path,
+        headers=headers,
+        json=version_payload(
+            instrument_id=str(NIFTY_50_INDEX_ID),
+            configuration={"instrument": "NIFTY 50", "reference_only": True},
+        ),
+    )
+    assert created.status_code == 201
+    assert created.json()["instrument_id"] == str(NIFTY_50_INDEX_ID)
+    assert created.json()["instrument"]["is_tradeable"] is False
+    assert created.json()["instrument"]["instrument_type"] == "index"
+
+
+@pytest.mark.asyncio
+async def test_legacy_null_instrument_is_readable_and_instrument_fk_is_restrictive(client):
+    headers = await register_and_login(client)
+    strategy = await create_strategy(client, headers, "version-legacy")
+    legacy_id = uuid.uuid4()
+    async with AsyncSessionLocal() as session:
+        session.add(
+            StrategyVersion(
+                id=legacy_id,
+                strategy_id=uuid.UUID(strategy["id"]),
+                instrument_id=None,
+                version_number=1,
+                configuration={"instrument": "UNKNOWN_LEGACY"},
+                backtest_configuration={},
+            )
+        )
+        await session.commit()
+
+    response = await client.get(
+        f"/api/v1/strategies/{strategy['id']}/versions/{legacy_id}", headers=headers
+    )
+    assert response.status_code == 200
+    assert response.json()["instrument_id"] is None
+    assert response.json()["instrument"] is None
+
+    async with AsyncSessionLocal() as session:
+        instrument = await session.get(Instrument, SYNTHETIC_EQUITY_ID)
+        assert instrument is not None
+        bound = StrategyVersion(
+            strategy_id=uuid.UUID(strategy["id"]),
+            instrument_id=instrument.id,
+            version_number=2,
+            configuration={},
+            backtest_configuration={},
+        )
+        session.add(bound)
+        await session.commit()
+        await session.delete(instrument)
+        with pytest.raises(IntegrityError):
+            await session.commit()
+
+
+@pytest.mark.asyncio
+async def test_version_response_exposes_safe_instrument_metadata_not_vendor_mapping(client):
+    headers = await register_and_login(client)
+    strategy = await create_strategy(client, headers, "version-safe-metadata")
+    async with AsyncSessionLocal() as session:
+        session.add(
+            InstrumentVendorMapping(
+                instrument_id=SYNTHETIC_EQUITY_ID,
+                provider_code="private-test",
+                vendor_instrument_id="secret-token",
+                is_active=True,
+                provider_metadata={"secret": True},
+            )
+        )
+        await session.commit()
+
+    created = await create_version(client, headers, strategy["id"])
+    instrument = created["instrument"]
+    assert instrument["exchange"]["code"] == "NSE"
+    assert instrument["quote_currency"] == "INR"
+    assert instrument["tick_size"] == "0.01000000"
+    assert instrument["lot_size"] == 1
+    assert "vendor_mappings" not in instrument
+    assert "secret-token" not in str(created)
+
+
+@pytest.mark.asyncio
+async def test_migration_backfill_maps_only_recognized_synthetic_legacy_identity(client):
+    headers = await register_and_login(client)
+    strategy = await create_strategy(client, headers, "version-backfill")
+    recognized_id = uuid.uuid4()
+    unknown_id = uuid.uuid4()
+    async with AsyncSessionLocal() as session:
+        session.add_all(
+            [
+                StrategyVersion(
+                    id=recognized_id,
+                    strategy_id=uuid.UUID(strategy["id"]),
+                    version_number=1,
+                    configuration={"instrument": "TRADEEBH_TEST_EQ"},
+                    backtest_configuration={},
+                ),
+                StrategyVersion(
+                    id=unknown_id,
+                    strategy_id=uuid.UUID(strategy["id"]),
+                    version_number=2,
+                    configuration={"instrument": "UNMAPPED_LEGACY"},
+                    backtest_configuration={},
+                ),
+            ]
+        )
+        await session.flush()
+        await session.execute(text(SYNTHETIC_STRATEGY_VERSION_BACKFILL_SQL))
+        await session.commit()
+
+    async with AsyncSessionLocal() as session:
+        recognized = await session.get(StrategyVersion, recognized_id)
+        unknown = await session.get(StrategyVersion, unknown_id)
+    assert recognized is not None and recognized.instrument_id == SYNTHETIC_EQUITY_ID
+    assert unknown is not None and unknown.instrument_id is None

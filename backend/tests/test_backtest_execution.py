@@ -1,6 +1,8 @@
 import uuid
+from datetime import datetime, timezone
 
 import pytest
+from app.bootstrap.instruments import SYNTHETIC_EQUITY_ID
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
@@ -9,6 +11,15 @@ from app.db.session import AsyncSessionLocal
 from app.main import app
 from app.models.backtest import Backtest, BacktestStatus
 from app.services.backtest import _claim_queued_backtest
+from app.backtesting.contracts import (
+    BacktestExecutionError,
+    HistoricalCandleRequest,
+    InstrumentIdentity,
+)
+from app.backtesting.reference import SyntheticMarketDataProvider
+from app.models.strategy import StrategyVersion
+from app.market_calendar.reference import IndianReferenceTradingCalendar
+from app.models.instrument import Exchange
 
 
 @pytest_asyncio.fixture
@@ -55,6 +66,7 @@ async def create_strategy_version(
     headers: dict[str, str],
     slug: str,
     configuration: dict | None = None,
+    instrument_id: uuid.UUID = SYNTHETIC_EQUITY_ID,
 ) -> tuple[dict, dict]:
     response = await client.post(
         "/api/v1/strategies",
@@ -67,6 +79,7 @@ async def create_strategy_version(
         f"/api/v1/strategies/{strategy['id']}/versions",
         headers=headers,
         json={
+            "instrument_id": str(instrument_id),
             "configuration": configuration
             or {
                 "instrument": "TRADEEBH_TEST_EQ",
@@ -138,6 +151,30 @@ async def test_execute_claims_queued_backtest_then_completes_with_bounded_result
     assert completed["result_summary"]["trade_count"] == 1
     assert completed["result_summary"]["engine_identifier"] == "ema-crossover-reference-v1"
     assert completed["result_summary"]["provider_identifier"] == "synthetic-local-v1"
+    assert completed["market_data_provider"] == "synthetic-local-v1"
+    assert completed["dataset_reference"] == "synthetic-reference-candles-v1"
+    assert completed["timeframe"] == "1h"
+    assert completed["range_start"] == "2025-01-01T03:45:00Z"
+    assert completed["range_end"] == "2025-01-14T03:45:00Z"
+    assert completed["adjustment_policy"] == "unadjusted"
+    assert completed["data_fetched_at"].endswith("Z")
+    assert completed["market_data_provenance"] == {
+        "generator": "tradeebh-deterministic-reference",
+        "generator_version": 1,
+        "candle_count": 64,
+        "synthetic": True,
+        "calendar": {
+            "calendar_identifier": "indian-cash-reference-calendar",
+            "calendar_policy_version": "v1",
+            "exception_manifest_version": "indian-reference-exceptions-v1",
+            "exchange_code": "NSE",
+            "exchange_timezone": "Asia/Kolkata",
+            "regular_local_open": "09:15",
+            "regular_local_close": "15:30",
+            "session_count": 22,
+            "holiday_policy": "weekdays-plus-explicit-reference-exceptions",
+        },
+    }
     assert len(completed["result_summary"]["trades"]) <= 100
     assert len(completed["result_summary"]["equity_curve"]) <= 256
 
@@ -211,6 +248,9 @@ async def test_engine_failure_is_sanitized_persisted_and_terminal(client):
     assert failed["started_at"] is not None
     assert failed["completed_at"] is not None
     assert failed["result_summary"] is None
+    assert failed["market_data_provider"] == "synthetic-local-v1"
+    assert failed["dataset_reference"] == "synthetic-reference-candles-v1"
+    assert failed["data_fetched_at"] is not None
     assert (
         failed["error_message"]
         == "Reference engine supports only entry.type=ema_crossover"
@@ -248,6 +288,7 @@ async def test_execution_hides_backtest_version_mismatch(client):
         f"/api/v1/strategies/{strategy['id']}/versions",
         headers=headers,
         json={
+            "instrument_id": str(SYNTHETIC_EQUITY_ID),
             "configuration": {
                 "entry": {
                     "type": "ema_crossover",
@@ -267,3 +308,92 @@ async def test_execution_hides_backtest_version_mismatch(client):
     )
     assert response.status_code == 404
     assert response.json() == {"detail": "Backtest not found"}
+
+
+@pytest.mark.asyncio
+async def test_legacy_null_instrument_backtest_uses_recognized_compatibility_path(client):
+    headers = await register_and_login(client)
+    strategy, version = await create_strategy_version(client, headers, "execute-legacy")
+    async with AsyncSessionLocal() as session:
+        persisted = await session.get(StrategyVersion, uuid.UUID(version["id"]))
+        assert persisted is not None
+        persisted.instrument_id = None
+        await session.commit()
+
+    backtest = await create_backtest(client, headers, strategy, version)
+    assert backtest["instrument_id"] is None
+    assert backtest["instrument_snapshot"] is None
+    response = await client.post(execute_path(strategy, version, backtest), headers=headers)
+    assert response.status_code == 200
+    assert response.json()["status"] == "completed"
+    assert response.json()["market_data_provider"] == "synthetic-local-v1"
+
+
+def test_synthetic_provider_requires_canonical_identity_and_utc_request():
+    provider = SyntheticMarketDataProvider()
+    identity = InstrumentIdentity(
+        id=str(SYNTHETIC_EQUITY_ID),
+        canonical_symbol="TRADEEBH_TEST_EQ",
+        exchange_symbol="TRADEEBH_TEST_EQ",
+        name="Synthetic reference",
+        exchange_code="NSE",
+        instrument_type="equity",
+        quote_currency="INR",
+        tick_size="0.01",
+        lot_size=1,
+        is_tradeable=True,
+        exchange_timezone="Asia/Kolkata",
+        exchange_is_active=True,
+    )
+    nse = Exchange(code="NSE", timezone="Asia/Kolkata", is_active=True)
+    sessions = IndianReferenceTradingCalendar().sessions_between(
+        nse,
+        datetime(2025, 1, 1, tzinfo=timezone.utc),
+        datetime(2025, 2, 1, tzinfo=timezone.utc),
+    )
+    request = HistoricalCandleRequest(
+        instrument=identity,
+        timeframe="1h",
+        start=datetime(2025, 1, 1, tzinfo=timezone.utc),
+        end=None,
+        adjustment_policy="unadjusted",
+        sessions=sessions,
+        metadata={},
+    )
+    batch = provider.load(request)
+    assert batch.provider_code == "synthetic-local-v1"
+    assert batch.dataset_reference == "synthetic-reference-candles-v1"
+    assert batch.fetched_at.tzinfo is timezone.utc
+    assert all(candle.timestamp.tzinfo is timezone.utc for candle in batch.candles)
+    assert all(
+        any(session.open_utc <= candle.timestamp < session.close_utc for session in sessions)
+        for candle in batch.candles
+    )
+    assert batch.provenance["synthetic"] is True
+
+    with pytest.raises(BacktestExecutionError, match="must be UTC-aware"):
+        provider.load(
+            HistoricalCandleRequest(
+                instrument=identity,
+                timeframe="1h",
+                start=datetime(2025, 1, 1),
+                end=None,
+                adjustment_policy="unadjusted",
+                sessions=sessions,
+                metadata={},
+            )
+        )
+    with pytest.raises(BacktestExecutionError, match="Unsupported synthetic Instrument"):
+        provider.load(
+            HistoricalCandleRequest(
+                instrument=InstrumentIdentity(
+                    **{**identity.__dict__, "canonical_symbol": "OTHER"}
+                ),
+                timeframe="1h",
+                start=datetime(2025, 1, 1, tzinfo=timezone.utc),
+                end=None,
+                adjustment_policy="unadjusted",
+                sessions=sessions,
+                metadata={},
+            )
+        )

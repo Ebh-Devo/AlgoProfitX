@@ -76,6 +76,28 @@ function ResultBlock({ title, value }: { title: string; value: unknown }) {
     </div>
   );
 }
+function InstrumentDetails({ snapshot }: { snapshot: Record<string, unknown> | null }) {
+  if (!snapshot) {
+    return <div className="alert alert-info"><strong>Legacy Instrument unresolved.</strong> This historical intent has no canonical Instrument snapshot.</div>;
+  }
+  const tradeable = snapshot.is_tradeable === true;
+  return (
+    <div className="card">
+      <div className="card-title-row">
+        <h2>{text(snapshot.name)}</h2>
+        <Status value={tradeable ? "tradeable" : "non-tradeable"} />
+      </div>
+      <p>{text(snapshot.canonical_symbol)} · {text(snapshot.exchange_code)}:{text(snapshot.exchange_symbol)}</p>
+      <dl className="details-list">
+        <dt>Instrument type</dt><dd>{text(snapshot.instrument_type)}</dd>
+        <dt>Quote currency</dt><dd>{text(snapshot.quote_currency)}</dd>
+        <dt>Lot size</dt><dd>{text(snapshot.lot_size)}</dd>
+        <dt>Tick size</dt><dd>{text(snapshot.tick_size)}</dd>
+        <dt>Execution eligibility</dt><dd>{tradeable ? "Tradeable equity" : "Non-tradeable index/reference Instrument"}</dd>
+      </dl>
+    </div>
+  );
+}
 function PaperResult({ result }: { result: Record<string, unknown> }) {
   const outcome = text(result.execution_outcome);
   const noFill = outcome === "no_fill" || outcome === "no_signal";
@@ -100,10 +122,12 @@ function PaperResult({ result }: { result: Record<string, unknown> }) {
       <div className="card">
         <h2>Paper result</h2>
         <dl className="details-list">
-          <dt>Market</dt>
-          <dd>{text(result.market)}</dd>
-          <dt>Symbol</dt>
-          <dd>{text(result.symbol)}</dd>
+          <dt>Canonical symbol</dt>
+          <dd>{text(result.canonical_symbol ?? result.symbol)}</dd>
+          <dt>Exchange symbol</dt>
+          <dd>{text(result.exchange_symbol ?? result.symbol)}</dd>
+          <dt>Exchange</dt>
+          <dd>{text(result.exchange ?? result.exchange_code ?? result.market)}</dd>
           <dt>Instrument type</dt>
           <dd>{text(result.instrument_type)}</dd>
           <dt>Quote currency</dt>
@@ -114,6 +138,10 @@ function PaperResult({ result }: { result: Record<string, unknown> }) {
           <dd>{text(result.lot_size)}</dd>
           <dt>Tick size</dt>
           <dd>{text(result.tick_size)}</dd>
+          <dt>Tradeability</dt>
+          <dd>{result.is_tradeable === false ? "Non-tradeable" : result.is_tradeable === true ? "Tradeable" : "Legacy result — not recorded"}</dd>
+          <dt>Provider</dt>
+          <dd>{text(result.provider_identifier)}</dd>
           <dt>Signal</dt>
           <dd>{text(result.signal)}</dd>
           <dt>Outcome</dt>
@@ -214,6 +242,7 @@ export function ExecutionIntentDetailPage() {
           </dl>
         </div>
       </div>
+      <InstrumentDetails snapshot={intent.instrument_snapshot} />
       {intent.status === "failed" && (
         <div className="alert alert-error">
           <strong>{intent.error_code || "Paper execution failed"}.</strong> {intent.error_message || "No error detail was provided."}

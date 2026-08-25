@@ -38,8 +38,8 @@ async def _reset_database() -> None:
     async with engine.begin() as connection:
         await connection.execute(
             text(
-                "TRUNCATE TABLE user_roles, user_profiles, execution_intents, allocation_intents, backtests, strategy_versions, "
-                "strategies, users, roles CASCADE"
+                "TRUNCATE TABLE instrument_vendor_mappings, instruments, exchanges, user_roles, user_profiles, "
+                "execution_intents, allocation_intents, backtests, strategy_versions, strategies, users, roles CASCADE"
             )
         )
         await connection.execute(
@@ -49,8 +49,14 @@ async def _reset_database() -> None:
 
 
 @pytest_asyncio.fixture(autouse=True)
-async def reset_test_database():
+async def reset_test_database(request):
     """Keep committed API requests isolated without touching development data."""
     await _reset_database()
+    if request.path.name != "test_instruments.py":
+        from app.bootstrap.instruments import bootstrap_market_foundation
+        from app.db.session import AsyncSessionLocal
+
+        async with AsyncSessionLocal() as session:
+            await bootstrap_market_foundation(session)
     yield
     await _reset_database()

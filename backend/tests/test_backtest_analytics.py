@@ -1,6 +1,7 @@
 import uuid
 
 import pytest
+from app.bootstrap.instruments import SYNTHETIC_EQUITY_ID
 from sqlalchemy import select
 
 from app.db.session import AsyncSessionLocal
@@ -190,6 +191,7 @@ async def test_analytics_hides_backtest_version_mismatch(client):
         f"/api/v1/strategies/{strategy['id']}/versions",
         headers=headers,
         json={
+            "instrument_id": str(SYNTHETIC_EQUITY_ID),
             "configuration": {
                 "entry": {
                     "type": "ema_crossover",

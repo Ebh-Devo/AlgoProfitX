@@ -4,6 +4,7 @@ from decimal import Decimal
 from typing import Protocol, Sequence
 
 from app.backtesting.contracts import Candle
+from app.market_calendar.contracts import TradingSession
 
 
 @dataclass(frozen=True)
@@ -14,7 +15,7 @@ class PaperExecutionResult:
     order: dict[str, str] | None
     fill: dict[str, str] | None
     position: dict[str, str | None]
-    reference_instrument: dict[str, str | int]
+    reference_instrument: dict[str, str | int | bool | None]
     engine_identifier: str
     provider_identifier: str
 
@@ -22,7 +23,7 @@ class PaperExecutionResult:
 class PaperMarketDataProvider(Protocol):
     identifier: str
 
-    def load(self, configuration: dict) -> Sequence[Candle]: ...
+    def load(self, configuration: dict, instrument: dict, session: TradingSession) -> Sequence[Candle]: ...
 
 
 class PaperExecutionAdapter(Protocol):
@@ -31,6 +32,7 @@ class PaperExecutionAdapter(Protocol):
     def execute(
         self,
         configuration: dict,
+        instrument: dict,
         notional_amount: Decimal,
         allocation_currency: str,
         candles: Sequence[Candle],

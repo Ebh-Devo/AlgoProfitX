@@ -29,6 +29,7 @@ TradeEBH is a strategy-first trading marketplace MVP connecting strategy Creator
 | Analytics v1 | Return, trades, win/loss, drawdown, equity curve |
 | Investor | Allocation Intents pinned to a Strategy Version |
 | Execution | Execution Intents and deterministic Paper Execution |
+| Market foundation | Exchange/Instrument identity, vendor-neutral mappings, anonymous discovery APIs |
 | Frontend | Creator and Investor MVP journeys and role-aware navigation |
 
 The frontend uses Vite, React, TypeScript, React Router, TanStack Query, generated OpenAPI types, and Recharts. The backend uses FastAPI, SQLAlchemy 2.x, Alembic, PostgreSQL, Pydantic, and pytest.
@@ -163,7 +164,7 @@ Preferred command from `TradeEBH\`:
 .\scripts\migrate.ps1
 ```
 
-The current Alembic head is `f4b2c9d7e1a3` (`protect_investor_history`). Direct manual-venv commands:
+The current Alembic head is `a1d4e7f9b2c6` (`add_market_instrument_foundation`). Direct manual-venv commands:
 
 ```powershell
 cd backend
@@ -171,6 +172,23 @@ cd backend
 python -m alembic -c alembic.ini upgrade head
 python -m alembic -c alembic.ini current --check-heads
 ```
+
+### Market and Instrument bootstrap
+
+After migrating, run the versioned, idempotent reference-data bootstrap from `backend`:
+
+```powershell
+python -m app.bootstrap.instruments
+```
+
+The Phase 2A bootstrap uses stable UUIDs and creates NSE, BSE, the explicitly synthetic `TRADEEBH_TEST_EQ` reference equity, and non-tradeable NIFTY 50 and NIFTY Bank index identities. It is a small platform reference manifest—not a live NSE/BSE Instrument Master and not market data.
+
+Anonymous read-only discovery is available at:
+
+- `GET /api/v1/instruments`
+- `GET /api/v1/instruments/{instrument_id}`
+
+The list supports bounded `limit`/`offset` pagination and `exchange`, `instrument_type`, `symbol`, `search`, `is_tradeable`, and `is_active` filters. Vendor identifiers are deliberately excluded. Instrument writes remain bootstrap/import-only; inactive records are hidden by default but remain directly readable by UUID.
 
 ### Run the API
 
@@ -291,13 +309,12 @@ Open <http://localhost:5173>.
 2. Log in.
 3. Enroll as a Creator if needed; the Investor role is preserved.
 4. Create a draft Strategy.
-5. Create an immutable Strategy Version.
+5. Create an immutable Strategy Version by selecting the canonical Instrument (for this reference walkthrough, `TRADEEBH_TEST_EQ`).
 
 Configuration example:
 
 ```json
 {
-  "instrument": "TRADEEBH_TEST_EQ",
   "entry": {
     "type": "ema_crossover",
     "fast_period": 5,
@@ -318,7 +335,7 @@ Backtest configuration example:
 }
 ```
 
-6. Save both Version JSON objects.
+6. Save both Version JSON objects. Instrument identity is stored separately from the algorithm JSON; a matching legacy `configuration.instrument` value is accepted only for transitional compatibility.
 7. Publish the Strategy.
 8. Deploy the Strategy.
 9. Create/execute a Backtest and inspect Analytics.

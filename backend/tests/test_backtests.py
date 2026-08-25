@@ -5,11 +5,14 @@ import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from app.db.session import AsyncSessionLocal
 from app.main import app
 from app.models.backtest import Backtest
 from app.models.strategy import StrategyVersion
+from app.models.instrument import Instrument
+from app.bootstrap.instruments import SYNTHETIC_EQUITY_ID
 
 
 @pytest_asyncio.fixture
@@ -70,6 +73,7 @@ async def create_strategy_version(
         f"/api/v1/strategies/{strategy['id']}/versions",
         headers=headers,
         json={
+            "instrument_id": str(SYNTHETIC_EQUITY_ID),
             "configuration": {
                 "instrument": "TRADEEBH_TEST_EQ",
                 "entry": {"fast_period": 20},
@@ -77,6 +81,10 @@ async def create_strategy_version(
             "backtest_configuration": {
                 "initial_capital": 100000,
                 "fees": {"commission": 20},
+                "timeframe": "1h",
+                "start_date": "2026-01-01T00:00:00Z",
+                "end_date": "2026-02-01T00:00:00Z",
+                "adjustment_policy": "unadjusted",
             },
         },
     )
@@ -102,6 +110,10 @@ async def test_creator_creates_queued_backtest_with_independent_snapshots(client
         headers=headers,
         json={
             "market_data_reference": "future-data-snapshot",
+            "market_data_provider": "client-injected",
+            "dataset_reference": "client-dataset",
+            "data_fetched_at": "2026-01-01T00:00:00Z",
+            "market_data_provenance": {"trusted": False},
             "status": "completed",
             "requested_by_user_id": str(uuid.uuid4()),
             "result_summary": {"total_return": 99},
@@ -122,6 +134,17 @@ async def test_creator_creates_queued_backtest_with_independent_snapshots(client
         == version["backtest_configuration"]
     )
     assert created["market_data_reference"] == "future-data-snapshot"
+    assert created["instrument_id"] == str(SYNTHETIC_EQUITY_ID)
+    assert created["instrument_snapshot"]["canonical_symbol"] == "TRADEEBH_TEST_EQ"
+    assert created["instrument_snapshot"]["exchange_code"] == "NSE"
+    assert created["market_data_provider"] is None
+    assert created["dataset_reference"] is None
+    assert created["data_fetched_at"] is None
+    assert created["market_data_provenance"] is None
+    assert created["timeframe"] == "1h"
+    assert created["adjustment_policy"] == "unadjusted"
+    assert created["range_start"] == "2026-01-01T00:00:00Z"
+    assert created["range_end"] == "2026-02-01T00:00:00Z"
     assert created["result_summary"] is None
     assert created["error_message"] is None
     assert created["created_at"] is not None
@@ -141,6 +164,10 @@ async def test_creator_creates_queued_backtest_with_independent_snapshots(client
         assert version_record is not None
         version_record.configuration = {"instrument": "MUTATED"}
         version_record.backtest_configuration = {"initial_capital": 1}
+        instrument_record = await session.get(Instrument, SYNTHETIC_EQUITY_ID)
+        assert instrument_record is not None
+        instrument_record.name = "Mutated Instrument Name"
+        instrument_record.exchange_symbol = "MUTATED"
         await session.commit()
 
     async with AsyncSessionLocal() as session:
@@ -151,6 +178,44 @@ async def test_creator_creates_queued_backtest_with_independent_snapshots(client
     assert persisted is not None
     assert persisted.configuration_snapshot == version["configuration"]
     assert persisted.backtest_configuration_snapshot == version["backtest_configuration"]
+    assert persisted.instrument_snapshot == created["instrument_snapshot"]
+
+
+@pytest.mark.asyncio
+async def test_backtest_provenance_constraints_and_instrument_fk_are_restrictive(client):
+    headers, _ = await register_and_login(client)
+    strategy, version = await create_strategy_version(client, headers, "backtest-integrity")
+    response = await client.post(
+        backtests_path(strategy["id"], version["id"]), headers=headers, json={}
+    )
+    assert response.status_code == 201
+    backtest_id = uuid.UUID(response.json()["id"])
+
+    async with AsyncSessionLocal() as session:
+        backtest = await session.get(Backtest, backtest_id)
+        assert backtest is not None
+        backtest.market_data_provenance = []
+        with pytest.raises(IntegrityError):
+            await session.commit()
+
+    async with AsyncSessionLocal() as session:
+        backtest = await session.get(Backtest, backtest_id)
+        assert backtest is not None
+        backtest.market_data_provenance = {"payload": "x" * 9000}
+        with pytest.raises(IntegrityError):
+            await session.commit()
+
+    async with AsyncSessionLocal() as session:
+        version_record = await session.get(StrategyVersion, uuid.UUID(version["id"]))
+        assert version_record is not None
+        version_record.instrument_id = None
+        await session.commit()
+    async with AsyncSessionLocal() as session:
+        instrument_record = await session.get(Instrument, SYNTHETIC_EQUITY_ID)
+        assert instrument_record is not None
+        await session.delete(instrument_record)
+        with pytest.raises(IntegrityError):
+            await session.commit()
 
 
 @pytest.mark.asyncio

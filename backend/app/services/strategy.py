@@ -4,7 +4,9 @@ from datetime import datetime, timezone
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
+from app.models.instrument import Exchange, Instrument
 from app.models.strategy import Strategy, StrategyStatus, StrategyVersion
 from app.schemas.strategy import (
     StrategyCreateRequest,
@@ -28,6 +30,10 @@ ALLOWED_LIFECYCLE_TRANSITIONS = {
 
 
 class StrategyConflict(Exception):
+    pass
+
+
+class StrategyVersionValidationError(Exception):
     pass
 
 
@@ -141,6 +147,30 @@ async def create_strategy_version(
     strategy: Strategy,
     data: StrategyVersionCreateRequest,
 ) -> StrategyVersion:
+    instrument = await session.scalar(
+        select(Instrument)
+        .join(Exchange)
+        .where(Instrument.id == data.instrument_id)
+        .options(selectinload(Instrument.exchange))
+    )
+    if instrument is None:
+        raise StrategyVersionValidationError("Instrument not found")
+    if not instrument.is_active:
+        raise StrategyVersionValidationError("Instrument is inactive")
+    if not instrument.exchange.is_active:
+        raise StrategyVersionValidationError("Instrument Exchange is inactive")
+
+    legacy_identity = data.configuration.get("instrument")
+    if legacy_identity is not None:
+        matching_symbols = {
+            instrument.canonical_symbol.casefold(),
+            instrument.exchange_symbol.casefold(),
+        }
+        if not isinstance(legacy_identity, str) or legacy_identity.casefold() not in matching_symbols:
+            raise StrategyVersionValidationError(
+                "configuration.instrument conflicts with instrument_id"
+            )
+
     # Lock the parent row so normal API requests allocate one version number at
     # a time for a strategy. The database constraint remains the final guard.
     await session.execute(
@@ -158,15 +188,18 @@ async def create_strategy_version(
 
     version = StrategyVersion(
         strategy_id=strategy.id,
+        instrument_id=instrument.id,
         version_number=version_number,
         configuration=data.configuration,
         backtest_configuration=data.backtest_configuration,
     )
+    version.instrument = instrument
     session.add(version)
 
     try:
         await session.flush()
         await session.refresh(version)
+        version.instrument = instrument
     except IntegrityError:
         await session.rollback()
         raise ValueError("Strategy version number is already in use")
@@ -180,6 +213,7 @@ async def get_strategy_versions(
 ) -> list[StrategyVersion]:
     result = await session.execute(
         select(StrategyVersion)
+        .options(selectinload(StrategyVersion.instrument).selectinload(Instrument.exchange))
         .where(StrategyVersion.strategy_id == strategy_id)
         .order_by(StrategyVersion.version_number.asc())
     )
@@ -193,7 +227,9 @@ async def get_strategy_version(
     version_id: uuid.UUID,
 ) -> StrategyVersion | None:
     result = await session.execute(
-        select(StrategyVersion).where(
+        select(StrategyVersion).options(
+            selectinload(StrategyVersion.instrument).selectinload(Instrument.exchange)
+        ).where(
             StrategyVersion.id == version_id,
             StrategyVersion.strategy_id == strategy_id,
         )

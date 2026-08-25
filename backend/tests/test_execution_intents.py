@@ -2,6 +2,7 @@ import asyncio
 import uuid
 
 import pytest
+from app.bootstrap.instruments import SYNTHETIC_EQUITY_ID
 from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 
@@ -51,6 +52,18 @@ async def test_investor_creates_persisted_pending_paper_intent_with_snapshots(cl
     assert intent["strategy_version_id"] == version["id"]
     assert intent["strategy_name"] == strategy["name"]
     assert intent["strategy_version_number"] == version["version_number"]
+    assert intent["instrument_id"] == str(SYNTHETIC_EQUITY_ID)
+    assert intent["instrument_snapshot"] == {
+        "canonical_symbol": "TRADEEBH_TEST_EQ",
+        "exchange_symbol": "TRADEEBH_TEST_EQ",
+        "name": "TradeEBH Synthetic Reference Equity (not a real security)",
+        "exchange_code": "NSE",
+        "instrument_type": "equity",
+        "quote_currency": "INR",
+        "tick_size": "0.01",
+        "lot_size": 1,
+        "is_tradeable": True,
+    }
     assert intent["notional_amount_snapshot"] == "1000.50000000"
     assert intent["currency_snapshot"] == "USD"
     assert intent["mode"] == "paper"
@@ -77,7 +90,7 @@ async def test_investor_creates_persisted_pending_paper_intent_with_snapshots(cl
     response = await client.post(
         f"/api/v1/strategies/{strategy['id']}/versions",
         headers=creator_headers,
-        json={"configuration": {}, "backtest_configuration": {}},
+        json={"instrument_id": str(SYNTHETIC_EQUITY_ID), "configuration": {}, "backtest_configuration": {}},
     )
     assert response.status_code == 201
     newer_version = response.json()

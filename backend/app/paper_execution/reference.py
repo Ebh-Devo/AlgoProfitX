@@ -1,6 +1,5 @@
-from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from decimal import Decimal, ROUND_DOWN
+from decimal import Decimal, ROUND_DOWN, ROUND_HALF_UP
 from typing import Sequence
 
 from app.backtesting.contracts import Candle
@@ -8,44 +7,7 @@ from app.paper_execution.contracts import (
     PaperExecutionError,
     PaperExecutionResult,
 )
-
-
-PRICE_QUANTUM = Decimal("0.01")
-
-
-@dataclass(frozen=True)
-class PaperReferenceInstrument:
-    """Synthetic NSE cash-equity fixture; it is not a real listed security."""
-
-    market: str
-    symbol: str
-    instrument_type: str
-    quote_currency: str
-    exchange_timezone: str
-    lot_size: int
-    tick_size: Decimal
-
-    def metadata(self) -> dict[str, str | int]:
-        return {
-            "market": self.market,
-            "symbol": self.symbol,
-            "instrument_type": self.instrument_type,
-            "quote_currency": self.quote_currency,
-            "exchange_timezone": self.exchange_timezone,
-            "lot_size": self.lot_size,
-            "tick_size": format(self.tick_size, "f"),
-        }
-
-
-REFERENCE_INSTRUMENT = PaperReferenceInstrument(
-    market="NSE",
-    symbol="TRADEEBH_TEST_EQ",
-    instrument_type="equity",
-    quote_currency="INR",
-    exchange_timezone="Asia/Kolkata",
-    lot_size=1,
-    tick_size=PRICE_QUANTUM,
-)
+from app.market_calendar.contracts import TradingSession
 
 
 class SyntheticPaperMarketDataProvider:
@@ -54,7 +16,14 @@ class SyntheticPaperMarketDataProvider:
     identifier = "synthetic-paper-nse-equity-v1"
     max_candles = 64
 
-    def load(self, configuration: dict) -> Sequence[Candle]:
+    def load(
+        self, configuration: dict, instrument: dict, session: TradingSession
+    ) -> Sequence[Candle]:
+        if instrument.get("canonical_symbol") != "TRADEEBH_TEST_EQ":
+            raise PaperExecutionError(
+                "unsupported_instrument",
+                "Synthetic paper data is unavailable for this canonical Instrument",
+            )
         scenario = configuration.get("paper_execution_scenario", "latest_crossover")
         closes = self._closes(scenario)
         if len(closes) > self.max_candles:
@@ -63,27 +32,23 @@ class SyntheticPaperMarketDataProvider:
                 "Synthetic paper dataset exceeds its limit",
             )
 
-        # NSE-style 09:15 local time represented canonically as 03:45 UTC.
-        local_start = datetime(
-            2025,
-            1,
-            1,
-            9,
-            15,
-            tzinfo=timezone(timedelta(hours=5, minutes=30)),
-        )
-        start = local_start.astimezone(timezone.utc)
-        return tuple(
+        candles = tuple(
             Candle(
-                timestamp=start + timedelta(hours=index),
+                timestamp=session.open_utc + timedelta(minutes=30 * index),
                 open=close,
-                high=close + REFERENCE_INSTRUMENT.tick_size,
-                low=close - REFERENCE_INSTRUMENT.tick_size,
+                high=close + Decimal(str(instrument["tick_size"])),
+                low=close - Decimal(str(instrument["tick_size"])),
                 close=close,
                 volume=Decimal("1000"),
             )
             for index, close in enumerate(closes)
         )
+        if any(candle.timestamp >= session.close_utc for candle in candles):
+            raise PaperExecutionError(
+                "provider_reference_data_failure",
+                "Synthetic paper dataset exceeds the canonical trading session",
+            )
+        return candles
 
     @staticmethod
     def _closes(scenario: object) -> tuple[Decimal, ...]:
@@ -135,20 +100,12 @@ class EmaCrossoverPaperAdapter:
     def execute(
         self,
         configuration: dict,
+        instrument: dict,
         notional_amount: Decimal,
         allocation_currency: str,
         candles: Sequence[Candle],
     ) -> PaperExecutionResult:
-        if configuration.get("instrument") != REFERENCE_INSTRUMENT.symbol:
-            raise PaperExecutionError(
-                "unsupported_instrument",
-                "Paper execution supports only synthetic instrument TRADEEBH_TEST_EQ",
-            )
-        if allocation_currency != REFERENCE_INSTRUMENT.quote_currency:
-            raise PaperExecutionError(
-                "unsupported_currency",
-                "Paper execution supports only allocation currency INR",
-            )
+        lot_size, tick_size = self.validate_instrument(instrument, allocation_currency)
         fast_period, slow_period = self._periods(configuration)
         self._validate_candles(candles)
         if notional_amount <= 0:
@@ -163,28 +120,29 @@ class EmaCrossoverPaperAdapter:
         latest_index = len(candles) - 1
         signal = self._latest_buy_signal(fast, slow, latest_index)
         if not signal:
-            return self._no_fill_result("none", "no_signal", None)
+            return self._no_fill_result("none", "no_signal", None, instrument)
 
-        fill_price = candles[latest_index].close
-        quantity = self._quantity_for_notional(notional_amount, fill_price)
+        fill_price = self._quantize_to_tick(candles[latest_index].close, tick_size)
+        quantity = self._quantity_for_notional(notional_amount, fill_price, lot_size)
         if quantity <= 0:
             return self._no_fill_result(
                 "buy",
                 "no_fill",
-                "insufficient_notional_for_one_share",
+                "insufficient_notional_for_one_lot",
+                instrument,
             )
 
         timestamp = candles[latest_index].timestamp.isoformat()
         order = {
             "side": "buy",
-            "quantity": self._quantity_string(quantity),
-            "requested_price": self._price_string(fill_price),
-            "reference_price": self._price_string(fill_price),
+            "quantity": self._decimal_text(quantity),
+            "requested_price": self._price_text(fill_price, tick_size),
+            "reference_price": self._price_text(fill_price, tick_size),
             "timestamp": timestamp,
         }
         fill = {
-            "quantity": self._quantity_string(quantity),
-            "price": self._price_string(fill_price),
+            "quantity": self._decimal_text(quantity),
+            "price": self._price_text(fill_price, tick_size),
             "timestamp": timestamp,
         }
         return PaperExecutionResult(
@@ -194,19 +152,42 @@ class EmaCrossoverPaperAdapter:
             order=order,
             fill=fill,
             position={
-                "quantity": self._quantity_string(quantity),
-                "average_price": self._price_string(fill_price),
+                "quantity": self._decimal_text(quantity),
+                "average_price": self._price_text(fill_price, tick_size),
             },
-            reference_instrument=REFERENCE_INSTRUMENT.metadata(),
+            reference_instrument=instrument,
             engine_identifier=self.identifier,
             provider_identifier=self._provider_identifier,
         )
+
+    @staticmethod
+    def validate_instrument(instrument: dict, allocation_currency: str) -> tuple[Decimal, Decimal]:
+        if not instrument.get("is_tradeable") or instrument.get("instrument_type") == "index":
+            raise PaperExecutionError(
+                "instrument_not_tradeable",
+                "The canonical Instrument is not tradeable and cannot be executed directly",
+            )
+        quote_currency = str(instrument.get("quote_currency", ""))
+        if allocation_currency != quote_currency:
+            raise PaperExecutionError(
+                "currency_mismatch",
+                f"Allocation currency {allocation_currency} does not match Instrument quote currency {quote_currency}",
+            )
+        try:
+            lot_size = Decimal(str(instrument["lot_size"])).normalize()
+            tick_size = Decimal(str(instrument["tick_size"])).normalize()
+        except (KeyError, TypeError, ValueError) as exc:
+            raise PaperExecutionError("invalid_instrument_metadata", "Instrument execution metadata is incomplete") from exc
+        if lot_size <= 0 or tick_size <= 0:
+            raise PaperExecutionError("invalid_instrument_metadata", "Instrument execution metadata is invalid")
+        return lot_size, tick_size
 
     def _no_fill_result(
         self,
         signal: str,
         execution_outcome: str,
         no_fill_reason: str | None,
+        instrument: dict,
     ) -> PaperExecutionResult:
         return PaperExecutionResult(
             signal=signal,
@@ -215,7 +196,7 @@ class EmaCrossoverPaperAdapter:
             order=None,
             fill=None,
             position={"quantity": "0", "average_price": None},
-            reference_instrument=REFERENCE_INSTRUMENT.metadata(),
+            reference_instrument=instrument,
             engine_identifier=self.identifier,
             provider_identifier=self._provider_identifier,
         )
@@ -300,17 +281,21 @@ class EmaCrossoverPaperAdapter:
         )
 
     @staticmethod
-    def _quantity_for_notional(notional_amount: Decimal, fill_price: Decimal) -> Decimal:
-        lot_size = Decimal(REFERENCE_INSTRUMENT.lot_size)
+    def _quantity_for_notional(notional_amount: Decimal, fill_price: Decimal, lot_size: Decimal) -> Decimal:
         whole_lots = (notional_amount / fill_price / lot_size).to_integral_value(
             rounding=ROUND_DOWN,
         )
         return whole_lots * lot_size
 
     @staticmethod
-    def _quantity_string(value: Decimal) -> str:
-        return format(value.quantize(Decimal("1")), "f")
+    def _quantize_to_tick(value: Decimal, tick_size: Decimal) -> Decimal:
+        ticks = (value / tick_size).to_integral_value(rounding=ROUND_HALF_UP)
+        return ticks * tick_size
 
     @staticmethod
-    def _price_string(value: Decimal) -> str:
-        return format(value.quantize(REFERENCE_INSTRUMENT.tick_size), "f")
+    def _decimal_text(value: Decimal) -> str:
+        return format(value, "f")
+
+    @staticmethod
+    def _price_text(value: Decimal, tick_size: Decimal) -> str:
+        return format(value.quantize(tick_size), "f")

@@ -16,11 +16,21 @@ class BacktestResponse(BaseModel):
 
     id: uuid.UUID
     strategy_version_id: uuid.UUID
+    instrument_id: uuid.UUID | None
+    instrument_snapshot: dict[str, Any] | None
     requested_by_user_id: uuid.UUID
     status: BacktestStatus
     configuration_snapshot: dict[str, Any]
     backtest_configuration_snapshot: dict[str, Any]
     market_data_reference: str | None
+    market_data_provider: str | None
+    dataset_reference: str | None
+    timeframe: str | None
+    range_start: datetime | None
+    range_end: datetime | None
+    adjustment_policy: str | None
+    data_fetched_at: datetime | None
+    market_data_provenance: dict[str, Any] | None
     result_summary: dict[str, Any] | None
     error_message: str | None
     created_at: datetime
