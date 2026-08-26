@@ -1,0 +1,7 @@
+.instrument-filters{display:grid;grid-template-columns:minmax(14rem,2fr) repeat(3,minmax(8rem,1fr)) auto;align-items:end;gap:var(--s3);margin-bottom:var(--s5)}
+.instrument-filters label{display:grid;gap:var(--s2);color:var(--text-2);font-size:var(--sm);font-weight:650}
+.instrument-filters input,.instrument-filters select{min-height:2.6rem;padding:.55rem .7rem;color:var(--text);background:var(--canvas);border:1px solid var(--border-strong);border-radius:var(--r2)}
+.instrument-filters .button,.pagination .button{margin:0}
+.pagination{display:flex;align-items:center;justify-content:flex-end;gap:var(--s3);margin-top:var(--s5)}
+@media(max-width:850px){.instrument-filters{grid-template-columns:1fr 1fr}}
+@media(max-width:540px){.instrument-filters{grid-template-columns:1fr}}

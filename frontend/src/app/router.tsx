@@ -11,6 +11,9 @@ import { LoadingState } from "../components/PageState";
 const creatorPages = () => import("../features/creator/StrategyPages");
 const investorAllocationPages = () => import("../features/investor/AllocationPages");
 const investorExecutionPages = () => import("../features/investor/ExecutionPages");
+const instrumentPages = () => import("../features/instruments/InstrumentPages");
+const InstrumentListPage = lazy(async () => ({ default: (await instrumentPages()).InstrumentListPage }));
+const InstrumentDetailPage = lazy(async () => ({ default: (await instrumentPages()).InstrumentDetailPage }));
 const StrategyDetailPage = lazy(async () => ({ default: (await creatorPages()).StrategyDetailPage }));
 const StrategyEditPage = lazy(async () => ({ default: (await creatorPages()).StrategyEditPage }));
 const StrategyListPage = lazy(async () => ({ default: (await creatorPages()).StrategyListPage }));
@@ -39,6 +42,8 @@ export const router = createBrowserRouter([
     { path: "register", element: <RegisterPage /> },
     { path: "marketplace", element: <MarketplaceListPage /> },
     { path: "marketplace/:slug", element: <MarketplaceDetailPage /> },
+    { path: "instruments", element: deferred(<InstrumentListPage />) },
+    { path: "instruments/:instrumentId", element: deferred(<InstrumentDetailPage />) },
     { element: <RequireAuth />, children: [
       { path: "app", element: <AppPage /> },
       { path: "account", element: <AccountPage /> },

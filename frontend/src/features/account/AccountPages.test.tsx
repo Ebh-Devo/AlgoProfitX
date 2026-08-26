@@ -1,7 +1,8 @@
 import userEvent from "@testing-library/user-event";
 import { render, screen } from "@testing-library/react";
 
-import { CreatorEnrollPage } from "./AccountPages";
+import { MemoryRouter } from "react-router-dom";
+import { AppPage, CreatorEnrollPage } from "./AccountPages";
 
 const enrollCreator = vi.hoisted(() => vi.fn());
 const auth = vi.hoisted(() => ({ value: { user: { roles: ["INVESTOR"] }, enrollCreator } }));
@@ -14,5 +15,17 @@ describe("CreatorEnrollPage", () => {
     await userEvent.click(screen.getByRole("button", { name: "Enroll as Creator" }));
     expect(enrollCreator).toHaveBeenCalledOnce();
     expect(await screen.findByText("Your account has the Creator role.")).toBeInTheDocument();
+  });
+});
+
+describe("AppPage", () => {
+  it("shows Creator and Investor quick actions together for dual-role users", () => {
+    auth.value = { ...auth.value, user: { roles: ["INVESTOR", "CREATOR"] } };
+    render(<MemoryRouter><AppPage /></MemoryRouter>);
+    expect(screen.getByRole("link", { name: "Create Strategy" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Marketplace" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Allocations" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Execution Intents" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Browse Instruments" })).toBeInTheDocument();
   });
 });

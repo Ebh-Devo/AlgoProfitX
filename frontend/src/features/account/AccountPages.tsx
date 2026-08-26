@@ -3,17 +3,19 @@ import { Link } from "react-router-dom";
 
 import { ApiError } from "../../api/client";
 import { useAuth } from "../../auth/auth-context";
-import { CREATOR_ROLE, hasRole } from "../../auth/roles";
+import { CREATOR_ROLE, hasRole, INVESTOR_ROLE } from "../../auth/roles";
 import { ErrorAlert, LoadingState } from "../../components/PageState";
 
 export function AppPage() {
   const { user, isLoading } = useAuth();
   if (isLoading) return <LoadingState />;
-  return <section><h1>Workspace</h1><p>Choose a product journey from your available roles.</p>
+  const creator = hasRole(user, CREATOR_ROLE); const investor = hasRole(user, INVESTOR_ROLE);
+  return <section><div className="page-heading"><div><p className="eyebrow">Your workspace</p><h1>Welcome back</h1><p>Continue a Creator or Investor workflow, or explore the shared Instrument reference.</p></div></div>
     <div className="card-grid">
-      {hasRole(user, CREATOR_ROLE) ? <article className="card"><h2>Creator</h2><p>Create, version, and manage the lifecycle of your strategies.</p><Link className="button" to="/creator/strategies">Manage strategies</Link></article> :
+      {creator ? <article className="card"><p className="eyebrow">Creator</p><h2>Build and evaluate</h2><p>Create strategies, bind Versions to canonical Instruments, and enter Backtests and analytics through each Version.</p><div className="inline-actions"><Link className="button" to="/creator/strategies">Strategies</Link><Link className="button button-secondary" to="/creator/strategies/new">Create Strategy</Link></div></article> :
         <article className="card"><h2>Become a Creator</h2><p>Creator enrollment keeps your Investor role.</p><Link className="button" to="/creator/enroll">Enroll as Creator</Link></article>}
-      <article className="card"><h2>Investor</h2><p>Browse strategies and manage paper allocation and execution intents.</p><div className="inline-actions"><Link className="button button-secondary" to="/marketplace">Browse Marketplace</Link><Link className="button" to="/investor/allocations">Manage allocations</Link></div></article>
+      {investor && <article className="card"><p className="eyebrow">Investor</p><h2>Discover and allocate</h2><p>Explore public strategies and manage paper-only allocation and execution intents.</p><div className="inline-actions"><Link className="button" to="/marketplace">Marketplace</Link><Link className="button button-secondary" to="/investor/allocations">Allocations</Link><Link className="button button-secondary" to="/investor/execution-intents">Execution Intents</Link></div></article>}
+      <article className="card"><p className="eyebrow">Reference</p><h2>Canonical Instruments</h2><p>Search equities and indices, understand tradeability, and inspect exchange, currency, lot, and tick metadata.</p><Link className="button button-secondary" to="/instruments">Browse Instruments</Link></article>
     </div>
   </section>;
 }
