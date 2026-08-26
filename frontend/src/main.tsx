@@ -8,6 +8,7 @@ import { router } from "./app/router";
 import "./styles/global.css";
 import "./styles/creator.css";
 import "./styles/investor.css";
+import "./styles/instruments.css";
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } } });
 

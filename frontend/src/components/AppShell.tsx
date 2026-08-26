@@ -19,6 +19,7 @@ export function AppShell() {
       <header className="site-header">
         <Link className="brand" to="/">TradeEBH</Link>
         <nav aria-label="Primary navigation">
+          <NavLink to="/instruments">Instruments</NavLink>
           <NavLink to="/marketplace">Marketplace</NavLink>
           {isAuthenticated && <NavLink to="/app">Workspace</NavLink>}
           {creator && <><NavLink to="/creator/strategies">Strategies</NavLink><span className="role-nav">Creator</span></>}

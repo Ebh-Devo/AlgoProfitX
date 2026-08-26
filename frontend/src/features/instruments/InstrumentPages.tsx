@@ -1,0 +1,32 @@
+import { FormEvent, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { Link, useParams } from "react-router-dom";
+import { ApiError } from "../../api/client";
+import { instrumentsApi, type InstrumentFilters } from "../../api/instruments";
+import { queryKeys } from "../../api/queryKeys";
+import type { Instrument } from "../../api/types";
+import { EmptyState, ErrorAlert, LoadingState } from "../../components/PageState";
+
+const PAGE_SIZE = 20;
+const value = (input: string | number | null | undefined) => input ?? "Not available";
+const Status = ({ children, tone }: { children: string; tone: string }) => <span className={`badge badge-${tone}`}>{children}</span>;
+function InstrumentBadges({ instrument }: { instrument: Instrument }) { return <div className="badge-row"><Status tone={instrument.instrument_type}>{instrument.instrument_type === "equity" ? "Equity" : "Index"}</Status><Status tone={instrument.is_tradeable ? "tradeable" : "non-tradeable"}>{instrument.is_tradeable ? "Tradeable" : "Non-tradeable"}</Status>{!instrument.is_active && <Status tone="archived">Inactive</Status>}{instrument.is_synthetic && <Status tone="synthetic">Synthetic</Status>}</div>; }
+
+export function InstrumentListPage() {
+  const [draft, setDraft] = useState(""); const [filters, setFilters] = useState<InstrumentFilters>({ limit: PAGE_SIZE, offset: 0, isActive: true });
+  const query = useQuery({ queryKey: queryKeys.instruments(filters), queryFn: () => instrumentsApi.list(filters) });
+  const submit = (event: FormEvent) => { event.preventDefault(); setFilters({ ...filters, search: draft.trim() || undefined, offset: 0 }); };
+  const page = Math.floor((filters.offset ?? 0) / PAGE_SIZE) + 1;
+  return <section><div className="page-heading"><div><p className="eyebrow">Public reference</p><h1>Instruments</h1><p>Canonical exchange-listed equities and indices. Vendor mappings and credentials are never exposed.</p></div></div>
+    <form className="card instrument-filters" onSubmit={submit} aria-label="Instrument filters"><label>Search<input type="search" placeholder="Name or symbol" value={draft} onChange={(event) => setDraft(event.target.value)} /></label><label>Type<select value={filters.instrumentType ?? ""} onChange={(event) => setFilters({ ...filters, instrumentType: (event.target.value || undefined) as InstrumentFilters["instrumentType"], offset: 0 })}><option value="">All types</option><option value="equity">Equity</option><option value="index">Index</option></select></label><label>Tradeability<select value={filters.isTradeable === undefined ? "" : String(filters.isTradeable)} onChange={(event) => setFilters({ ...filters, isTradeable: event.target.value === "" ? undefined : event.target.value === "true", offset: 0 })}><option value="">All</option><option value="true">Tradeable</option><option value="false">Non-tradeable</option></select></label><label>Exchange<input placeholder="e.g. NSE" value={filters.exchange ?? ""} onChange={(event) => setFilters({ ...filters, exchange: event.target.value.toUpperCase() || undefined, offset: 0 })} /></label><button className="button">Search</button></form>
+    {query.isLoading ? <LoadingState label="Loading Instruments…" /> : query.isError ? <ErrorAlert>{query.error instanceof ApiError ? query.error.message : "Unable to load Instruments."}</ErrorAlert> : !query.data?.length ? <EmptyState>No Instruments match these filters. Try broadening your search.</EmptyState> : <div className="strategy-table-wrap"><table className="strategy-table"><thead><tr><th>Instrument</th><th>Classification</th><th>Exchange</th><th>Currency</th><th>Trading metadata</th></tr></thead><tbody>{query.data.map((item) => <tr key={item.id}><td><Link to={`/instruments/${item.id}`}><strong>{item.name}</strong></Link><small>{item.canonical_symbol} · {item.exchange_symbol}</small></td><td><InstrumentBadges instrument={item} /></td><td>{item.exchange.code}<small>{item.exchange.country_code}</small></td><td>{item.quote_currency}</td><td>Lot {value(item.lot_size)} · Tick {value(item.tick_size)}</td></tr>)}</tbody></table></div>}
+    <nav className="pagination" aria-label="Instrument pages"><button className="button button-secondary" disabled={!filters.offset} onClick={() => setFilters({ ...filters, offset: Math.max(0, (filters.offset ?? 0) - PAGE_SIZE) })}>Previous</button><span>Page {page}</span><button className="button button-secondary" disabled={!query.data || query.data.length < PAGE_SIZE} onClick={() => setFilters({ ...filters, offset: (filters.offset ?? 0) + PAGE_SIZE })}>Next</button></nav></section>;
+}
+
+export function InstrumentDetailPage() {
+  const { instrumentId = "" } = useParams(); const query = useQuery({ queryKey: queryKeys.instrument(instrumentId), queryFn: () => instrumentsApi.get(instrumentId) });
+  if (query.isLoading) return <LoadingState label="Loading Instrument…" />;
+  if (query.isError || !query.data) return <ErrorAlert>{query.error instanceof ApiError && query.error.status === 404 ? "Instrument not found." : "Unable to load this Instrument."}</ErrorAlert>;
+  const item = query.data;
+  return <section><Link to="/instruments">← Instruments</Link><div className="page-heading"><div><p className="eyebrow">Canonical Instrument</p><h1>{item.name}</h1><p>{item.canonical_symbol} · {item.exchange.code}:{item.exchange_symbol}</p><InstrumentBadges instrument={item} /></div></div><div className="detail-grid"><div className="card"><h2>Identity</h2><dl className="details-list"><dt>Canonical symbol</dt><dd>{item.canonical_symbol}</dd><dt>Exchange symbol</dt><dd>{item.exchange_symbol}</dd><dt>ISIN</dt><dd>{value(item.isin)}</dd><dt>Instrument type</dt><dd>{item.instrument_type}</dd><dt>Record state</dt><dd>{item.is_active ? "Active" : "Inactive"}</dd></dl></div><div className="card"><h2>Exchange</h2><dl className="details-list"><dt>Name</dt><dd>{item.exchange.name}</dd><dt>Code</dt><dd>{item.exchange.code}</dd><dt>Country</dt><dd>{item.exchange.country_code}</dd><dt>Timezone</dt><dd>{item.exchange.timezone}</dd><dt>Quote currency</dt><dd>{item.quote_currency}</dd></dl></div><div className="card"><h2>Trading metadata</h2><dl className="details-list"><dt>Tradeability</dt><dd>{item.is_tradeable ? "Tradeable" : "Non-tradeable reference Instrument"}</dd><dt>Lot size</dt><dd>{value(item.lot_size)}</dd><dt>Tick size</dt><dd>{value(item.tick_size)}</dd></dl></div></div></section>;
+}
