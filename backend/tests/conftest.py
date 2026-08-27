@@ -1,13 +1,24 @@
 import os
 import uuid
+from pathlib import Path
 
 import pytest_asyncio
+from dotenv import dotenv_values
 from sqlalchemy import insert, text
 from sqlalchemy.engine import make_url
 
 
+BACKEND_ENV_FILE = Path(__file__).resolve().parents[1] / ".env"
+
+
 def _require_test_database() -> str:
+    # Direct pytest invocations from CMD do not run the PowerShell environment
+    # loader. Read only TEST_DATABASE_URL from the same local .env file used by
+    # application settings, while still refusing to fall back to DATABASE_URL.
     database_url = os.environ.get("TEST_DATABASE_URL")
+    if not database_url and BACKEND_ENV_FILE.is_file():
+        configured = dotenv_values(BACKEND_ENV_FILE).get("TEST_DATABASE_URL")
+        database_url = configured if isinstance(configured, str) else None
 
     if not database_url:
         raise RuntimeError(
