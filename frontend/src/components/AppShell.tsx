@@ -17,19 +17,20 @@ export function AppShell() {
   return (
     <div className="app-shell">
       <header className="site-header">
-        <Link className="brand" to="/" aria-label="AlgoProfitX home">AlgoProfitX</Link>
+        <Link className="brand" to="/" aria-label="AlgoProfitX home"><span className="brand-mark" aria-hidden="true"><i /><i /><i /></span><span>AlgoProfit<span>X</span></span></Link>
         <nav aria-label="Primary navigation">
-          <NavLink to="/instruments">Instruments</NavLink>
+          {isAuthenticated && <NavLink to="/app">Dashboard</NavLink>}
           <NavLink to="/marketplace">Marketplace</NavLink>
-          {isAuthenticated && <NavLink to="/app">Workspace</NavLink>}
-          {creator && <><NavLink to="/creator/strategies">Strategies</NavLink><span className="role-nav">Creator</span></>}
-          {investor && <><NavLink to="/investor/allocations">Allocations</NavLink><NavLink to="/investor/execution-intents">Executions</NavLink><span className="role-nav">Investor</span></>}
+          <NavLink to="/instruments">Instruments</NavLink>
+          {creator && <NavLink to="/creator/strategies">Strategies</NavLink>}
+          {investor && <><NavLink to="/investor/allocations">Allocations</NavLink><NavLink to="/investor/execution-intents">Executions</NavLink></>}
         </nav>
         <div className="header-actions">
           {isAuthenticated ? (
             <>
-              <NavLink to="/account">Account</NavLink>
-              <button className="button button-secondary" onClick={endSession}>Log out</button>
+              <div className="role-cluster" aria-label="Active roles">{creator && <span className="role-nav">Creator</span>}{investor && <span className="role-nav">Investor</span>}</div>
+              <NavLink className="account-link" to="/account"><span className="avatar" aria-hidden="true">{user?.email?.[0]?.toUpperCase() ?? "A"}</span><span>Account</span></NavLink>
+              <button className="logout-button" onClick={endSession} aria-label="Log out">↗</button>
             </>
           ) : (
             <>

@@ -9,6 +9,7 @@ import "./styles/global.css";
 import "./styles/creator.css";
 import "./styles/investor.css";
 import "./styles/instruments.css";
+import "./styles/premium.css";
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } } });
 
