@@ -5,10 +5,12 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.backtesting.contracts import (
     BacktestExecutionError,
+    Candle,
     HistoricalCandleRequest,
     InstrumentIdentity,
     MarketDataBatch,
@@ -17,7 +19,10 @@ from app.backtesting.reference import (
     EmaCrossoverReferenceEngine,
     SyntheticMarketDataProvider,
 )
+from app.core.config import get_settings
+from app.market_data.infrastructure import MarketDataError, ProviderRegistry, canonical_checksum, dataset_key, load_with_policy, resolve_mapping, validate_and_normalize
 from app.models.backtest import Backtest, BacktestStatus
+from app.models.market_data import MarketDataCandle, MarketDataDataset, MarketDataDatasetStatus
 from app.models.instrument import Exchange
 from app.models.strategy import StrategyVersion
 from app.market_calendar.contracts import CalendarError
@@ -56,7 +61,7 @@ async def create_backtest(
         ),
         market_data_reference=data.market_data_reference,
         timeframe=_configuration_string(
-            strategy_version.backtest_configuration, "timeframe", "1h"
+            strategy_version.backtest_configuration, "timeframe", "1d"
         ),
         range_start=_configuration_datetime(
             strategy_version.backtest_configuration.get("start_date")
@@ -111,28 +116,30 @@ async def execute_backtest(
     backtest_id: uuid.UUID,
 ) -> Backtest:
     backtest = await _claim_queued_backtest(session, backtest_id)
-    provider = SyntheticMarketDataProvider()
-    engine = EmaCrossoverReferenceEngine(provider.identifier)
-
     try:
-        batch = provider.load(await _historical_request(session, backtest))
-        await _persist_market_data_batch(session, backtest_id, batch)
+        configured_code = get_settings().market_data_provider
+        provider = ProviderRegistry((SyntheticMarketDataProvider(),)).resolve(configured_code)
+        engine = EmaCrossoverReferenceEngine(provider.identifier)
+        request = await _historical_request(session, backtest)
+        dataset, candles = await _acquire_dataset(session, backtest, provider, request)
+        await _attach_dataset(session, backtest_id, dataset)
         result = engine.run(
             backtest.configuration_snapshot,
             backtest.backtest_configuration_snapshot,
-            batch.candles,
+            candles,
         )
         if len(result.trades) > MAX_RESULT_TRADES:
             raise BacktestExecutionError("Backtest trade result exceeds its limit")
         if len(result.equity_curve) > MAX_RESULT_EQUITY_POINTS:
             raise BacktestExecutionError("Backtest equity result exceeds its limit")
-    except BacktestExecutionError as exc:
-        return await _mark_backtest_failed(session, backtest_id, str(exc))
+    except (BacktestExecutionError, MarketDataError) as exc:
+        return await _mark_backtest_failed(session, backtest_id, str(exc), getattr(exc, "code", "market_data_invalid_payload"))
     except Exception:
         return await _mark_backtest_failed(
             session,
             backtest_id,
             "Backtest execution failed",
+            "market_data_provider_unavailable",
         )
 
     return await _mark_backtest_completed(
@@ -172,6 +179,7 @@ async def _claim_queued_backtest(
     backtest.completed_at = None
     backtest.result_summary = None
     backtest.error_message = None
+    backtest.error_code = None
     await session.commit()
     await session.refresh(backtest)
     return backtest
@@ -196,12 +204,14 @@ async def _mark_backtest_failed(
     session: AsyncSession,
     backtest_id: uuid.UUID,
     error_message: str,
+    error_code: str = "market_data_invalid_payload",
 ) -> Backtest:
     backtest = await _get_locked_backtest(session, backtest_id)
     backtest.status = BacktestStatus.FAILED
     backtest.completed_at = datetime.now(timezone.utc)
     backtest.result_summary = None
     backtest.error_message = _sanitize_error(error_message)
+    backtest.error_code = error_code
     await session.commit()
     await session.refresh(backtest)
     return backtest
@@ -273,7 +283,7 @@ async def _historical_request(session: AsyncSession, backtest: Backtest) -> Hist
         if not is_synthetic_equity_symbol(backtest.configuration_snapshot.get("instrument")):
             raise BacktestExecutionError("Legacy Backtest Instrument is unresolved")
         identity = InstrumentIdentity(
-            id=None,
+            id="20000000-0000-4000-8000-000000000001",
             canonical_symbol=LEGACY_SYNTHETIC_EQUITY_SYMBOL,
             exchange_symbol=LEGACY_SYNTHETIC_EQUITY_SYMBOL,
             name="Legacy synthetic reference equity",
@@ -296,7 +306,7 @@ async def _historical_request(session: AsyncSession, backtest: Backtest) -> Hist
         raise BacktestExecutionError("Historical request Exchange is unavailable")
     calendar = IndianReferenceTradingCalendar()
     start = backtest.range_start or datetime(2025, 1, 1, tzinfo=timezone.utc)
-    end = backtest.range_end or start + timedelta(days=30)
+    end = backtest.range_end or start + timedelta(days=120)
     try:
         sessions = calendar.sessions_between(exchange, start, end)
     except CalendarError as exc:
@@ -305,7 +315,7 @@ async def _historical_request(session: AsyncSession, backtest: Backtest) -> Hist
         raise BacktestExecutionError("Historical request contains no trading sessions")
     return HistoricalCandleRequest(
         instrument=identity,
-        timeframe=backtest.timeframe or "1h",
+        timeframe=backtest.timeframe or "1d",
         start=backtest.range_start,
         end=backtest.range_end,
         adjustment_policy=backtest.adjustment_policy or "unadjusted",
@@ -349,6 +359,83 @@ async def _persist_market_data_batch(
     backtest.adjustment_policy = batch.adjustment_policy
     backtest.data_fetched_at = batch.fetched_at
     backtest.market_data_provenance = deepcopy(batch.provenance)
+    await session.commit()
+
+
+async def _acquire_dataset(session, backtest, provider, request):
+    settings = get_settings()
+    if request.adjustment_policy != "unadjusted":
+        raise MarketDataError("market_data_invalid_payload", "Only unadjusted market data is supported")
+    if request.start and request.end and (request.end - request.start).days > settings.market_data_max_range_days:
+        raise MarketDataError("market_data_invalid_payload", "Requested market data range exceeds configured limit")
+    requested_start = request.sessions[0].local_session_date
+    requested_end = request.sessions[-1].local_session_date
+    mapping = None
+    if provider.code != "synthetic":
+        mapping = await resolve_mapping(session, uuid.UUID(request.instrument.id), provider.code, requested_start, requested_end)
+        request.metadata["provider_mapping"] = {
+            "id": str(mapping.id), "vendor_instrument_id": mapping.vendor_instrument_id,
+            "vendor_symbol": mapping.vendor_symbol, "valid_from": mapping.valid_from.isoformat() if mapping.valid_from else None,
+            "valid_to": mapping.valid_to.isoformat() if mapping.valid_to else None,
+        }
+    mapping_id = mapping.id if mapping else None
+    key = dataset_key(request.instrument.id, provider.code, mapping_id, request.timeframe, request.adjustment_policy, requested_start, requested_end)
+    existing = await session.scalar(select(MarketDataDataset).options(selectinload(MarketDataDataset.candles)).where(MarketDataDataset.dataset_key == key, MarketDataDataset.status == MarketDataDatasetStatus.READY))
+    if existing is not None:
+        candles = tuple(Candle(c.session_date, c.timestamp, c.open, c.high, c.low, c.close, c.volume) for c in existing.candles)
+        if canonical_checksum(candles) != existing.normalized_checksum:
+            raise MarketDataError("market_data_checksum_mismatch", "Stored market data checksum does not match immutable candles")
+        return existing, candles
+    batch = await load_with_policy(provider, request, timeout_seconds=settings.market_data_timeout_seconds, max_retries=settings.market_data_max_retries)
+    candles, duplicate_count = validate_and_normalize(batch.candles, start=requested_start, end=requested_end, max_candles=settings.market_data_max_candles)
+    checksum = canonical_checksum(candles)
+    calendar = request.metadata.get("calendar") or {}
+    missing_count = max(0, len(request.sessions) - len({c.session_date for c in candles}))
+    provenance = {
+        "provider_code": provider.code, "provider_adapter_version": provider.adapter_version,
+        "product_feed_identifier": batch.dataset_reference, "instrument_id": request.instrument.id,
+        "mapping_id": str(mapping_id) if mapping_id else None, "mapping_snapshot": request.metadata.get("provider_mapping"),
+        "requested_range": {"start": requested_start.isoformat(), "end": requested_end.isoformat()},
+        "actual_range": {"start": candles[0].session_date.isoformat(), "end": candles[-1].session_date.isoformat()},
+        "timeframe": request.timeframe, "adjustment_policy": request.adjustment_policy,
+        "candle_count": len(candles), "duplicate_count": duplicate_count, "missing_session_count": missing_count,
+        "validation_policy_version": "daily-ohlcv-v1", "calendar_code": calendar.get("calendar_identifier"),
+        "calendar_version": calendar.get("calendar_policy_version"), "exception_manifest_version": calendar.get("exception_manifest_version"),
+        "source_timestamp_convention": "exchange-session-close-converted-to-utc" if request.timeframe == "1d" else "exchange-session-hour-utc",
+        "raw_checksum": batch.provenance.get("raw_checksum"), "normalized_checksum": checksum,
+        "synthetic": bool(batch.provenance.get("synthetic")),
+    }
+    if len(json.dumps(provenance, separators=(",", ":")).encode()) > 16384:
+        raise MarketDataError("market_data_invalid_payload", "Market data provenance exceeds configured limit")
+    dataset = MarketDataDataset(
+        dataset_key=key, instrument_id=uuid.UUID(request.instrument.id), provider_code=provider.code,
+        provider_mapping_id=mapping_id, timeframe=request.timeframe, adjustment_policy=request.adjustment_policy,
+        requested_start=requested_start, requested_end=requested_end, actual_start=candles[0].session_date,
+        actual_end=candles[-1].session_date, fetched_at=batch.fetched_at, candle_count=len(candles),
+        raw_checksum=batch.provenance.get("raw_checksum"), normalized_checksum=checksum,
+        status=MarketDataDatasetStatus.READY, provenance=provenance,
+    )
+    dataset.candles = [MarketDataCandle(session_date=c.session_date, timestamp=c.timestamp, open=c.open, high=c.high, low=c.low, close=c.close, volume=c.volume) for c in candles]
+    session.add(dataset)
+    await session.commit()
+    await session.refresh(dataset)
+    return dataset, candles
+
+
+async def _attach_dataset(session, backtest_id, dataset):
+    backtest = await _get_locked_backtest(session, backtest_id)
+    backtest.market_data_dataset_id = dataset.id
+    backtest.market_data_provider = dataset.provider_code
+    backtest.dataset_reference = str(dataset.id)
+    backtest.timeframe = dataset.timeframe
+    backtest.range_start = datetime.combine(dataset.actual_start, datetime.min.time(), timezone.utc)
+    backtest.range_end = datetime.combine(dataset.actual_end, datetime.min.time(), timezone.utc)
+    backtest.adjustment_policy = dataset.adjustment_policy
+    backtest.data_fetched_at = dataset.fetched_at
+    public_provenance = deepcopy(dataset.provenance)
+    public_provenance.pop("mapping_id", None)
+    public_provenance.pop("mapping_snapshot", None)
+    backtest.market_data_provenance = public_provenance
     await session.commit()
 
 

@@ -604,6 +604,7 @@ export interface components {
             market_data_reference: string | null;
             /** Market Data Provider */
             market_data_provider: string | null;
+            market_data_dataset_id: string | null;
             /** Dataset Reference */
             dataset_reference: string | null;
             /** Timeframe */
@@ -626,6 +627,7 @@ export interface components {
             } | null;
             /** Error Message */
             error_message: string | null;
+            error_code: string | null;
             /**
              * Created At
              * Format: date-time

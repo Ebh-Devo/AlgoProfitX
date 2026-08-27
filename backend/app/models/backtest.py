@@ -96,6 +96,9 @@ class Backtest(Base):
     )
 
     market_data_provider: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    market_data_dataset_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("market_data_datasets.id", ondelete="RESTRICT"), nullable=True, index=True
+    )
     dataset_reference: Mapped[str | None] = mapped_column(String(500), nullable=True)
     timeframe: Mapped[str | None] = mapped_column(String(50), nullable=True)
     range_start: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -116,6 +119,7 @@ class Backtest(Base):
         Text,
         nullable=True,
     )
+    error_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

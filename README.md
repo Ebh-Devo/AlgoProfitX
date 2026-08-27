@@ -34,6 +34,7 @@ The intended product domain is [https://www.algoprofitx.com](https://www.algopro
 | Investor | Allocation Intents pinned to a Strategy Version |
 | Execution | Execution Intents and deterministic Paper Execution |
 | Market foundation | Exchange/Instrument identity, vendor-neutral mappings, anonymous discovery APIs |
+| Historical datasets | Provider-independent async boundary, immutable daily candles, checksums, provenance, synthetic default |
 | Frontend | Creator and Investor MVP journeys and role-aware navigation |
 
 The frontend uses Vite, React, TypeScript, React Router, TanStack Query, generated OpenAPI types, and Recharts. The backend uses FastAPI, SQLAlchemy 2.x, Alembic, PostgreSQL, Pydantic, and pytest.
@@ -52,6 +53,10 @@ The frontend uses Vite, React, TypeScript, React Router, TanStack Query, generat
 | Docker | Optional; not required for native Windows development |
 
 Redis is not required by any currently implemented functionality.
+
+### Historical market-data architecture
+
+Backtests resolve the server-configured provider, acquire or reuse an immutable `MarketDataDataset`, validate normalized OHLCV candles, and execute only from persisted candles. The default `synthetic` adapter is deterministic and credential-free. No real vendor adapter is configured: production use still requires a contracted, appropriately licensed market-data source and provider-specific credentials. Provider mappings remain private, are resolved by provider and validity range, and are snapshotted into bounded provenance without secrets. Phase 2F.1 supports daily (`1d`), unadjusted data; it does not claim to provide real NSE history.
 
 Install Node.js LTS:
 

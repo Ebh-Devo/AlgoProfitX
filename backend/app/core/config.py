@@ -21,6 +21,11 @@ class Settings(BaseSettings):
     cors_allowed_origins: Annotated[tuple[str, ...], NoDecode] = ()
 
     redis_url: str = "redis://localhost:6379/0"
+    market_data_provider: str = "synthetic"
+    market_data_timeout_seconds: float = 15.0
+    market_data_max_retries: int = 2
+    market_data_max_range_days: int = 3660
+    market_data_max_candles: int = 4000
 
     model_config = SettingsConfigDict(
         # Keep the local configuration next to the backend, independent of
