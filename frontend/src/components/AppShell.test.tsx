@@ -18,7 +18,7 @@ describe("AppShell", () => {
     render(<MemoryRouter><AppShell /></MemoryRouter>);
     expect(screen.getByText("Creator")).toBeInTheDocument();
     expect(screen.getByText("Investor")).toBeInTheDocument();
-    expect(screen.getByText("Workspace")).toBeInTheDocument();
+    expect(screen.getByText("Dashboard")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Instruments" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Strategies" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Allocations" })).toBeInTheDocument();
