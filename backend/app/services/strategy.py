@@ -13,6 +13,7 @@ from app.schemas.strategy import (
     StrategyUpdateRequest,
     StrategyVersionCreateRequest,
 )
+from app.instrument_identity import SYNTHETIC_EQUITY_ID, SYNTHETIC_EQUITY_SYMBOLS
 
 
 ALLOWED_LIFECYCLE_TRANSITIONS = {
@@ -166,6 +167,8 @@ async def create_strategy_version(
             instrument.canonical_symbol.casefold(),
             instrument.exchange_symbol.casefold(),
         }
+        if instrument.id == SYNTHETIC_EQUITY_ID:
+            matching_symbols.update(symbol.casefold() for symbol in SYNTHETIC_EQUITY_SYMBOLS)
         if not isinstance(legacy_identity, str) or legacy_identity.casefold() not in matching_symbols:
             raise StrategyVersionValidationError(
                 "configuration.instrument conflicts with instrument_id"

@@ -81,10 +81,10 @@ jobs:
         shell: bash
         run: |
           cd backend
-          python -c "import json; from app.main import app; open('/tmp/tradeebh-openapi.json', 'w').write(json.dumps(app.openapi()))"
+          python -c "import json; from app.main import app; open('/tmp/algoprofitx-openapi.json', 'w').write(json.dumps(app.openapi()))"
           cd ../frontend
-          pnpm exec openapi-typescript /tmp/tradeebh-openapi.json -o /tmp/tradeebh-openapi.ts
-          diff --unified src/api/generated/openapi.ts /tmp/tradeebh-openapi.ts
+          pnpm exec openapi-typescript /tmp/algoprofitx-openapi.json -o /tmp/algoprofitx-openapi.ts
+          diff --unified src/api/generated/openapi.ts /tmp/algoprofitx-openapi.ts
       - name: Typecheck
         working-directory: frontend
         run: pnpm typecheck

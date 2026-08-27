@@ -10,7 +10,7 @@ BACKEND_DIR = Path(__file__).resolve().parents[2]
 
 
 class Settings(BaseSettings):
-    app_name: str = "TradeEBH"
+    app_name: str = "AlgoProfitX"
     app_env: str = "development"
     debug: bool = True
 

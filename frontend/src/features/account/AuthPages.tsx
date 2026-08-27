@@ -51,7 +51,7 @@ export function LoginPage() {
     }
   });
 
-  return <section className="auth-card card"><h1>Log in</h1><p>Access your TradeEBH workspace.</p>
+  return <section className="auth-card card"><h1>Log in</h1><p>Access your AlgoProfitX workspace.</p>
     {error && <ErrorAlert>{error}</ErrorAlert>}
     <form onSubmit={submit} noValidate>
       <label>Email<input type="email" autoComplete="email" {...form.register("email")} /></label>
@@ -60,7 +60,7 @@ export function LoginPage() {
       {form.formState.errors.password && <small>{form.formState.errors.password.message}</small>}
       <button className="button" disabled={form.formState.isSubmitting}>Log in</button>
     </form>
-    <p>New to TradeEBH? <Link to="/register">Create an account</Link>.</p>
+    <p>New to AlgoProfitX? <Link to="/register">Create an account</Link>.</p>
   </section>;
 }
 

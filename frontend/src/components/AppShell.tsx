@@ -17,7 +17,7 @@ export function AppShell() {
   return (
     <div className="app-shell">
       <header className="site-header">
-        <Link className="brand" to="/">TradeEBH</Link>
+        <Link className="brand" to="/" aria-label="AlgoProfitX home">AlgoProfitX</Link>
         <nav aria-label="Primary navigation">
           <NavLink to="/instruments">Instruments</NavLink>
           <NavLink to="/marketplace">Marketplace</NavLink>

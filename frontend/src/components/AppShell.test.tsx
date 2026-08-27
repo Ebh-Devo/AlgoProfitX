@@ -23,5 +23,6 @@ describe("AppShell", () => {
     expect(screen.getByRole("link", { name: "Strategies" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Allocations" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Executions" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "AlgoProfitX home" })).toHaveTextContent("AlgoProfitX");
   });
 });

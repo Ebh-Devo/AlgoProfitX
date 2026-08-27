@@ -8,6 +8,7 @@ from app.paper_execution.contracts import (
     PaperExecutionResult,
 )
 from app.market_calendar.contracts import TradingSession
+from app.instrument_identity import is_synthetic_equity_symbol
 
 
 class SyntheticPaperMarketDataProvider:
@@ -19,7 +20,7 @@ class SyntheticPaperMarketDataProvider:
     def load(
         self, configuration: dict, instrument: dict, session: TradingSession
     ) -> Sequence[Candle]:
-        if instrument.get("canonical_symbol") != "TRADEEBH_TEST_EQ":
+        if not is_synthetic_equity_symbol(instrument.get("canonical_symbol")):
             raise PaperExecutionError(
                 "unsupported_instrument",
                 "Synthetic paper data is unavailable for this canonical Instrument",

@@ -135,7 +135,7 @@ async def test_creator_creates_queued_backtest_with_independent_snapshots(client
     )
     assert created["market_data_reference"] == "future-data-snapshot"
     assert created["instrument_id"] == str(SYNTHETIC_EQUITY_ID)
-    assert created["instrument_snapshot"]["canonical_symbol"] == "TRADEEBH_TEST_EQ"
+    assert created["instrument_snapshot"]["canonical_symbol"] == "ALGOPROFITX_TEST_EQ"
     assert created["instrument_snapshot"]["exchange_code"] == "NSE"
     assert created["market_data_provider"] is None
     assert created["dataset_reference"] is None

@@ -12,7 +12,7 @@ if (-not $python) {
 
 $version = & $python.Source -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"
 if ($LASTEXITCODE -ne 0 -or $version.Trim() -ne "3.13") {
-    throw "TradeEBH supports Python 3.13. Found '$($version.Trim())'."
+    throw "AlgoProfitX supports Python 3.13. Found '$($version.Trim())'."
 }
 
 $root = Get-RepositoryRoot

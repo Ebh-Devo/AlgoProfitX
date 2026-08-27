@@ -20,6 +20,7 @@ from app.paper_execution.reference import (
     EmaCrossoverPaperAdapter,
     SyntheticPaperMarketDataProvider,
 )
+from app.instrument_identity import SYNTHETIC_EQUITY_ID, is_synthetic_equity_symbol
 
 
 MAX_PAPER_RESULT_BYTES = 8_192
@@ -366,11 +367,11 @@ async def _canonical_instrument_for_version(
 ) -> Instrument | None:
     if version.instrument is not None:
         return version.instrument
-    if version.configuration.get("instrument") != "TRADEEBH_TEST_EQ":
+    if not is_synthetic_equity_symbol(version.configuration.get("instrument")):
         return None
     result = await session.execute(
         select(Instrument)
-        .where(Instrument.canonical_symbol == "TRADEEBH_TEST_EQ")
+        .where(Instrument.id == SYNTHETIC_EQUITY_ID)
         .options(joinedload(Instrument.exchange))
     )
     return result.scalar_one_or_none()

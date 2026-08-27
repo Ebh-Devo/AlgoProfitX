@@ -87,6 +87,8 @@ async def test_bootstrap_equity_and_index_semantics_are_explicit():
     assert equity.tick_size == Decimal("0.01000000")
     assert equity.lot_size == 1
     assert equity.is_synthetic is True
+    assert equity.canonical_symbol == "ALGOPROFITX_TEST_EQ"
+    assert equity.id == SYNTHETIC_EQUITY_ID
     assert "not a real security" in equity.name
     assert nifty is not None and bank_nifty is not None
     assert nifty.instrument_type == bank_nifty.instrument_type == InstrumentType.INDEX
@@ -205,7 +207,7 @@ async def test_anonymous_list_detail_filters_and_pagination(client):
     assert response.status_code == 200
     assert [item["id"] for item in response.json()] == [str(BANK_NIFTY_INDEX_ID)]
 
-    response = await client.get("/api/v1/instruments?symbol=TRADEEBH_TEST_EQ")
+    response = await client.get("/api/v1/instruments?symbol=ALGOPROFITX_TEST_EQ")
     assert response.status_code == 200
     assert response.json()[0]["is_synthetic"] is True
 
@@ -216,7 +218,7 @@ async def test_anonymous_list_detail_filters_and_pagination(client):
 
     detail = await client.get(f"/api/v1/instruments/{SYNTHETIC_EQUITY_ID}")
     assert detail.status_code == 200
-    assert detail.json()["canonical_symbol"] == "TRADEEBH_TEST_EQ"
+    assert detail.json()["canonical_symbol"] == "ALGOPROFITX_TEST_EQ"
     assert "vendor_instrument_id" not in detail.text
 
 

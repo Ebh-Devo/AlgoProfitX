@@ -23,6 +23,10 @@ from app.models.strategy import StrategyVersion
 from app.market_calendar.contracts import CalendarError
 from app.market_calendar.reference import IndianReferenceTradingCalendar
 from app.schemas.backtest import BacktestCreateRequest
+from app.instrument_identity import (
+    LEGACY_SYNTHETIC_EQUITY_SYMBOL,
+    is_synthetic_equity_symbol,
+)
 
 
 MAX_RESULT_TRADES = 100
@@ -266,13 +270,13 @@ def _configuration_datetime(value: object) -> datetime | None:
 async def _historical_request(session: AsyncSession, backtest: Backtest) -> HistoricalCandleRequest:
     snapshot = backtest.instrument_snapshot
     if snapshot is None:
-        if backtest.configuration_snapshot.get("instrument") != "TRADEEBH_TEST_EQ":
+        if not is_synthetic_equity_symbol(backtest.configuration_snapshot.get("instrument")):
             raise BacktestExecutionError("Legacy Backtest Instrument is unresolved")
         identity = InstrumentIdentity(
             id=None,
-            canonical_symbol="TRADEEBH_TEST_EQ",
-            exchange_symbol="TRADEEBH_TEST_EQ",
-            name="TradeEBH legacy synthetic reference equity",
+            canonical_symbol=LEGACY_SYNTHETIC_EQUITY_SYMBOL,
+            exchange_symbol=LEGACY_SYNTHETIC_EQUITY_SYMBOL,
+            name="Legacy synthetic reference equity",
             exchange_code="NSE",
             instrument_type="equity",
             quote_currency="INR",

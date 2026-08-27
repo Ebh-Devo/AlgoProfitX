@@ -103,9 +103,9 @@ async def test_paper_execution_completes_with_deterministic_bounded_buy_result(c
         "engine_identifier": "ema-crossover-paper-reference-v1",
         "provider_identifier": "synthetic-paper-nse-equity-v1",
         "instrument_id": str(SYNTHETIC_EQUITY_ID),
-        "canonical_symbol": "TRADEEBH_TEST_EQ",
-        "exchange_symbol": "TRADEEBH_TEST_EQ",
-        "name": "TradeEBH Synthetic Reference Equity (not a real security)",
+        "canonical_symbol": "ALGOPROFITX_TEST_EQ",
+        "exchange_symbol": "ALGOPROFITX_TEST_EQ",
+        "name": "AlgoProfitX Synthetic Reference Equity (not a real security)",
         "exchange_code": "NSE",
         "exchange": "NSE",
         "instrument_type": "equity",
@@ -249,7 +249,7 @@ async def test_paper_execution_failures_are_terminal_and_sanitized(client):
     response = await client.post(execute_path(unsupported_intent["id"]), headers=investor_headers)
     assert response.status_code == 200
     assert response.json()["status"] == "completed"
-    assert response.json()["paper_result_summary"]["canonical_symbol"] == "TRADEEBH_TEST_EQ"
+    assert response.json()["paper_result_summary"]["canonical_symbol"] == "ALGOPROFITX_TEST_EQ"
 
     _, investor_headers, _, _, _, currency_intent = await create_paper_execution_intent(
         client,

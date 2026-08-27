@@ -1,6 +1,10 @@
-# TradeEBH
+# AlgoProfitX
 
-TradeEBH is a strategy-first trading marketplace MVP connecting strategy Creators and Investors. It supports strategy versioning, reference backtesting and analytics, marketplace discovery, allocation intents, and deterministic paper execution.
+AlgoProfitX is a strategy-first trading marketplace MVP connecting strategy Creators and Investors. It supports strategy versioning, reference backtesting and analytics, marketplace discovery, allocation intents, and deterministic paper execution.
+
+The intended product domain is [https://www.algoprofitx.com](https://www.algoprofitx.com) (`algoprofitx.com`). This document does not imply that a production deployment is currently live there.
+
+> Product name: **AlgoProfitX**. Repository name and existing local folder: **TradeEBH** until the GitHub repository is renamed separately.
 
 > Paper Execution uses synthetic NSE/INR reference data. It is not real NSE market data, live broker execution, or funded capital.
 
@@ -77,7 +81,7 @@ git clone <repository-url>
 cd TradeEBH
 ```
 
-This repository's URL is `https://github.com/Roshan-Baghwar/TradeEBH.git`.
+This repository's current URL is `https://github.com/Roshan-Baghwar/TradeEBH.git`. Renaming it requires a separate GitHub account operation; no code change can perform that safely.
 
 ### Preferred bootstrap
 
@@ -124,6 +128,8 @@ Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 
 Credentials belong only in local configuration. Never commit passwords, tokens, private keys, or database URLs containing real passwords.
 
+These database and role identifiers intentionally remain compatibility names for existing installations. Fresh setup uses the same defaults so scripts, CI, and local environments remain interoperable. Renaming them requires a separately planned PostgreSQL administrative migration; the application never drops or recreates them during this rebrand.
+
 Start PostgreSQL, then run from `TradeEBH\`:
 
 ```powershell
@@ -164,7 +170,7 @@ Preferred command from `TradeEBH\`:
 .\scripts\migrate.ps1
 ```
 
-The current Alembic head is `a1d4e7f9b2c6` (`add_market_instrument_foundation`). Direct manual-venv commands:
+The current Alembic head is `e5a1b2c3d4f6` (`rebrand_synthetic_instrument`). Direct manual-venv commands:
 
 ```powershell
 cd backend
@@ -181,7 +187,9 @@ After migrating, run the versioned, idempotent reference-data bootstrap from `ba
 python -m app.bootstrap.instruments
 ```
 
-The Phase 2A bootstrap uses stable UUIDs and creates NSE, BSE, the explicitly synthetic `TRADEEBH_TEST_EQ` reference equity, and non-tradeable NIFTY 50 and NIFTY Bank index identities. It is a small platform reference manifest—not a live NSE/BSE Instrument Master and not market data.
+The Phase 2A bootstrap uses stable UUIDs and creates NSE, BSE, the explicitly synthetic `ALGOPROFITX_TEST_EQ` reference equity, and non-tradeable NIFTY 50 and NIFTY Bank index identities. It is a small platform reference manifest—not a live NSE/BSE Instrument Master and not market data.
+
+The synthetic equity keeps UUID `20000000-0000-4000-8000-000000000001`. The rebrand migration changes only its current canonical symbol and display name. Persisted Strategy JSON, Backtests, provenance, Allocation Intents, Execution Intents, and paper-result snapshots containing legacy `TRADEEBH_TEST_EQ` remain unchanged and supported by the execution providers.
 
 Anonymous read-only discovery is available at:
 
@@ -309,7 +317,7 @@ Open <http://localhost:5173>.
 2. Log in.
 3. Enroll as a Creator if needed; the Investor role is preserved.
 4. Create a draft Strategy.
-5. Create an immutable Strategy Version by selecting the canonical Instrument (for this reference walkthrough, `TRADEEBH_TEST_EQ`).
+5. Create an immutable Strategy Version by selecting the canonical Instrument (for this reference walkthrough, `ALGOPROFITX_TEST_EQ`).
 
 Configuration example:
 
@@ -343,7 +351,7 @@ Backtest configuration example:
 11. Create an Allocation Intent; the server pins the current Version.
 12. Create and execute a pending Paper Execution Intent.
 
-`TRADEEBH_TEST_EQ` and its NSE/INR candles are deterministic synthetic fixtures—not a real security or real market data. Paper Execution does not contact a broker or use funded capital.
+`ALGOPROFITX_TEST_EQ` and its NSE/INR candles are deterministic synthetic fixtures—not a real security or real market data. Paper Execution does not contact a broker or use funded capital.
 
 ## Troubleshooting
 

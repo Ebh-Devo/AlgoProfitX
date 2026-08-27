@@ -159,7 +159,7 @@ async def test_execute_claims_queued_backtest_then_completes_with_bounded_result
     assert completed["adjustment_policy"] == "unadjusted"
     assert completed["data_fetched_at"].endswith("Z")
     assert completed["market_data_provenance"] == {
-        "generator": "tradeebh-deterministic-reference",
+        "generator": "algoprofitx-deterministic-reference",
         "generator_version": 1,
         "candle_count": 64,
         "synthetic": True,

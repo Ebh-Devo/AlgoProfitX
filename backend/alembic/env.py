@@ -36,7 +36,9 @@ settings = get_settings()
 
 config.set_main_option(
     "sqlalchemy.url",
-    settings.database_url,
+    # Alembic stores this value in ConfigParser, where percent signs trigger
+    # interpolation. URL-encoded credentials therefore need literal escaping.
+    settings.database_url.replace("%", "%%"),
 )
 
 target_metadata = Base.metadata

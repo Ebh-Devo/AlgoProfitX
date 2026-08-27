@@ -111,7 +111,7 @@ async def test_create_first_version_is_server_numbered_and_persisted(client):
     }
     assert data["strategy_id"] == strategy["id"]
     assert data["instrument_id"] == str(SYNTHETIC_EQUITY_ID)
-    assert data["instrument"]["canonical_symbol"] == "TRADEEBH_TEST_EQ"
+    assert data["instrument"]["canonical_symbol"] == "ALGOPROFITX_TEST_EQ"
     assert data["version_number"] == 1
     assert data["configuration"] == {"instrument": "TRADEEBH_TEST_EQ", "timeframe": "15m"}
     assert data["backtest_configuration"] == {"initial_capital": 100000}

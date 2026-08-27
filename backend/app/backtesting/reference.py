@@ -9,6 +9,7 @@ from app.backtesting.contracts import (
     HistoricalCandleRequest,
     MarketDataBatch,
 )
+from app.instrument_identity import is_synthetic_equity_symbol
 
 
 class SyntheticMarketDataProvider:
@@ -21,7 +22,7 @@ class SyntheticMarketDataProvider:
         reference = request.metadata.get("requested_reference")
         if reference not in (None, self.identifier):
             raise BacktestExecutionError("Unsupported synthetic data reference")
-        if request.instrument.canonical_symbol != "TRADEEBH_TEST_EQ":
+        if not is_synthetic_equity_symbol(request.instrument.canonical_symbol):
             raise BacktestExecutionError("Unsupported synthetic Instrument")
         if request.timeframe != "1h":
             raise BacktestExecutionError("Synthetic provider supports only timeframe=1h")
@@ -70,7 +71,7 @@ class SyntheticMarketDataProvider:
             actual_range_end=candles[-1].timestamp,
             adjustment_policy=request.adjustment_policy,
             provenance={
-                "generator": "tradeebh-deterministic-reference",
+                "generator": "algoprofitx-deterministic-reference",
                 "generator_version": 1,
                 "candle_count": len(candles),
                 "synthetic": True,

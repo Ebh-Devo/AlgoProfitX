@@ -54,9 +54,9 @@ async def test_investor_creates_persisted_pending_paper_intent_with_snapshots(cl
     assert intent["strategy_version_number"] == version["version_number"]
     assert intent["instrument_id"] == str(SYNTHETIC_EQUITY_ID)
     assert intent["instrument_snapshot"] == {
-        "canonical_symbol": "TRADEEBH_TEST_EQ",
-        "exchange_symbol": "TRADEEBH_TEST_EQ",
-        "name": "TradeEBH Synthetic Reference Equity (not a real security)",
+        "canonical_symbol": "ALGOPROFITX_TEST_EQ",
+        "exchange_symbol": "ALGOPROFITX_TEST_EQ",
+        "name": "AlgoProfitX Synthetic Reference Equity (not a real security)",
         "exchange_code": "NSE",
         "instrument_type": "equity",
         "quote_currency": "INR",
