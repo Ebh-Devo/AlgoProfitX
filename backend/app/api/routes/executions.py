@@ -4,6 +4,8 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.abuse import RateLimitRule, abuse_controller
+from app.core.config import get_settings
 from app.core.dependencies import require_investor
 from app.db.session import get_session
 from app.models.user import User
@@ -22,6 +24,28 @@ from app.services.execution import (
 router = APIRouter(tags=["Execution Intents"])
 
 
+async def _enforce_execution_limit(user_id: uuid.UUID) -> None:
+    settings = get_settings()
+    user_key = str(user_id)
+    await abuse_controller.enforce(
+        (
+            RateLimitRule(
+                "execution_burst_user",
+                user_key,
+                settings.execution_burst_limit,
+                settings.execution_burst_window_seconds,
+            ),
+            RateLimitRule(
+                "execution_sustained_user",
+                user_key,
+                settings.execution_sustained_limit,
+                settings.execution_sustained_window_seconds,
+            ),
+        ),
+        settings.abuse_protection_enabled,
+    )
+
+
 @router.post(
     "/allocations/{allocation_id}/execution-intents",
     response_model=ExecutionIntentResponse,
@@ -34,6 +58,7 @@ async def create_execution_intent_request(
     current_user: Annotated[User, Depends(require_investor)],
     session: Annotated[AsyncSession, Depends(get_session)],
 ):
+    await _enforce_execution_limit(current_user.id)
     try:
         execution_intent, created = await create_execution_intent(
             session,
@@ -91,6 +116,7 @@ async def execute_paper_execution_intent_request(
     current_user: Annotated[User, Depends(require_investor)],
     session: Annotated[AsyncSession, Depends(get_session)],
 ):
+    await _enforce_execution_limit(current_user.id)
     try:
         return await execute_paper_execution_intent(
             session,

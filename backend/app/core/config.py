@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Annotated, Self
 from urllib.parse import urlsplit
 
-from pydantic import SecretStr, field_validator, model_validator
+from pydantic import PositiveInt, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
@@ -33,6 +33,25 @@ class Settings(BaseSettings):
     frontend_public_url: str = "http://localhost:5173"
     api_public_url: str = "http://127.0.0.1:8000"
     api_docs_enabled: bool | None = None
+
+    abuse_protection_enabled: bool = True
+    login_ip_limit: PositiveInt = 10
+    login_ip_window_seconds: PositiveInt = 60
+    login_account_limit: PositiveInt = 20
+    login_account_window_seconds: PositiveInt = 900
+    registration_ip_limit: PositiveInt = 20
+    registration_ip_window_seconds: PositiveInt = 3600
+    creator_enrollment_limit: PositiveInt = 3
+    creator_enrollment_window_seconds: PositiveInt = 3600
+    backtest_burst_limit: PositiveInt = 5
+    backtest_burst_window_seconds: PositiveInt = 60
+    backtest_sustained_limit: PositiveInt = 30
+    backtest_sustained_window_seconds: PositiveInt = 3600
+    execution_burst_limit: PositiveInt = 10
+    execution_burst_window_seconds: PositiveInt = 60
+    execution_sustained_limit: PositiveInt = 60
+    execution_sustained_window_seconds: PositiveInt = 3600
+    backtest_max_concurrency_per_user: PositiveInt = 1
 
     redis_url: str = "redis://localhost:6379/0"
     market_data_provider: str = "synthetic"
@@ -77,6 +96,8 @@ class Settings(BaseSettings):
         errors: list[str] = []
         if self.debug:
             errors.append("DEBUG must be false in production")
+        if not self.abuse_protection_enabled:
+            errors.append("ABUSE_PROTECTION_ENABLED must be true in production")
 
         secret = self.secret_key.get_secret_value().strip()
         normalized_secret = secret.lower()

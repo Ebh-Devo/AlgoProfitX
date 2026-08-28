@@ -70,6 +70,13 @@ def test_production_debug_is_rejected():
     assert_production_error("DEBUG must be false", debug=True)
 
 
+def test_production_cannot_disable_abuse_protection():
+    assert_production_error(
+        "ABUSE_PROTECTION_ENABLED must be true",
+        abuse_protection_enabled=False,
+    )
+
+
 @pytest.mark.parametrize(
     "secret",
     (

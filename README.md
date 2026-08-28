@@ -175,6 +175,12 @@ Set `DATABASE_REQUIRE_TLS=true` for managed PostgreSQL; this enables asyncpg's g
 
 The canonical browser origin is `https://www.algoprofitx.com`. The apex `https://algoprofitx.com` may also be allowlisted during transition, but should eventually redirect to the canonical `www` origin. Credentialed CORS remains disabled because the current API uses bearer tokens. The synthetic market-data provider remains permitted so a production-mode staging/paper/backtesting environment can start before a licensed real-data adapter exists; it must not be presented as real NSE data.
 
+#### Application abuse controls
+
+Registration and login are rate-limited by the ASGI client address; login also has a normalized email-key limit that behaves identically whether or not an account exists. Creator enrollment, Backtest creation/execution, and Paper Execution Intent creation/execution use authenticated user IDs. Backtest execution additionally has a per-user concurrency limit. Policies are configured through the `*_LIMIT` and `*_WINDOW_SECONDS` settings shown in `backend/.env.example`, and production refuses to start with `ABUSE_PROTECTION_ENABLED=false`.
+
+These controls are async-safe but process-local. They do not coordinate across workers or replicas, and client identity deliberately ignores untrusted forwarded headers until trusted-proxy runtime configuration exists. A multi-replica deployment must replace the storage implementation with a distributed limiter such as Redis without changing route semantics. Edge/CDN/WAF controls are still required; this application layer is not DDoS protection.
+
 ### Migrations
 
 Preferred command from `TradeEBH\`:
