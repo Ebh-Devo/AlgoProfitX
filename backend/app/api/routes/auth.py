@@ -1,6 +1,10 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+import hmac
+import secrets
+
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.abuse import (
@@ -22,12 +26,73 @@ from app.schemas.auth import (
     UserResponse,
 )
 from app.services.auth import authenticate_user, enroll_creator, register_user
+from app.services.auth_session import (
+    RefreshSessionError,
+    create_refresh_session,
+    revoke_refresh_session,
+    rotate_refresh_session,
+)
 
 
 router = APIRouter(
     prefix="/auth",
     tags=["Authentication"],
 )
+
+
+def _set_session_cookies(response: Response, refresh_token: str, csrf_token: str) -> None:
+    settings = get_settings()
+    max_age = settings.refresh_token_expire_days * 24 * 60 * 60
+    common = {
+        "secure": settings.auth_cookie_secure,
+        "samesite": settings.auth_cookie_samesite,
+        "path": settings.auth_cookie_path,
+        "domain": settings.auth_cookie_domain,
+        "max_age": max_age,
+    }
+    response.set_cookie(
+        settings.auth_refresh_cookie_name,
+        refresh_token,
+        httponly=settings.auth_cookie_httponly,
+        **common,
+    )
+    response.set_cookie(
+        settings.auth_csrf_cookie_name,
+        csrf_token,
+        httponly=False,
+        **common,
+    )
+
+
+def _clear_session_cookies(response: Response) -> None:
+    settings = get_settings()
+    for name in (settings.auth_refresh_cookie_name, settings.auth_csrf_cookie_name):
+        response.delete_cookie(
+            name,
+            path=settings.auth_cookie_path,
+            domain=settings.auth_cookie_domain,
+            secure=settings.auth_cookie_secure,
+            httponly=name == settings.auth_refresh_cookie_name,
+            samesite=settings.auth_cookie_samesite,
+        )
+
+
+def _require_csrf(request: Request) -> None:
+    settings = get_settings()
+    cookie_token = request.cookies.get(settings.auth_csrf_cookie_name, "")
+    header_token = request.headers.get("X-CSRF-Token", "")
+    if not cookie_token or not header_token or not hmac.compare_digest(
+        cookie_token, header_token
+    ):
+        raise HTTPException(status_code=403, detail="CSRF validation failed")
+
+
+def _refresh_cookie(request: Request) -> str:
+    settings = get_settings()
+    token = request.cookies.get(settings.auth_refresh_cookie_name)
+    if not token:
+        raise HTTPException(status_code=401, detail="Invalid refresh session")
+    return token
 
 
 @router.post(
@@ -76,6 +141,7 @@ async def register(
 async def login(
     data: LoginRequest,
     request: Request,
+    response: Response,
     session: Annotated[AsyncSession, Depends(get_session)],
 ):
     settings = get_settings()
@@ -111,11 +177,46 @@ async def login(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
+    _, refresh_token = await create_refresh_session(session, user.id)
+    await session.commit()
+    _set_session_cookies(response, refresh_token, secrets.token_urlsafe(32))
     access_token = create_access_token(str(user.id))
 
     return TokenResponse(
         access_token=access_token,
     )
+
+
+@router.post("/refresh", response_model=TokenResponse)
+async def refresh(request: Request, response: Response, session: Annotated[AsyncSession, Depends(get_session)]):
+    _require_csrf(request)
+    refresh_token = _refresh_cookie(request)
+    try:
+        user, rotated_token = await rotate_refresh_session(session, refresh_token)
+        await session.commit()
+    except RefreshSessionError as exc:
+        if exc.suspicious_reuse:
+            await session.commit()
+        error_response = JSONResponse(
+            status_code=401, content={"detail": "Invalid refresh session"}
+        )
+        _clear_session_cookies(error_response)
+        return error_response
+    _set_session_cookies(response, rotated_token, secrets.token_urlsafe(32))
+    return TokenResponse(access_token=create_access_token(str(user.id)))
+
+
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+async def logout(request: Request, response: Response, session: Annotated[AsyncSession, Depends(get_session)]):
+    _require_csrf(request)
+    refresh_token = _refresh_cookie(request)
+    try:
+        await revoke_refresh_session(session, refresh_token)
+        await session.commit()
+    except RefreshSessionError:
+        await session.rollback()
+    _clear_session_cookies(response)
+    response.status_code = status.HTTP_204_NO_CONTENT
 
 
 @router.post(

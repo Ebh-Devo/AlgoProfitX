@@ -1,7 +1,7 @@
 from enum import StrEnum
 from functools import lru_cache
 from pathlib import Path
-from typing import Annotated, Self
+from typing import Annotated, Literal, Self
 from urllib.parse import urlsplit
 
 from pydantic import PositiveInt, SecretStr, field_validator, model_validator
@@ -29,6 +29,18 @@ class Settings(BaseSettings):
 
     secret_key: SecretStr
     access_token_expire_minutes: int = 30
+    auth_jwt_issuer: str = "algoprofitx-api"
+    auth_jwt_audience: str = "algoprofitx-web"
+    auth_jwt_key_id: str = "primary"
+    refresh_token_expire_days: PositiveInt = 30
+    auth_max_sessions_per_user: PositiveInt = 5
+    auth_refresh_cookie_name: str = "algoprofitx_refresh"
+    auth_csrf_cookie_name: str = "algoprofitx_csrf"
+    auth_cookie_secure: bool = False
+    auth_cookie_httponly: bool = True
+    auth_cookie_samesite: Literal["strict", "lax", "none"] = "strict"
+    auth_cookie_path: str = "/api/v1/auth"
+    auth_cookie_domain: str | None = None
     cors_allowed_origins: Annotated[tuple[str, ...], NoDecode] = ()
     frontend_public_url: str = "http://localhost:5173"
     api_public_url: str = "http://127.0.0.1:8000"
@@ -98,6 +110,18 @@ class Settings(BaseSettings):
             errors.append("DEBUG must be false in production")
         if not self.abuse_protection_enabled:
             errors.append("ABUSE_PROTECTION_ENABLED must be true in production")
+        if not self.auth_cookie_secure:
+            errors.append("AUTH_COOKIE_SECURE must be true in production")
+        if not self.auth_cookie_httponly:
+            errors.append("AUTH_COOKIE_HTTPONLY must be true in production")
+        if self.auth_cookie_path != "/api/v1/auth":
+            errors.append("AUTH_COOKIE_PATH must be /api/v1/auth in production")
+        if not self.auth_jwt_issuer.strip() or not self.auth_jwt_audience.strip():
+            errors.append("JWT issuer and audience must be configured in production")
+        if self.access_token_expire_minutes > 30:
+            errors.append("ACCESS_TOKEN_EXPIRE_MINUTES must not exceed 30 in production")
+        if self.refresh_token_expire_days > 90:
+            errors.append("REFRESH_TOKEN_EXPIRE_DAYS must not exceed 90 in production")
 
         secret = self.secret_key.get_secret_value().strip()
         normalized_secret = secret.lower()

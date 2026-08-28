@@ -10,6 +10,7 @@ from app.db.base import Base
 from app.models import (
     AllocationIntent,
     AllocationStatus,
+    AuthSession,
     Backtest,
     BacktestStatus,
     ExecutionIntent,

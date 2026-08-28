@@ -181,6 +181,14 @@ Registration and login are rate-limited by the ASGI client address; login also h
 
 These controls are async-safe but process-local. They do not coordinate across workers or replicas, and client identity deliberately ignores untrusted forwarded headers until trusted-proxy runtime configuration exists. A multi-replica deployment must replace the storage implementation with a distributed limiter such as Redis without changing route semantics. Edge/CDN/WAF controls are still required; this application layer is not DDoS protection.
 
+#### Authentication sessions
+
+Browser authentication uses short-lived HS256 access JWTs in memory and opaque rotating refresh tokens in an HttpOnly cookie. Access JWTs contain `sub`, `type`, `exp`, `iat`, `iss`, `aud`, and `jti`, plus a `kid` header for future signing-key rotation. Refresh-token plaintext is never persisted: the database stores only a SHA-256 hash in a restrictive `AuthSession` record. Refresh rotates the token atomically; reuse of a rotated token revokes that session family. Logout revokes the current session and clears its cookies, and the configurable per-user session cap prunes older records.
+
+Refresh and logout use double-submit CSRF protection: JavaScript reads the separate non-HttpOnly `algoprofitx_csrf` cookie and sends it as `X-CSRF-Token`, while the refresh token remains inaccessible to JavaScript. Cookies are host-only by default, scoped to `/api/v1/auth`, and `SameSite=Strict`; production requires both `Secure=true` and an HttpOnly refresh cookie. Credentialed CORS remains restricted to exact configured origins.
+
+The frontend removes both `algoprofitx.auth.session` and the legacy `tradeebh.auth.session` key, never writes new tokens to browser storage, restores page reloads through refresh, retries a failed bearer request at most once, and deduplicates concurrent refresh attempts. Email verification delivery, password reset, MFA, asymmetric signing keys, and user-facing session management remain future work.
+
 ### Migrations
 
 Preferred command from `TradeEBH\`:

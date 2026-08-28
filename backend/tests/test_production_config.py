@@ -16,6 +16,7 @@ def production_values(**overrides: object) -> dict[str, object]:
         "cors_allowed_origins": "https://www.algoprofitx.com",
         "frontend_public_url": "https://www.algoprofitx.com",
         "api_public_url": "https://api.algoprofitx.com",
+        "auth_cookie_secure": True,
         "market_data_provider": "synthetic",
         "_env_file": None,
     }
@@ -74,6 +75,28 @@ def test_production_cannot_disable_abuse_protection():
     assert_production_error(
         "ABUSE_PROTECTION_ENABLED must be true",
         abuse_protection_enabled=False,
+    )
+
+
+@pytest.mark.parametrize(
+    ("field", "message"),
+    (
+        ("auth_cookie_secure", "AUTH_COOKIE_SECURE must be true"),
+        ("auth_cookie_httponly", "AUTH_COOKIE_HTTPONLY must be true"),
+    ),
+)
+def test_production_requires_secure_httponly_refresh_cookie(field: str, message: str):
+    assert_production_error(message, **{field: False})
+
+
+def test_production_rejects_excessive_token_lifetimes():
+    assert_production_error(
+        "ACCESS_TOKEN_EXPIRE_MINUTES must not exceed 30",
+        access_token_expire_minutes=31,
+    )
+    assert_production_error(
+        "REFRESH_TOKEN_EXPIRE_DAYS must not exceed 90",
+        refresh_token_expire_days=91,
     )
 
 
