@@ -1,24 +1,38 @@
+from enum import StrEnum
 from functools import lru_cache
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Self
+from urllib.parse import urlsplit
 
-from pydantic import field_validator
+from pydantic import SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 BACKEND_DIR = Path(__file__).resolve().parents[2]
+CANONICAL_FRONTEND_ORIGIN = "https://www.algoprofitx.com"
+PRODUCTION_API_ORIGIN = "https://api.algoprofitx.com"
+
+
+class AppEnvironment(StrEnum):
+    DEVELOPMENT = "development"
+    TEST = "test"
+    PRODUCTION = "production"
 
 
 class Settings(BaseSettings):
     app_name: str = "AlgoProfitX"
-    app_env: str = "development"
+    app_env: AppEnvironment = AppEnvironment.DEVELOPMENT
     debug: bool = True
 
-    database_url: str
+    database_url: SecretStr
+    database_require_tls: bool = False
 
-    secret_key: str
+    secret_key: SecretStr
     access_token_expire_minutes: int = 30
     cors_allowed_origins: Annotated[tuple[str, ...], NoDecode] = ()
+    frontend_public_url: str = "http://localhost:5173"
+    api_public_url: str = "http://127.0.0.1:8000"
+    api_docs_enabled: bool | None = None
 
     redis_url: str = "redis://localhost:6379/0"
     market_data_provider: str = "synthetic"
@@ -51,6 +65,87 @@ class Settings(BaseSettings):
         if isinstance(value, (list, tuple)):
             return tuple(str(origin).strip().rstrip("/") for origin in value)
         raise ValueError("CORS_ALLOWED_ORIGINS must be a comma-separated list")
+
+    @model_validator(mode="after")
+    def enforce_environment_policy(self) -> Self:
+        if self.api_docs_enabled is None:
+            self.api_docs_enabled = self.app_env is not AppEnvironment.PRODUCTION
+
+        if self.app_env is not AppEnvironment.PRODUCTION:
+            return self
+
+        errors: list[str] = []
+        if self.debug:
+            errors.append("DEBUG must be false in production")
+
+        secret = self.secret_key.get_secret_value().strip()
+        normalized_secret = secret.lower()
+        placeholder_markers = (
+            "placeholder",
+            "replace-with",
+            "changeme",
+            "change-me",
+            "example",
+            "development-secret",
+            "test-only",
+            "ci-only",
+        )
+        if not secret:
+            errors.append("SECRET_KEY must not be blank in production")
+        elif len(secret.encode("utf-8")) < 32:
+            errors.append("SECRET_KEY must contain at least 32 bytes in production")
+        elif any(marker in normalized_secret for marker in placeholder_markers):
+            errors.append("SECRET_KEY must not use a placeholder or development value")
+
+        if "*" in self.cors_allowed_origins:
+            errors.append("CORS_ALLOWED_ORIGINS must not contain '*' in production")
+        if CANONICAL_FRONTEND_ORIGIN not in self.cors_allowed_origins:
+            errors.append(
+                f"CORS_ALLOWED_ORIGINS must include {CANONICAL_FRONTEND_ORIGIN}"
+            )
+        for origin in self.cors_allowed_origins:
+            parsed = urlsplit(origin)
+            if parsed.scheme != "https":
+                errors.append(f"Production CORS origin must use HTTPS: {origin}")
+            if parsed.hostname in {"localhost", "127.0.0.1", "::1"}:
+                errors.append(f"Production CORS origin must not be local: {origin}")
+
+        for field_name, public_url in (
+            ("FRONTEND_PUBLIC_URL", self.frontend_public_url),
+            ("API_PUBLIC_URL", self.api_public_url),
+        ):
+            if urlsplit(public_url).scheme != "https":
+                errors.append(f"{field_name} must use HTTPS in production")
+
+        if self.frontend_public_url.rstrip("/") != CANONICAL_FRONTEND_ORIGIN:
+            errors.append(
+                f"FRONTEND_PUBLIC_URL must be {CANONICAL_FRONTEND_ORIGIN} in production"
+            )
+        if self.api_public_url.rstrip("/") != PRODUCTION_API_ORIGIN:
+            errors.append(f"API_PUBLIC_URL must be {PRODUCTION_API_ORIGIN} in production")
+
+        database_url = self.database_url.get_secret_value()
+        parsed_database_url = urlsplit(database_url)
+        if parsed_database_url.scheme != "postgresql+asyncpg":
+            errors.append("DATABASE_URL must use postgresql+asyncpg in production")
+        if parsed_database_url.hostname in {"localhost", "127.0.0.1", "::1"}:
+            errors.append("DATABASE_URL must not target localhost in production")
+        if not self.database_require_tls:
+            errors.append("DATABASE_REQUIRE_TLS must be true in production")
+
+        if errors:
+            raise ValueError("; ".join(errors))
+        return self
+
+    @property
+    def database_echo(self) -> bool:
+        """SQL logging is never permitted in production."""
+        return self.debug and self.app_env is not AppEnvironment.PRODUCTION
+
+    @property
+    def database_connect_args(self) -> dict[str, object]:
+        """Require encrypted asyncpg transport when configured."""
+        return {"ssl": True} if self.database_require_tls else {}
 
 
 @lru_cache

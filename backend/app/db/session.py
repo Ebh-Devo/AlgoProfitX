@@ -13,8 +13,9 @@ from app.core.config import get_settings
 settings = get_settings()
 
 engine = create_async_engine(
-    settings.database_url,
-    echo=settings.debug,
+    settings.database_url.get_secret_value(),
+    echo=settings.database_echo,
+    connect_args=settings.database_connect_args,
     poolclass=NullPool,
 )
 

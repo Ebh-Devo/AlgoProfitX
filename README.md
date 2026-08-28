@@ -167,6 +167,14 @@ CORS_ALLOWED_ORIGINS=http://localhost:5173
 
 `.env` is ignored by Git. Native PostgreSQL URLs use port `5432`. Generate a unique local secret; never reuse placeholder/example secrets in production.
 
+#### Production configuration safety
+
+Production mode is enabled only by setting `APP_ENV=production`; it is never inferred from a hostname or hosting platform. In that mode startup fails closed unless debug is off, the JWT secret is non-placeholder and at least 32 bytes, the canonical HTTPS frontend origin is allowed, public URLs use the expected HTTPS domains, the PostgreSQL host is non-local, and encrypted database transport is required. The expected public topology is `https://www.algoprofitx.com` for the frontend and `https://api.algoprofitx.com` for the API. These are configuration targets only and do not mean either service is currently deployed.
+
+Set `DATABASE_REQUIRE_TLS=true` for managed PostgreSQL; this enables asyncpg's generic SSL transport without assuming a particular cloud provider. Production SQL echo is always disabled. `API_DOCS_ENABLED` defaults to false in production, removing `/docs`, `/redoc`, and `/openapi.json`; programmatic schema generation through `app.openapi()` remains available to CI. Generate each production `SECRET_KEY` with a cryptographically secure secret generator and store it outside source control—never copy a value from this README or `.env.example`.
+
+The canonical browser origin is `https://www.algoprofitx.com`. The apex `https://algoprofitx.com` may also be allowlisted during transition, but should eventually redirect to the canonical `www` origin. Credentialed CORS remains disabled because the current API uses bearer tokens. The synthetic market-data provider remains permitted so a production-mode staging/paper/backtesting environment can start before a licensed real-data adapter exists; it must not be presented as real NSE data.
+
 ### Migrations
 
 Preferred command from `TradeEBH\`:
