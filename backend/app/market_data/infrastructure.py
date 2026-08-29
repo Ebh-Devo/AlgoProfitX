@@ -1,9 +1,13 @@
 import hashlib
 import asyncio
+import logging
 import json
 import math
 from datetime import date, datetime, timezone
 from decimal import Decimal, InvalidOperation
+
+from app.core.metrics import metrics
+from app.core.observability import log_event
 from typing import Iterable
 
 from sqlalchemy import select
@@ -124,4 +128,7 @@ async def load_with_policy(provider, request, *, timeout_seconds: float, max_ret
             return await asyncio.wait_for(provider.load(request), timeout=timeout_seconds)
         except TimeoutError as exc:
             if attempt >= max_retries:
+                provider_code = str(getattr(provider, "code", "unknown"))
+                log_event("market_data_provider_failed", level=logging.WARNING, provider_code=provider_code, error_code="market_data_timeout")
+                metrics.increment("market_data.failures", tags={"provider": provider_code, "error_code": "market_data_timeout"})
                 raise MarketDataError("market_data_timeout", "Market data provider timed out") from exc

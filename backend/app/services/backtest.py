@@ -1,5 +1,7 @@
 import uuid
 import json
+import logging
+import time
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
@@ -20,6 +22,8 @@ from app.backtesting.reference import (
     SyntheticMarketDataProvider,
 )
 from app.core.config import get_settings
+from app.core.metrics import metrics
+from app.core.observability import log_event
 from app.market_data.infrastructure import MarketDataError, ProviderRegistry, canonical_checksum, dataset_key, load_with_policy, resolve_mapping, validate_and_normalize
 from app.models.backtest import Backtest, BacktestStatus
 from app.models.market_data import MarketDataCandle, MarketDataDataset, MarketDataDatasetStatus
@@ -116,6 +120,9 @@ async def execute_backtest(
     backtest_id: uuid.UUID,
 ) -> Backtest:
     backtest = await _claim_queued_backtest(session, backtest_id)
+    started = time.perf_counter()
+    log_event("backtest_started", backtest_id=backtest.id)
+    metrics.increment("backtest.count", tags={"status": "started"})
     try:
         configured_code = get_settings().market_data_provider
         provider = ProviderRegistry((SyntheticMarketDataProvider(),)).resolve(configured_code)
@@ -133,8 +140,13 @@ async def execute_backtest(
         if len(result.equity_curve) > MAX_RESULT_EQUITY_POINTS:
             raise BacktestExecutionError("Backtest equity result exceeds its limit")
     except (BacktestExecutionError, MarketDataError) as exc:
+        error_code = getattr(exc, "code", "market_data_invalid_payload")
+        log_event("backtest_failed", level=logging.WARNING, backtest_id=backtest_id, error_code=error_code)
+        metrics.increment("backtest.count", tags={"status": "failed", "error_code": error_code})
         return await _mark_backtest_failed(session, backtest_id, str(exc), getattr(exc, "code", "market_data_invalid_payload"))
     except Exception:
+        log_event("backtest_failed", level=logging.ERROR, exc_info=True, backtest_id=backtest_id, error_code="market_data_provider_unavailable")
+        metrics.increment("backtest.count", tags={"status": "failed", "error_code": "market_data_provider_unavailable"})
         return await _mark_backtest_failed(
             session,
             backtest_id,
@@ -142,7 +154,7 @@ async def execute_backtest(
             "market_data_provider_unavailable",
         )
 
-    return await _mark_backtest_completed(
+    completed = await _mark_backtest_completed(
         session,
         backtest_id,
         {
@@ -156,6 +168,11 @@ async def execute_backtest(
             "provider_identifier": result.provider_identifier,
         },
     )
+    duration_ms = (time.perf_counter() - started) * 1000
+    log_event("backtest_completed", backtest_id=backtest_id, dataset_id=completed.market_data_dataset_id, duration_ms=round(duration_ms, 3))
+    metrics.increment("backtest.count", tags={"status": "completed"})
+    metrics.observe("backtest.duration_ms", duration_ms, tags={"status": "completed"})
+    return completed
 
 
 async def _claim_queued_backtest(
@@ -384,8 +401,13 @@ async def _acquire_dataset(session, backtest, provider, request):
     if existing is not None:
         candles = tuple(Candle(c.session_date, c.timestamp, c.open, c.high, c.low, c.close, c.volume) for c in existing.candles)
         if canonical_checksum(candles) != existing.normalized_checksum:
+            log_event("market_data_checksum_failed", level=logging.WARNING, dataset_id=existing.id, provider_code=provider.code)
+            metrics.increment("market_data.failures", tags={"error_code": "market_data_checksum_mismatch"})
             raise MarketDataError("market_data_checksum_mismatch", "Stored market data checksum does not match immutable candles")
+        log_event("market_data_dataset_reused", dataset_id=existing.id, provider_code=provider.code, instrument_id=request.instrument.id)
+        metrics.increment("market_data.datasets", tags={"result": "reused", "provider": provider.code})
         return existing, candles
+    log_event("market_data_acquisition_started", provider_code=provider.code, instrument_id=request.instrument.id)
     batch = await load_with_policy(provider, request, timeout_seconds=settings.market_data_timeout_seconds, max_retries=settings.market_data_max_retries)
     candles, duplicate_count = validate_and_normalize(batch.candles, start=requested_start, end=requested_end, max_candles=settings.market_data_max_candles)
     checksum = canonical_checksum(candles)
@@ -419,6 +441,8 @@ async def _acquire_dataset(session, backtest, provider, request):
     session.add(dataset)
     await session.commit()
     await session.refresh(dataset)
+    log_event("market_data_acquisition_completed", dataset_id=dataset.id, provider_code=provider.code, instrument_id=request.instrument.id)
+    metrics.increment("market_data.datasets", tags={"result": "acquired", "provider": provider.code})
     return dataset, candles
 
 

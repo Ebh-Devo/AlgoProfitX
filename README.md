@@ -181,6 +181,47 @@ Registration and login are rate-limited by the ASGI client address; login also h
 
 These controls are async-safe but process-local. They do not coordinate across workers or replicas, and client identity deliberately ignores untrusted forwarded headers until trusted-proxy runtime configuration exists. A multi-replica deployment must replace the storage implementation with a distributed limiter such as Redis without changing route semantics. Edge/CDN/WAF controls are still required; this application layer is not DDoS protection.
 
+#### Runtime health and observability
+
+`GET /health/live` is the lightweight liveness probe: it performs no database,
+market-data, or other external call. The legacy `GET /health` remains a
+compatibility alias. `GET /health/ready` performs only a bounded PostgreSQL
+`SELECT 1`, using `READINESS_DB_TIMEOUT_SECONDS=2` by default, and returns a
+sanitized `503 {"status":"unavailable"}` when the database cannot be reached.
+Readiness deliberately never contacts a market-data provider or broker. Alembic
+head verification remains the responsibility of Task C's one-runner deployment
+migration job; it is not repeated on frequent readiness probes and the
+application never migrates on startup.
+
+Every request receives an `X-Request-ID`. A caller value is preserved only when
+it is 1–64 characters and matches the restricted identifier alphabet; otherwise
+a UUID is generated. The ID is placed in context for downstream events and
+returned in the response. It is diagnostic metadata, not a credential.
+
+Production defaults to newline-delimited JSON logs; development defaults to a
+readable console format. Request completion events include only request ID,
+method, route template/path without query text, status, and duration. Headers,
+cookies, and bodies are not logged. The centralized event helper recursively
+redacts token, cookie, password, secret, API-key, and database-credential fields,
+and also scrubs bearer values and PostgreSQL URL passwords. Unexpected failures
+are logged internally with the request ID and stack trace while clients receive
+only a generic error and reference ID. Expected HTTP/domain failures retain
+their existing API behavior.
+
+The application emits bounded security, Backtest, market-data, and paper-only
+execution lifecycle events and feeds a provider-neutral metrics interface. The
+default metrics implementation exports nothing and there is no public
+`/metrics` endpoint; a production monitoring backend remains a deployment
+choice. Because the application already emits one structured completion event,
+run Uvicorn with `--no-access-log` in production to avoid duplicate access
+records (keep Uvicorn error logs enabled).
+
+Normal ASGI graceful shutdown stops new acceptance according to the server,
+allows its configured grace period for in-flight requests, and then disposes the
+SQLAlchemy engine. Process-local limiter state is not forcibly cleared during
+shutdown. Long-running Backtests may eventually require a durable worker/job
+system; this task does not add one.
+
 #### Authentication sessions
 
 Browser authentication uses short-lived HS256 access JWTs in memory and opaque rotating refresh tokens in an HttpOnly cookie. Access JWTs contain `sub`, `type`, `exp`, `iat`, `iss`, `aud`, and `jti`, plus a `kid` header for future signing-key rotation. Refresh-token plaintext is never persisted: the database stores only a SHA-256 hash in a restrictive `AuthSession` record. Refresh rotates the token atomically; reuse of a rotated token revokes that session family. Logout revokes the current session and clears its cookies, and the configurable per-user session cap prunes older records.
@@ -299,7 +340,8 @@ cd backend
 python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-- Health: <http://127.0.0.1:8000/health>
+- Liveness: <http://127.0.0.1:8000/health/live> (`/health` remains an alias)
+- Readiness: <http://127.0.0.1:8000/health/ready>
 - Swagger UI: <http://127.0.0.1:8000/docs>
 - OpenAPI: <http://127.0.0.1:8000/openapi.json>
 

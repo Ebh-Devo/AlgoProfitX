@@ -1,7 +1,6 @@
 import asyncio
 import hashlib
 import ipaddress
-import logging
 import math
 import time
 from collections.abc import AsyncIterator, Callable, Sequence
@@ -11,8 +10,8 @@ from typing import Protocol
 
 from fastapi import HTTPException, Request, status
 
-
-logger = logging.getLogger("app.abuse")
+from app.core.metrics import metrics
+from app.core.observability import log_event
 
 
 @dataclass(frozen=True)
@@ -98,6 +97,9 @@ class ConcurrencyLimiter:
             active = self._active.get(bucket_key, 0)
             if active >= maximum:
                 _record_event("concurrency_limit_exceeded", scope, key)
+                metrics.increment(
+                    "concurrency_limit.violations", tags={"scope": scope}
+                )
                 raise HTTPException(
                     status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                     detail={
@@ -139,11 +141,12 @@ def normalized_account_key(email: str) -> str:
 
 def _record_event(event: str, scope: str, key: str) -> None:
     fingerprint = hashlib.sha256(key.encode("utf-8")).hexdigest()[:12]
-    logger.warning(
-        "abuse_control event=%s scope=%s key_fingerprint=%s",
+    log_event(
         event,
-        scope,
-        fingerprint,
+        level=30,
+        logger_name="app.security",
+        scope=scope,
+        key_fingerprint=fingerprint,
     )
 
 
@@ -168,6 +171,7 @@ class AbuseController:
             return
         first = rules[0]
         _record_event("rate_limit_exceeded", first.scope, first.key)
+        metrics.increment("rate_limit.violations", tags={"scope": first.scope})
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail={

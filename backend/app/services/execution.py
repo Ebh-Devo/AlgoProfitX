@@ -1,4 +1,5 @@
 import uuid
+import logging
 from copy import deepcopy
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -16,6 +17,8 @@ from app.market_calendar.contracts import CalendarError, TradingSession
 from app.market_calendar.reference import IndianReferenceTradingCalendar
 from app.models.strategy import Strategy, StrategyStatus, StrategyVersion
 from app.paper_execution.contracts import PaperExecutionError
+from app.core.metrics import metrics
+from app.core.observability import log_event
 from app.paper_execution.reference import (
     EmaCrossoverPaperAdapter,
     SyntheticPaperMarketDataProvider,
@@ -107,6 +110,8 @@ async def create_execution_intent(
         raise ExecutionIntentConflict(
             "Allocation already has an active execution intent"
         )
+    log_event("paper_execution_intent_created", execution_intent_id=execution_intent.id, allocation_id=allocation.id, instrument_id=instrument.id)
+    metrics.increment("paper_execution.count", tags={"status": "intent_created"})
     return execution_intent, True
 
 
@@ -171,6 +176,8 @@ async def execute_paper_execution_intent(
         )
         _validate_result_size(result_summary)
     except PaperExecutionError as exc:
+        log_event("paper_execution_failed", level=logging.WARNING, execution_intent_id=execution_intent.id, error_code=exc.error_code)
+        metrics.increment("paper_execution.count", tags={"status": "failed", "error_code": exc.error_code})
         return await _mark_execution_intent_failed(
             session,
             execution_intent.id,
@@ -178,6 +185,8 @@ async def execute_paper_execution_intent(
             str(exc),
         )
     except Exception:
+        log_event("paper_execution_failed", level=logging.ERROR, exc_info=True, execution_intent_id=execution_intent.id, error_code="execution_calculation_failure")
+        metrics.increment("paper_execution.count", tags={"status": "failed", "error_code": "execution_calculation_failure"})
         return await _mark_execution_intent_failed(
             session,
             execution_intent.id,
@@ -185,11 +194,14 @@ async def execute_paper_execution_intent(
             "Paper execution failed",
         )
 
-    return await _mark_execution_intent_completed(
+    completed = await _mark_execution_intent_completed(
         session,
         execution_intent.id,
         result_summary,
     )
+    log_event("paper_execution_completed", execution_intent_id=execution_intent.id, instrument_id=execution_intent.instrument_id, mode="paper")
+    metrics.increment("paper_execution.count", tags={"status": "completed"})
+    return completed
 
 
 async def _get_owned_allocation_for_update(

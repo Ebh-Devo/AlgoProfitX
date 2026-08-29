@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Annotated, Literal, Self
 from urllib.parse import urlsplit
 
-from pydantic import PositiveInt, SecretStr, field_validator, model_validator
+from pydantic import PositiveFloat, PositiveInt, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
@@ -32,6 +32,10 @@ class Settings(BaseSettings):
     db_pool_recycle_seconds: PositiveInt = 1800
     db_pool_pre_ping: bool = True
     db_external_transaction_pooler: bool = False
+    log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
+    log_format: Literal["console", "json"] | None = None
+    readiness_db_timeout_seconds: PositiveFloat = 2.0
+    request_id_header: str = "X-Request-ID"
 
     secret_key: SecretStr
     access_token_expire_minutes: int = 30
@@ -103,12 +107,25 @@ class Settings(BaseSettings):
             return tuple(str(origin).strip().rstrip("/") for origin in value)
         raise ValueError("CORS_ALLOWED_ORIGINS must be a comma-separated list")
 
+    @field_validator("request_id_header")
+    @classmethod
+    def validate_request_id_header(cls, value: str) -> str:
+        if not value or len(value) > 64 or not all(
+            character.isalnum() or character == "-" for character in value
+        ):
+            raise ValueError("REQUEST_ID_HEADER must be a valid bounded HTTP header name")
+        return value
+
     @model_validator(mode="after")
     def enforce_environment_policy(self) -> Self:
         if self.db_max_overflow < 0:
             raise ValueError("DB_MAX_OVERFLOW must be greater than or equal to 0")
         if self.api_docs_enabled is None:
             self.api_docs_enabled = self.app_env is not AppEnvironment.PRODUCTION
+        if self.log_format is None:
+            self.log_format = (
+                "json" if self.app_env is AppEnvironment.PRODUCTION else "console"
+            )
 
         if self.app_env is not AppEnvironment.PRODUCTION:
             return self

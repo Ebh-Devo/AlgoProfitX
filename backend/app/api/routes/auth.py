@@ -15,6 +15,8 @@ from app.core.abuse import (
     record_authentication_failure,
 )
 from app.core.config import get_settings
+from app.core.metrics import metrics
+from app.core.observability import log_event
 from app.core.dependencies import get_current_user
 from app.core.security import create_access_token
 from app.db.session import get_session
@@ -171,6 +173,7 @@ async def login(
 
     if user is None:
         record_authentication_failure(client_ip)
+        metrics.increment("authentication.failures", tags={"reason": "invalid_credentials"})
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password",
@@ -197,6 +200,8 @@ async def refresh(request: Request, response: Response, session: Annotated[Async
     except RefreshSessionError as exc:
         if exc.suspicious_reuse:
             await session.commit()
+            log_event("refresh_token_reuse_detected", level=30)
+            metrics.increment("authentication.failures", tags={"reason": "refresh_reuse"})
         error_response = JSONResponse(
             status_code=401, content={"detail": "Invalid refresh session"}
         )
@@ -213,6 +218,7 @@ async def logout(request: Request, response: Response, session: Annotated[AsyncS
     try:
         await revoke_refresh_session(session, refresh_token)
         await session.commit()
+        log_event("session_revoked")
     except RefreshSessionError:
         await session.rollback()
     _clear_session_cookies(response)
