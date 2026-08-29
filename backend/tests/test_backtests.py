@@ -182,6 +182,32 @@ async def test_creator_creates_queued_backtest_with_independent_snapshots(client
 
 
 @pytest.mark.asyncio
+async def test_strategy_with_backtest_history_cannot_be_deleted(client):
+    headers, _ = await register_and_login(client)
+    strategy, version = await create_strategy_version(
+        client, headers, "backtest-retention"
+    )
+    created = await client.post(
+        backtests_path(strategy["id"], version["id"]),
+        headers=headers,
+        json={"market_data_reference": "retained-history"},
+    )
+    assert created.status_code == 201
+
+    deleted = await client.delete(
+        f"/api/v1/strategies/{strategy['id']}", headers=headers
+    )
+    assert deleted.status_code == 409
+    assert deleted.json() == {
+        "detail": "Strategy with historical records cannot be deleted"
+    }
+
+    async with AsyncSessionLocal() as session:
+        assert await session.get(Backtest, uuid.UUID(created.json()["id"])) is not None
+        assert await session.get(
+            StrategyVersion, uuid.UUID(version["id"])
+        ) is not None
+@pytest.mark.asyncio
 async def test_backtest_provenance_constraints_and_instrument_fk_are_restrictive(client):
     headers, _ = await register_and_login(client)
     strategy, version = await create_strategy_version(client, headers, "backtest-integrity")

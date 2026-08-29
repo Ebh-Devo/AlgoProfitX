@@ -45,7 +45,7 @@ class Backtest(Base):
     )
 
     strategy_version_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("strategy_versions.id", ondelete="CASCADE"),
+        ForeignKey("strategy_versions.id", ondelete="RESTRICT"),
         nullable=False,
         index=True,
     )
@@ -62,7 +62,7 @@ class Backtest(Base):
     )
 
     requested_by_user_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"),
+        ForeignKey("users.id", ondelete="RESTRICT"),
         nullable=False,
         index=True,
     )

@@ -26,6 +26,12 @@ class Settings(BaseSettings):
 
     database_url: SecretStr
     database_require_tls: bool = False
+    db_pool_size: PositiveInt = 5
+    db_max_overflow: int = 2
+    db_pool_timeout_seconds: PositiveInt = 10
+    db_pool_recycle_seconds: PositiveInt = 1800
+    db_pool_pre_ping: bool = True
+    db_external_transaction_pooler: bool = False
 
     secret_key: SecretStr
     access_token_expire_minutes: int = 30
@@ -99,6 +105,8 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def enforce_environment_policy(self) -> Self:
+        if self.db_max_overflow < 0:
+            raise ValueError("DB_MAX_OVERFLOW must be greater than or equal to 0")
         if self.api_docs_enabled is None:
             self.api_docs_enabled = self.app_env is not AppEnvironment.PRODUCTION
 
@@ -191,6 +199,30 @@ class Settings(BaseSettings):
     def database_connect_args(self) -> dict[str, object]:
         """Require encrypted asyncpg transport when configured."""
         return {"ssl": True} if self.database_require_tls else {}
+
+    @property
+    def uses_application_pool(self) -> bool:
+        """Only production application processes keep a persistent connection pool."""
+        return (
+            self.app_env is AppEnvironment.PRODUCTION
+            and not self.db_external_transaction_pooler
+        )
+
+    @property
+    def database_engine_options(self) -> dict[str, object]:
+        options: dict[str, object] = {
+            "echo": self.database_echo,
+            "connect_args": self.database_connect_args,
+        }
+        if self.uses_application_pool:
+            options.update(
+                pool_size=self.db_pool_size,
+                max_overflow=self.db_max_overflow,
+                pool_timeout=self.db_pool_timeout_seconds,
+                pool_recycle=self.db_pool_recycle_seconds,
+                pool_pre_ping=self.db_pool_pre_ping,
+            )
+        return options
 
 
 @lru_cache

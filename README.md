@@ -191,13 +191,23 @@ The frontend removes both `algoprofitx.auth.session` and the legacy `tradeebh.au
 
 ### Migrations
 
+Production uses a single migration runner; application replicas never run Alembic
+on startup. The provider-neutral release sequence is: verify backup/PITR health,
+take a manual snapshot for a significant migration when supported, stop or hold
+the new application release, run `alembic upgrade head` exactly once, verify
+`alembic current --check-heads`, and only then start or promote application
+replicas. Online Alembic runs acquire an AlgoProfitX-specific PostgreSQL advisory
+lock and fail clearly if another migrator owns it. Alembic downgrade is useful
+for development validation, but production data recovery relies on a tested
+snapshot/PITR restore plan rather than downgrade.
+
 Preferred command from `TradeEBH\`:
 
 ```powershell
 .\scripts\migrate.ps1
 ```
 
-The current Alembic head is `e5a1b2c3d4f6` (`rebrand_synthetic_instrument`). Direct manual-venv commands:
+The current Alembic head is `c6d1e8f3a9b2` (`harden_historical_retention`). Direct manual-venv commands:
 
 ```powershell
 cd backend
@@ -205,6 +215,54 @@ cd backend
 python -m alembic -c alembic.ini upgrade head
 python -m alembic -c alembic.ini current --check-heads
 ```
+
+#### Production database durability
+
+Production application processes use SQLAlchemy's async adapted queue pool with
+conservative defaults: `DB_POOL_SIZE=5`, `DB_MAX_OVERFLOW=2`,
+`DB_POOL_TIMEOUT_SECONDS=10`, `DB_POOL_RECYCLE_SECONDS=1800`, and
+`DB_POOL_PRE_PING=true`. Development and tests retain `NullPool` for isolation.
+Set `DB_EXTERNAL_TRANSACTION_POOLER=true` only when `DATABASE_URL` explicitly
+targets a separately operated transaction-mode pooler; this project does not
+deploy one. TLS connect arguments remain active in either mode. FastAPI disposes
+the engine during graceful shutdown.
+
+Size PostgreSQL deliberately: approximate maximum application connections as
+`workers × (pool_size + max_overflow)`, plus migration, administration, and
+provider-reserved capacity. At the defaults, two workers can open at most
+`2 × (5 + 2) = 14` application connections. Production expects managed
+PostgreSQL with encryption at rest, encrypted transport, automated backups,
+PITR, and private-network access; the database must not be publicly exposed.
+
+Historical retention treats Strategy Versions, Backtests, market-data datasets
+and provenance, Allocations, and Execution Intents/results as reproducibility
+records. Their parent foreign keys restrict deletion. A user account should be
+deactivated and, when required, anonymized instead of deleted once it owns or
+requested history. A published/deployed/archived Strategy is archived, not
+deleted; only an unused draft can be deleted. Dataset-owned candles, user-role
+links, profiles, and Auth Sessions remain lifecycle children and may be removed
+with their aggregate. Instrument and vendor-mapping references remain
+restrictive; deactivate superseded reference data instead of deleting it.
+
+Initial product objectives are **RPO <= 15 minutes** and **RTO <= 2 hours**.
+These are targets, not guarantees, until the selected managed service is
+configured and restore drills demonstrate them. Before significant migrations,
+confirm automated backup/PITR health, confirm restore capability, take a manual
+snapshot when supported, retain the recovery point and instructions, migrate
+once, and verify the Alembic head.
+
+A provider-neutral restore drill must never overwrite production:
+
+1. Create an isolated restore database and restore the chosen snapshot/PITR point.
+2. Verify private TLS connectivity and run `alembic current --check-heads` plus `alembic check`.
+3. Compare critical counts and relationships for users, strategies, Strategy Versions, Backtests, datasets/candles, Allocations, executions, and relevant Auth Sessions.
+4. Check that every historical child resolves its required parent, dataset candle counts/checksums are internally consistent, and execution/allocation strategy-version pairs match.
+5. Run registration/authentication, strategy/history reads, backtest reads, and paper-execution read smoke checks against the isolated environment.
+6. Record timings and findings, then destroy the isolated drill environment according to the provider's safe process.
+
+Restoring the application database does not guarantee that an external market
+data vendor can reproduce data that was never persisted; vendor licensing,
+availability, and separate source retention remain external concerns.
 
 ### Market and Instrument bootstrap
 

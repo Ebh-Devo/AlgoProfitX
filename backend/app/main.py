@@ -1,3 +1,5 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -8,6 +10,13 @@ from app.api.routes.instruments import router as instruments_router
 from app.api.routes.marketplace import router as marketplace_router
 from app.api.routes.strategies import router as strategies_router
 from app.core.config import get_settings
+from app.db.session import dispose_engine
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    yield
+    await dispose_engine()
 
 
 def create_app() -> FastAPI:
@@ -18,6 +27,7 @@ def create_app() -> FastAPI:
         docs_url="/docs" if settings.api_docs_enabled else None,
         redoc_url="/redoc" if settings.api_docs_enabled else None,
         openapi_url="/openapi.json" if settings.api_docs_enabled else None,
+        lifespan=lifespan,
     )
     application.add_middleware(
         CORSMiddleware,

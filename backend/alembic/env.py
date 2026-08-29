@@ -1,7 +1,7 @@
 from logging.config import fileConfig
 
 from alembic import context
-from sqlalchemy import pool
+from sqlalchemy import pool, text
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
@@ -43,6 +43,7 @@ config.set_main_option(
 )
 
 target_metadata = Base.metadata
+MIGRATION_ADVISORY_LOCK_ID = 4_160_760_704_886_556_280
 
 
 def run_migrations_offline() -> None:
@@ -65,8 +66,20 @@ def do_run_migrations(connection: Connection) -> None:
         target_metadata=target_metadata,
     )
 
-    with context.begin_transaction():
-        context.run_migrations()
+    acquired = connection.execute(
+        text("SELECT pg_try_advisory_lock(:lock_id)"),
+        {"lock_id": MIGRATION_ADVISORY_LOCK_ID},
+    ).scalar_one()
+    if not acquired:
+        raise RuntimeError("Another AlgoProfitX migration runner owns the advisory lock")
+    try:
+        with context.begin_transaction():
+            context.run_migrations()
+    finally:
+        connection.execute(
+            text("SELECT pg_advisory_unlock(:lock_id)"),
+            {"lock_id": MIGRATION_ADVISORY_LOCK_ID},
+        )
 
 
 async def run_async_migrations() -> None:

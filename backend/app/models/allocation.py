@@ -39,7 +39,7 @@ class AllocationIntent(Base):
             ["strategy_id", "strategy_version_id"],
             ["strategy_versions.strategy_id", "strategy_versions.id"],
             name="fk_allocation_intents_strategy_version_same_strategy",
-            ondelete="CASCADE",
+            ondelete="RESTRICT",
         ),
     )
 
@@ -49,7 +49,7 @@ class AllocationIntent(Base):
     )
 
     investor_user_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"),
+        ForeignKey("users.id", ondelete="RESTRICT"),
         nullable=False,
         index=True,
     )

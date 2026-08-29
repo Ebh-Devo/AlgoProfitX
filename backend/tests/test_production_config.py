@@ -59,6 +59,34 @@ def test_valid_production_configuration_is_fail_closed_by_default():
     assert settings.database_echo is False
     assert settings.database_connect_args == {"ssl": True}
     assert settings.market_data_provider == "synthetic"
+    assert settings.uses_application_pool is True
+    assert settings.database_engine_options["pool_size"] == 5
+    assert settings.database_engine_options["max_overflow"] == 2
+    assert settings.database_engine_options["pool_timeout"] == 10
+    assert settings.database_engine_options["pool_recycle"] == 1800
+    assert settings.database_engine_options["pool_pre_ping"] is True
+
+
+def test_external_transaction_pooler_mode_disables_application_pool():
+    settings = Settings(
+        **production_values(db_external_transaction_pooler=True)
+    )
+    assert settings.uses_application_pool is False
+    assert "pool_size" not in settings.database_engine_options
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    (
+        ("db_pool_size", 0),
+        ("db_max_overflow", -1),
+        ("db_pool_timeout_seconds", 0),
+        ("db_pool_recycle_seconds", 0),
+    ),
+)
+def test_invalid_pool_configuration_is_rejected(field: str, value: int):
+    with pytest.raises(ValidationError):
+        Settings(**production_values(**{field: value}))
 
 
 def test_production_sql_echo_remains_off_even_if_debug_is_mutated():
