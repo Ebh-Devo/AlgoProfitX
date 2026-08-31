@@ -17,6 +17,7 @@ def production_values(**overrides: object) -> dict[str, object]:
         "frontend_public_url": "https://www.algoprofitx.com",
         "api_public_url": "https://api.algoprofitx.com",
         "auth_cookie_secure": True,
+        "auth_csrf_cookie_domain": "algoprofitx.com",
         "market_data_provider": "synthetic",
         "_env_file": None,
     }
@@ -65,6 +66,18 @@ def test_valid_production_configuration_is_fail_closed_by_default():
     assert settings.database_engine_options["pool_timeout"] == 10
     assert settings.database_engine_options["pool_recycle"] == 1800
     assert settings.database_engine_options["pool_pre_ping"] is True
+
+
+def test_staging_uses_production_security_with_approved_origins():
+    settings = Settings(
+        **production_values(
+            cors_allowed_origins="https://staging.algoprofitx.com",
+            frontend_public_url="https://staging.algoprofitx.com",
+            api_public_url="https://api-staging.algoprofitx.com",
+        )
+    )
+    assert settings.app_env is AppEnvironment.PRODUCTION
+    assert settings.cors_allowed_origins == ("https://staging.algoprofitx.com",)
 
 
 def test_external_transaction_pooler_mode_disables_application_pool():
@@ -164,7 +177,7 @@ def test_production_localhost_cors_is_rejected():
 
 def test_production_requires_canonical_frontend_origin():
     assert_production_error(
-        "must include https://www.algoprofitx.com",
+        "must include FRONTEND_PUBLIC_URL",
         cors_allowed_origins="https://algoprofitx.com",
     )
 
@@ -179,6 +192,13 @@ def test_production_may_also_allow_apex_frontend_origin():
         )
     )
     assert "https://algoprofitx.com" in settings.cors_allowed_origins
+
+
+def test_production_rejects_unapproved_https_cors_origin():
+    assert_production_error(
+        "unapproved production origin",
+        cors_allowed_origins="https://www.algoprofitx.com,https://example.com",
+    )
 
 
 @pytest.mark.parametrize(
@@ -202,6 +222,36 @@ def test_production_database_must_be_remote_asyncpg_with_tls():
         r"must use postgresql\+asyncpg",
         database_url="sqlite:///algoprofitx.db",
     )
+
+
+def test_digitalocean_database_url_is_adapted_for_asyncpg():
+    settings = Settings(
+        **production_values(
+            database_url=(
+                "postgresql://app:p%40ss@private.db.ondigitalocean.com:25060/"
+                "algoprofitx_staging?sslmode=require"
+            )
+        )
+    )
+    assert settings.database_url.get_secret_value() == (
+        "postgresql+asyncpg://app:p%40ss@private.db.ondigitalocean.com:25060/"
+        "algoprofitx_staging"
+    )
+    assert settings.database_connect_args == {"ssl": True}
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    (
+        ("auth_cookie_domain", "algoprofitx.com", "host-only refresh cookie"),
+        ("auth_csrf_cookie_path", "/api/v1/auth", "AUTH_CSRF_COOKIE_PATH"),
+        ("auth_csrf_cookie_domain", None, "AUTH_CSRF_COOKIE_DOMAIN"),
+    ),
+)
+def test_production_cookie_scopes_support_cross_subdomain_csrf(
+    field: str, value: object, message: str
+):
+    assert_production_error(message, **{field: value})
 
 
 @pytest.mark.asyncio

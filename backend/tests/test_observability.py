@@ -94,6 +94,7 @@ def test_production_json_and_development_console_defaults(monkeypatch):
         frontend_public_url="https://www.algoprofitx.com",
         api_public_url="https://api.algoprofitx.com",
         auth_cookie_secure=True,
+        auth_csrf_cookie_domain="algoprofitx.com",
         _env_file=None,
     )
     assert production.log_format == "json"

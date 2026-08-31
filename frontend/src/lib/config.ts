@@ -1,4 +1,7 @@
-const PRODUCTION_API_BASE_URL = "https://api.algoprofitx.com/api/v1";
+const PRODUCTION_API_BASE_URLS = new Set([
+  "https://api.algoprofitx.com/api/v1",
+  "https://api-staging.algoprofitx.com/api/v1",
+]);
 
 export function validateApiBaseUrl(rawValue: string | undefined, production: boolean): string {
   if (!rawValue) throw new Error("VITE_API_BASE_URL is required. Copy .env.example to .env.");
@@ -9,8 +12,8 @@ export function validateApiBaseUrl(rawValue: string | undefined, production: boo
     throw new Error("VITE_API_BASE_URL must not contain credentials, query parameters, or fragments.");
   }
   const normalized = rawValue.replace(/\/$/, "");
-  if (production && normalized !== PRODUCTION_API_BASE_URL) {
-    throw new Error(`Production VITE_API_BASE_URL must be ${PRODUCTION_API_BASE_URL}.`);
+  if (production && !PRODUCTION_API_BASE_URLS.has(normalized)) {
+    throw new Error("Production VITE_API_BASE_URL must be an approved AlgoProfitX HTTPS API URL.");
   }
   return normalized;
 }

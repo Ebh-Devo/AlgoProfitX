@@ -1,0 +1,187 @@
+# Reviewable staging specification only. Do not apply until the runbook gates are met.
+# SECRET_KEY is intentionally absent: inject it as an encrypted app-level RUN_TIME
+# variable in the DigitalOcean control panel before the first successful deployment.
+name: algoprofitx-staging
+region: blr
+
+services:
+  - name: api
+    github:
+      repo: Roshan-Baghwar/TradeEBH
+      branch: main
+      deploy_on_push: false
+    source_dir: backend
+    dockerfile_path: backend/Dockerfile
+    instance_count: 1
+    instance_size_slug: apps-s-1vcpu-1gb-fixed
+    http_port: 8080
+    health_check:
+      initial_delay_seconds: 15
+      period_seconds: 10
+      timeout_seconds: 3
+      success_threshold: 1
+      failure_threshold: 3
+      http_path: /health/ready
+    liveness_health_check:
+      initial_delay_seconds: 30
+      period_seconds: 15
+      timeout_seconds: 3
+      success_threshold: 1
+      failure_threshold: 3
+      http_path: /health/live
+    termination:
+      drain_seconds: 30
+      grace_period_seconds: 45
+
+static_sites:
+  - name: frontend
+    github:
+      repo: Roshan-Baghwar/TradeEBH
+      branch: main
+      deploy_on_push: false
+    source_dir: frontend
+    environment_slug: node-js
+    build_command: pnpm build
+    output_dir: dist
+    index_document: index.html
+    catchall_document: index.html
+    envs:
+      - key: VITE_API_BASE_URL
+        value: https://api-staging.algoprofitx.com/api/v1
+        scope: BUILD_TIME
+        type: GENERAL
+
+jobs:
+  - name: migrate
+    kind: PRE_DEPLOY
+    github:
+      repo: Roshan-Baghwar/TradeEBH
+      branch: main
+      deploy_on_push: false
+    source_dir: backend
+    dockerfile_path: backend/Dockerfile
+    instance_count: 1
+    instance_size_slug: apps-s-1vcpu-0.5gb
+    run_command: python -m alembic upgrade head && python -m alembic current --check-heads
+
+databases:
+  - name: staging-postgres
+    engine: PG
+    version: "17"
+    production: true
+    cluster_name: algoprofitx-staging-pg
+    db_name: algoprofitx_staging
+    db_user: algoprofitx_staging_app
+
+domains:
+  - domain: staging.algoprofitx.com
+    type: PRIMARY
+    minimum_tls_version: "1.2"
+  - domain: api-staging.algoprofitx.com
+    type: ALIAS
+    minimum_tls_version: "1.2"
+
+envs:
+  - key: APP_ENV
+    value: production
+    scope: RUN_TIME
+    type: GENERAL
+  - key: DEBUG
+    value: "false"
+    scope: RUN_TIME
+    type: GENERAL
+  - key: DATABASE_URL
+    value: ${staging-postgres.DATABASE_URL}
+    scope: RUN_TIME
+    type: SECRET
+  - key: DATABASE_REQUIRE_TLS
+    value: "true"
+    scope: RUN_TIME
+    type: GENERAL
+  - key: DB_POOL_SIZE
+    value: "3"
+    scope: RUN_TIME
+    type: GENERAL
+  - key: DB_MAX_OVERFLOW
+    value: "1"
+    scope: RUN_TIME
+    type: GENERAL
+  - key: FRONTEND_PUBLIC_URL
+    value: https://staging.algoprofitx.com
+    scope: RUN_TIME
+    type: GENERAL
+  - key: API_PUBLIC_URL
+    value: https://api-staging.algoprofitx.com
+    scope: RUN_TIME
+    type: GENERAL
+  - key: CORS_ALLOWED_ORIGINS
+    value: https://staging.algoprofitx.com
+    scope: RUN_TIME
+    type: GENERAL
+  - key: API_DOCS_ENABLED
+    value: "false"
+    scope: RUN_TIME
+    type: GENERAL
+  - key: AUTH_COOKIE_SECURE
+    value: "true"
+    scope: RUN_TIME
+    type: GENERAL
+  - key: AUTH_COOKIE_HTTPONLY
+    value: "true"
+    scope: RUN_TIME
+    type: GENERAL
+  - key: AUTH_COOKIE_SAMESITE
+    value: strict
+    scope: RUN_TIME
+    type: GENERAL
+  - key: AUTH_COOKIE_PATH
+    value: /api/v1/auth
+    scope: RUN_TIME
+    type: GENERAL
+  - key: AUTH_CSRF_COOKIE_DOMAIN
+    value: algoprofitx.com
+    scope: RUN_TIME
+    type: GENERAL
+  - key: AUTH_CSRF_COOKIE_PATH
+    value: /
+    scope: RUN_TIME
+    type: GENERAL
+  - key: ABUSE_PROTECTION_ENABLED
+    value: "true"
+    scope: RUN_TIME
+    type: GENERAL
+  - key: LOG_LEVEL
+    value: INFO
+    scope: RUN_TIME
+    type: GENERAL
+  - key: LOG_FORMAT
+    value: json
+    scope: RUN_TIME
+    type: GENERAL
+  - key: MARKET_DATA_PROVIDER
+    value: synthetic
+    scope: RUN_TIME
+    type: GENERAL
+
+ingress:
+  rules:
+    - match:
+        authority:
+          exact: api-staging.algoprofitx.com
+        path:
+          prefix: /
+      component:
+        name: api
+        preserve_path_prefix: true
+    - match:
+        authority:
+          exact: staging.algoprofitx.com
+        path:
+          prefix: /
+      component:
+        name: frontend
+        preserve_path_prefix: true
+
+alerts:
+  - rule: DEPLOYMENT_FAILED
+  - rule: DOMAIN_FAILED
