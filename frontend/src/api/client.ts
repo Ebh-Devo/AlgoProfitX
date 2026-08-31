@@ -3,7 +3,7 @@ import { appConfig } from "../lib/config";
 
 export interface ApiFieldError { path: string; message: string; }
 export class ApiError extends Error {
-  constructor(public readonly status: number, message: string, public readonly fieldErrors: ApiFieldError[] = []) {
+  constructor(public readonly status: number, message: string, public readonly fieldErrors: ApiFieldError[] = [], public readonly requestId?: string) {
     super(message); this.name = "ApiError";
   }
 }
@@ -59,9 +59,15 @@ export async function apiRequest<T>(path: string, options: RequestInit = {}, all
     await refreshAccessToken(); return apiRequest<T>(path, options, false);
   }
   if (response.status === 204) return undefined as T;
-  const body = await response.json().catch(() => null) as { detail?: unknown } | T | null;
+  const body = await response.json().catch(() => null) as { detail?: unknown; request_id?: unknown } | T | null;
   if (!response.ok) {
     if (response.status === 401) clearSession();
+    const requestId = body && typeof body === "object" && "request_id" in body && typeof body.request_id === "string"
+      ? body.request_id : response.headers.get("X-Request-ID") ?? undefined;
+    if (response.status >= 500) {
+      const message = requestId ? `An unexpected server error occurred. Reference: ${requestId}` : "An unexpected server error occurred.";
+      throw new ApiError(response.status, message, [], requestId);
+    }
     const normalized = normalizeDetail(body && typeof body === "object" && "detail" in body ? body.detail : undefined);
     throw new ApiError(response.status, normalized.message, normalized.fieldErrors);
   }

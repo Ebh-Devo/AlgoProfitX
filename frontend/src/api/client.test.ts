@@ -55,4 +55,30 @@ describe("authenticated API client", () => {
       status: 422, message: "Please correct the highlighted fields.",
     });
   });
+
+  it("sanitizes unexpected server details and surfaces only the request reference", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      detail: "SQL password=private and stack trace",
+      request_id: "request-support-123",
+    }), { status: 500, headers: { "Content-Type": "application/json" } })));
+    await expect(apiRequest("/broken", {}, false)).rejects.toMatchObject({
+      status: 500,
+      message: "An unexpected server error occurred. Reference: request-support-123",
+      requestId: "request-support-123",
+    });
+  });
+
+  it("sends refresh credentials and the readable CSRF token", async () => {
+    document.cookie = "algoprofitx_csrf=csrf-safe; Path=/";
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ access_token: "memory-only" }), {
+      status: 200, headers: { "Content-Type": "application/json" },
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    await import("./client").then(({ refreshAccessToken }) => refreshAccessToken());
+    expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("/auth/refresh"), expect.objectContaining({
+      credentials: "include",
+      headers: { "X-CSRF-Token": "csrf-safe" },
+    }));
+    expect(window.sessionStorage.length).toBe(0);
+  });
 });

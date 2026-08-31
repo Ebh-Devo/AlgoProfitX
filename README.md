@@ -173,7 +173,7 @@ Production mode is enabled only by setting `APP_ENV=production`; it is never inf
 
 Set `DATABASE_REQUIRE_TLS=true` for managed PostgreSQL; this enables asyncpg's generic SSL transport without assuming a particular cloud provider. Production SQL echo is always disabled. `API_DOCS_ENABLED` defaults to false in production, removing `/docs`, `/redoc`, and `/openapi.json`; programmatic schema generation through `app.openapi()` remains available to CI. Generate each production `SECRET_KEY` with a cryptographically secure secret generator and store it outside source control—never copy a value from this README or `.env.example`.
 
-The canonical browser origin is `https://www.algoprofitx.com`. The apex `https://algoprofitx.com` may also be allowlisted during transition, but should eventually redirect to the canonical `www` origin. Credentialed CORS remains disabled because the current API uses bearer tokens. The synthetic market-data provider remains permitted so a production-mode staging/paper/backtesting environment can start before a licensed real-data adapter exists; it must not be presented as real NSE data.
+The canonical browser origin is `https://www.algoprofitx.com`. The apex `https://algoprofitx.com` should permanently redirect to the canonical `www` origin rather than act as an application origin. Credentialed CORS permits only exact configured origins so the browser can send the host-only refresh cookie to the API; wildcard origins remain forbidden. The synthetic market-data provider remains permitted so a production-mode staging/paper/backtesting environment can start before a licensed real-data adapter exists; it must not be presented as real NSE data.
 
 #### Application abuse controls
 
@@ -397,13 +397,30 @@ pnpm dev
 
 Open <http://localhost:5173>. The backend needs `CORS_ALLOWED_ORIGINS=http://localhost:5173`. If CORS errors appear, update `backend\.env` and restart the backend.
 
+The intended production topology is `https://www.algoprofitx.com` for the SPA
+and `https://api.algoprofitx.com` for the API. Production builds accept only
+`VITE_API_BASE_URL=https://api.algoprofitx.com/api/v1`; localhost remains valid
+for development. All `VITE_*` variables are public browser configuration and
+must never contain passwords, tokens, API keys, signing secrets, or private
+vendor settings. Domain ownership and these configuration targets do not mean
+the frontend is deployed: it remains a localhost/development application until
+separate hosting, DNS, certificate, and release work is completed.
+
+The provider-neutral [frontend production hosting contract](docs/frontend-production-hosting.md)
+defines the required HTTPS and apex-to-`www` redirects, browser-history SPA
+fallback, CSP and other security headers, cache behavior, source-map policy,
+and API boundary. The eventual frontend hosting/edge layer must apply these
+headers and rewrite rules; no provider has been selected or configured here.
+
 Frontend validation:
 
 ```powershell
 cd frontend
 pnpm typecheck
 pnpm test
+$env:VITE_API_BASE_URL='https://api.algoprofitx.com/api/v1'
 pnpm build
+Remove-Item Env:VITE_API_BASE_URL
 ```
 
 With the API running, regenerate TypeScript OpenAPI contracts after backend schema changes:
@@ -415,7 +432,12 @@ pnpm generate:api-types
 
 The script defaults to `http://127.0.0.1:8000/openapi.json`; set the process-only `OPENAPI_URL` variable for another local endpoint.
 
-The development frontend stores JWTs in `sessionStorage`, clears them after a `401`, and has no refresh-token flow. This is MVP behavior, not production session hardening.
+Access JWTs remain in memory only and legacy browser-storage keys are actively
+removed. Refresh uses the Secure, HttpOnly, host-only API cookie through
+`credentials: include`; frontend JavaScript reads only the separate CSRF cookie
+and sends `X-CSRF-Token`. The exact production frontend origin must remain in
+the backend credentialed CORS allowlist. Localhost uses environment-specific
+cookie/CORS settings without weakening production cookie policy.
 
 ## Two-terminal workflow
 
