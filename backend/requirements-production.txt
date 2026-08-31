@@ -1,0 +1,15 @@
+# Production entry points are constrained by the canonical, reviewed lock file.
+# Keep runtime additions in requirements.txt and regenerate requirements.lock first.
+-c requirements.lock
+
+fastapi
+uvicorn[standard]
+sqlalchemy
+asyncpg
+alembic
+pydantic-settings
+python-jose[cryptography]
+argon2-cffi
+python-multipart
+email-validator
+tzdata
