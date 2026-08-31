@@ -94,3 +94,37 @@ jobs:
       - name: Build
         working-directory: frontend
         run: pnpm build
+
+  backend-container:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build production backend image
+        run: >-
+          docker build
+          --build-arg VCS_REF=${{ github.sha }}
+          --build-arg SOURCE_URL=${{ github.server_url }}/${{ github.repository }}
+          --tag algoprofitx-backend:ci
+          backend
+      - name: Inspect image contents and runtime user
+        shell: bash
+        run: |
+          test "$(docker image inspect algoprofitx-backend:ci --format '{{.Config.User}}')" = "10001:10001"
+          docker run --rm --entrypoint sh algoprofitx-backend:ci -c \
+            'test ! -e /app/.env && test ! -d /app/tests && test ! -d /app/.git && test ! -d /app/node_modules'
+      - name: Run liveness smoke test
+        shell: bash
+        run: |
+          docker run --detach --rm --name algoprofitx-backend-smoke -p 8000:8000 \
+            -e APP_ENV=test \
+            -e DATABASE_URL=postgresql+asyncpg://smoke:smoke@127.0.0.1:5432/unused \
+            -e SECRET_KEY=ci-smoke-only \
+            algoprofitx-backend:ci
+          trap 'docker logs algoprofitx-backend-smoke; docker stop algoprofitx-backend-smoke >/dev/null 2>&1 || true' EXIT
+          for attempt in {1..30}; do
+            if python -c "import urllib.request; r=urllib.request.urlopen('http://127.0.0.1:8000/health/live', timeout=2); assert r.status == 200"; then
+              exit 0
+            fi
+            sleep 1
+          done
+          exit 1

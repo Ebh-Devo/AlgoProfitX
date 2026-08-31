@@ -15,6 +15,7 @@ The intended product domain is [https://www.algoprofitx.com](https://www.algopro
 - [Fresh Windows setup](#fresh-windows-setup)
 - [PostgreSQL](#postgresql)
 - [Backend](#backend)
+- [Production runtime packaging](docs/production-runtime.md)
 - [Frontend](#frontend)
 - [Two-terminal workflow](#two-terminal-workflow)
 - [Demo walkthrough](#demo-walkthrough)
@@ -38,6 +39,8 @@ The intended product domain is [https://www.algoprofitx.com](https://www.algopro
 | Frontend | Creator and Investor MVP journeys and role-aware navigation |
 
 The frontend uses Vite, React, TypeScript, React Router, TanStack Query, generated OpenAPI types, and Recharts. The backend uses FastAPI, SQLAlchemy 2.x, Alembic, PostgreSQL, Pydantic, and pytest.
+
+Provider-neutral production runtime packaging and its environment, migration, health-probe, and local image-test contracts are documented in [Production runtime packaging](docs/production-runtime.md). No production deployment exists yet.
 
 ## Windows prerequisites
 
