@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Any, Protocol, Sequence
 
@@ -8,12 +8,13 @@ from app.market_calendar.contracts import TradingSession
 
 @dataclass(frozen=True)
 class Candle:
+    session_date: date
     timestamp: datetime
     open: Decimal
     high: Decimal
     low: Decimal
     close: Decimal
-    volume: Decimal
+    volume: int | None
 
 
 @dataclass(frozen=True)
@@ -77,8 +78,15 @@ class BacktestEngine(Protocol):
 
 
 class HistoricalMarketDataProvider(Protocol):
-    def load(self, request: HistoricalCandleRequest) -> MarketDataBatch: ...
+    code: str
+    adapter_version: str
+
+    async def load(self, request: HistoricalCandleRequest) -> MarketDataBatch: ...
 
 
 class BacktestExecutionError(Exception):
     """An expected, safe-to-return reference execution failure."""
+
+    def __init__(self, message: str, code: str = "market_data_invalid_payload"):
+        super().__init__(message)
+        self.code = code

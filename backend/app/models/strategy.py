@@ -37,6 +37,7 @@ class Strategy(Base):
             ["strategy_versions.strategy_id", "strategy_versions.id"],
             name="fk_strategies_current_version_same_strategy",
             ondelete="SET NULL (current_version_id)",
+            use_alter=True,
         ),
     )
 
@@ -46,7 +47,7 @@ class Strategy(Base):
     )
 
     creator_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"),
+        ForeignKey("users.id", ondelete="RESTRICT"),
         nullable=False,
         index=True,
     )

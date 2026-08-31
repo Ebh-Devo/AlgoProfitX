@@ -4,6 +4,8 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.abuse import RateLimitRule, abuse_controller
+from app.core.config import get_settings
 from app.core.dependencies import require_creator
 from app.db.session import get_session
 from app.models.strategy import Strategy
@@ -257,6 +259,25 @@ async def create_backtest_request(
     current_user: Annotated[User, Depends(require_creator)],
     session: Annotated[AsyncSession, Depends(get_session)],
 ):
+    settings = get_settings()
+    user_key = str(current_user.id)
+    await abuse_controller.enforce(
+        (
+            RateLimitRule(
+                "backtest_burst_user",
+                user_key,
+                settings.backtest_burst_limit,
+                settings.backtest_burst_window_seconds,
+            ),
+            RateLimitRule(
+                "backtest_sustained_user",
+                user_key,
+                settings.backtest_sustained_limit,
+                settings.backtest_sustained_window_seconds,
+            ),
+        ),
+        settings.abuse_protection_enabled,
+    )
     version = await _get_owned_strategy_version(
         session=session,
         strategy_id=strategy_id,
@@ -340,6 +361,25 @@ async def execute_backtest_request(
     current_user: Annotated[User, Depends(require_creator)],
     session: Annotated[AsyncSession, Depends(get_session)],
 ):
+    settings = get_settings()
+    user_key = str(current_user.id)
+    await abuse_controller.enforce(
+        (
+            RateLimitRule(
+                "backtest_burst_user",
+                user_key,
+                settings.backtest_burst_limit,
+                settings.backtest_burst_window_seconds,
+            ),
+            RateLimitRule(
+                "backtest_sustained_user",
+                user_key,
+                settings.backtest_sustained_limit,
+                settings.backtest_sustained_window_seconds,
+            ),
+        ),
+        settings.abuse_protection_enabled,
+    )
     version = await _get_owned_strategy_version(
         session=session,
         strategy_id=strategy_id,
@@ -357,13 +397,18 @@ async def execute_backtest_request(
             detail="Backtest not found",
         )
 
-    try:
-        return await execute_backtest(session, backtest.id)
-    except BacktestExecutionConflict as exc:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=str(exc),
-        )
+    async with abuse_controller.concurrency.slot(
+        "backtest_execution_user",
+        user_key,
+        settings.backtest_max_concurrency_per_user,
+    ):
+        try:
+            return await execute_backtest(session, backtest.id)
+        except BacktestExecutionConflict as exc:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=str(exc),
+            )
 
 
 @router.get(

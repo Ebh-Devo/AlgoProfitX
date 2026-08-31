@@ -1,21 +1,22 @@
-import { clearSession, getSession, saveSession } from "./session";
+import { clearSession, getAccessToken, setAccessToken } from "./session";
 
-describe("browser session storage", () => {
-  it("stores an access token for the current browser session only", () => {
-    saveSession({ accessToken: "test-token" });
-    expect(getSession()).toEqual({ accessToken: "test-token" });
-    expect(window.localStorage.getItem("algoprofitx.auth.session")).toBeNull();
+describe("in-memory browser session", () => {
+  it("never stores new access tokens in browser storage", () => {
+    setAccessToken("test-token");
+    expect(getAccessToken()).toBe("test-token");
+    expect(window.sessionStorage.length).toBe(0);
+    expect(window.localStorage.length).toBe(0);
   });
 
-  it("reads a legacy branded session without logging out existing users", () => {
-    window.sessionStorage.setItem("tradeebh.auth.session", JSON.stringify({ accessToken: "legacy-token" }));
-    expect(getSession()).toEqual({ accessToken: "legacy-token" });
-    clearSession();
+  it("removes current and legacy persisted sessions", () => {
+    window.sessionStorage.setItem("algoprofitx.auth.session", "old");
+    window.sessionStorage.setItem("tradeebh.auth.session", "legacy");
+    setAccessToken("memory-token");
+    expect(window.sessionStorage.length).toBe(0);
   });
 
-  it("clears the local session", () => {
-    saveSession({ accessToken: "test-token" });
-    clearSession();
-    expect(getSession()).toBeNull();
+  it("clears the in-memory session", () => {
+    setAccessToken("test-token"); clearSession();
+    expect(getAccessToken()).toBeNull();
   });
 });

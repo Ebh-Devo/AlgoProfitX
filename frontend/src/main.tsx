@@ -5,6 +5,7 @@ import { RouterProvider } from "react-router-dom";
 
 import { AuthProvider } from "./auth/auth-context";
 import { router } from "./app/router";
+import { AppErrorBoundary } from "./components/AppErrorBoundary";
 import "./styles/global.css";
 import "./styles/creator.css";
 import "./styles/investor.css";
@@ -14,5 +15,5 @@ import "./styles/premium.css";
 const queryClient = new QueryClient({ defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } } });
 
 createRoot(document.getElementById("root")!).render(
-  <StrictMode><QueryClientProvider client={queryClient}><AuthProvider><RouterProvider router={router} /></AuthProvider></QueryClientProvider></StrictMode>,
+  <StrictMode><AppErrorBoundary><QueryClientProvider client={queryClient}><AuthProvider><RouterProvider router={router} /></AuthProvider></QueryClientProvider></AppErrorBoundary></StrictMode>,
 );

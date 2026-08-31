@@ -50,7 +50,7 @@ async def test_cors_allows_only_configured_origin(monkeypatch):
 
         assert allowed.status_code == 200
         assert allowed.headers["access-control-allow-origin"] == "http://localhost:5173"
-        assert "access-control-allow-credentials" not in allowed.headers
+        assert allowed.headers["access-control-allow-credentials"] == "true"
         assert denied.status_code == 400
     finally:
         get_settings.cache_clear()

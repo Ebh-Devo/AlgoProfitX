@@ -39,6 +39,7 @@ def _require_test_database() -> str:
 os.environ["DATABASE_URL"] = _require_test_database()
 
 from app.db.session import engine  # noqa: E402
+from app.core.abuse import abuse_controller  # noqa: E402
 from app.models.user import Role  # noqa: E402
 
 
@@ -49,7 +50,7 @@ async def _reset_database() -> None:
     async with engine.begin() as connection:
         await connection.execute(
             text(
-                "TRUNCATE TABLE instrument_vendor_mappings, instruments, exchanges, user_roles, user_profiles, "
+                "TRUNCATE TABLE auth_sessions, instrument_vendor_mappings, instruments, exchanges, user_roles, user_profiles, "
                 "execution_intents, allocation_intents, backtests, strategy_versions, strategies, users, roles CASCADE"
             )
         )
@@ -62,6 +63,7 @@ async def _reset_database() -> None:
 @pytest_asyncio.fixture(autouse=True)
 async def reset_test_database(request):
     """Keep committed API requests isolated without touching development data."""
+    await abuse_controller.clear()
     await _reset_database()
     if request.path.name != "test_instruments.py":
         from app.bootstrap.instruments import bootstrap_market_foundation
@@ -70,4 +72,5 @@ async def reset_test_database(request):
         async with AsyncSessionLocal() as session:
             await bootstrap_market_foundation(session)
     yield
+    await abuse_controller.clear()
     await _reset_database()

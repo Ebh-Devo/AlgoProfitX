@@ -9,9 +9,9 @@ export function AppShell() {
   const creator = hasRole(user, CREATOR_ROLE);
   const investor = hasRole(user, INVESTOR_ROLE);
 
-  const endSession = () => {
-    logout();
-    navigate("/");
+  const endSession = async () => {
+    try { await logout(); }
+    finally { navigate("/"); }
   };
 
   return (

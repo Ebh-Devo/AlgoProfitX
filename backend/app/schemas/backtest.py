@@ -24,6 +24,7 @@ class BacktestResponse(BaseModel):
     backtest_configuration_snapshot: dict[str, Any]
     market_data_reference: str | None
     market_data_provider: str | None
+    market_data_dataset_id: uuid.UUID | None
     dataset_reference: str | None
     timeframe: str | None
     range_start: datetime | None
@@ -33,6 +34,7 @@ class BacktestResponse(BaseModel):
     market_data_provenance: dict[str, Any] | None
     result_summary: dict[str, Any] | None
     error_message: str | None
+    error_code: str | None
     created_at: datetime
     started_at: datetime | None
     completed_at: datetime | None

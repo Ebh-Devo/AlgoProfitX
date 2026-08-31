@@ -1,15 +1,20 @@
-const rawApiBaseUrl = import.meta.env.VITE_API_BASE_URL;
+const PRODUCTION_API_BASE_URL = "https://api.algoprofitx.com/api/v1";
 
-if (!rawApiBaseUrl) {
-  throw new Error("VITE_API_BASE_URL is required. Copy .env.example to .env.");
-}
-
-try {
-  new URL(rawApiBaseUrl);
-} catch {
-  throw new Error("VITE_API_BASE_URL must be an absolute URL.");
+export function validateApiBaseUrl(rawValue: string | undefined, production: boolean): string {
+  if (!rawValue) throw new Error("VITE_API_BASE_URL is required. Copy .env.example to .env.");
+  let parsed: URL;
+  try { parsed = new URL(rawValue); }
+  catch { throw new Error("VITE_API_BASE_URL must be an absolute URL."); }
+  if (parsed.username || parsed.password || parsed.search || parsed.hash) {
+    throw new Error("VITE_API_BASE_URL must not contain credentials, query parameters, or fragments.");
+  }
+  const normalized = rawValue.replace(/\/$/, "");
+  if (production && normalized !== PRODUCTION_API_BASE_URL) {
+    throw new Error(`Production VITE_API_BASE_URL must be ${PRODUCTION_API_BASE_URL}.`);
+  }
+  return normalized;
 }
 
 export const appConfig = {
-  apiBaseUrl: rawApiBaseUrl.replace(/\/$/, ""),
+  apiBaseUrl: validateApiBaseUrl(import.meta.env.VITE_API_BASE_URL, import.meta.env.PROD),
 };

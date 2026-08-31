@@ -16,16 +16,18 @@ class SyntheticMarketDataProvider:
     """Fixed local candles for deterministic reference-engine validation."""
 
     identifier = "synthetic-local-v1"
+    code = "synthetic"
+    adapter_version = "1"
     max_candles = 64
 
-    def load(self, request: HistoricalCandleRequest) -> MarketDataBatch:
+    async def load(self, request: HistoricalCandleRequest) -> MarketDataBatch:
         reference = request.metadata.get("requested_reference")
         if reference not in (None, self.identifier):
             raise BacktestExecutionError("Unsupported synthetic data reference")
         if not is_synthetic_equity_symbol(request.instrument.canonical_symbol):
             raise BacktestExecutionError("Unsupported synthetic Instrument")
-        if request.timeframe != "1h":
-            raise BacktestExecutionError("Synthetic provider supports only timeframe=1h")
+        if request.timeframe != "1d":
+            raise BacktestExecutionError("Synthetic provider supports only timeframe=1d")
         if request.adjustment_policy != "unadjusted":
             raise BacktestExecutionError("Synthetic provider supports only unadjusted data")
 
@@ -39,25 +41,20 @@ class SyntheticMarketDataProvider:
         if len(closes) > self.max_candles:
             raise BacktestExecutionError("Synthetic dataset exceeds its limit")
 
-        timestamps = tuple(
-            timestamp
-            for session in request.sessions
-            for timestamp in self._session_timestamps(
-                session.open_utc, session.close_utc
-            )
-        )[: len(closes)]
+        timestamps = tuple(session.close_utc for session in request.sessions)[: len(closes)]
         if len(timestamps) < len(closes):
             raise BacktestExecutionError(
                 "Historical request has insufficient trading-session coverage"
             )
         candles = tuple(
             Candle(
+                session_date=request.sessions[index].local_session_date,
                 timestamp=timestamps[index],
                 open=close,
                 high=close + Decimal("0.5"),
                 low=close - Decimal("0.5"),
                 close=close,
-                volume=Decimal("1000"),
+                volume=1000,
             )
             for index, close in enumerate(closes)
         )

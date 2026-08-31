@@ -133,13 +133,17 @@ async def delete_strategy(
         raise StrategyConflict(
             "Strategy with allocation or execution history cannot be deleted"
         )
+    if strategy.status is not StrategyStatus.DRAFT:
+        raise StrategyConflict(
+            "Only an unused draft strategy can be deleted; archive historical strategies"
+        )
     await session.delete(strategy)
     try:
         await session.flush()
     except IntegrityError as exc:
         await session.rollback()
         raise StrategyConflict(
-            "Strategy with allocation or execution history cannot be deleted"
+            "Strategy with historical records cannot be deleted"
         ) from exc
 
 

@@ -35,12 +35,13 @@ class SyntheticPaperMarketDataProvider:
 
         candles = tuple(
             Candle(
+                session_date=session.local_session_date,
                 timestamp=session.open_utc + timedelta(minutes=30 * index),
                 open=close,
                 high=close + Decimal(str(instrument["tick_size"])),
                 low=close - Decimal(str(instrument["tick_size"])),
                 close=close,
-                volume=Decimal("1000"),
+                volume=1000,
             )
             for index, close in enumerate(closes)
         )

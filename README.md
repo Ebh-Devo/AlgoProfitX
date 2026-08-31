@@ -34,6 +34,7 @@ The intended product domain is [https://www.algoprofitx.com](https://www.algopro
 | Investor | Allocation Intents pinned to a Strategy Version |
 | Execution | Execution Intents and deterministic Paper Execution |
 | Market foundation | Exchange/Instrument identity, vendor-neutral mappings, anonymous discovery APIs |
+| Historical datasets | Provider-independent async boundary, immutable daily candles, checksums, provenance, synthetic default |
 | Frontend | Creator and Investor MVP journeys and role-aware navigation |
 
 The frontend uses Vite, React, TypeScript, React Router, TanStack Query, generated OpenAPI types, and Recharts. The backend uses FastAPI, SQLAlchemy 2.x, Alembic, PostgreSQL, Pydantic, and pytest.
@@ -52,6 +53,10 @@ The frontend uses Vite, React, TypeScript, React Router, TanStack Query, generat
 | Docker | Optional; not required for native Windows development |
 
 Redis is not required by any currently implemented functionality.
+
+### Historical market-data architecture
+
+Backtests resolve the server-configured provider, acquire or reuse an immutable `MarketDataDataset`, validate normalized OHLCV candles, and execute only from persisted candles. The default `synthetic` adapter is deterministic and credential-free. No real vendor adapter is configured: production use still requires a contracted, appropriately licensed market-data source and provider-specific credentials. Provider mappings remain private, are resolved by provider and validity range, and are snapshotted into bounded provenance without secrets. Phase 2F.1 supports daily (`1d`), unadjusted data; it does not claim to provide real NSE history.
 
 Install Node.js LTS:
 
@@ -162,7 +167,80 @@ CORS_ALLOWED_ORIGINS=http://localhost:5173
 
 `.env` is ignored by Git. Native PostgreSQL URLs use port `5432`. Generate a unique local secret; never reuse placeholder/example secrets in production.
 
+#### Production configuration safety
+
+Production mode is enabled only by setting `APP_ENV=production`; it is never inferred from a hostname or hosting platform. In that mode startup fails closed unless debug is off, the JWT secret is non-placeholder and at least 32 bytes, the canonical HTTPS frontend origin is allowed, public URLs use the expected HTTPS domains, the PostgreSQL host is non-local, and encrypted database transport is required. The expected public topology is `https://www.algoprofitx.com` for the frontend and `https://api.algoprofitx.com` for the API. These are configuration targets only and do not mean either service is currently deployed.
+
+Set `DATABASE_REQUIRE_TLS=true` for managed PostgreSQL; this enables asyncpg's generic SSL transport without assuming a particular cloud provider. Production SQL echo is always disabled. `API_DOCS_ENABLED` defaults to false in production, removing `/docs`, `/redoc`, and `/openapi.json`; programmatic schema generation through `app.openapi()` remains available to CI. Generate each production `SECRET_KEY` with a cryptographically secure secret generator and store it outside source control—never copy a value from this README or `.env.example`.
+
+The canonical browser origin is `https://www.algoprofitx.com`. The apex `https://algoprofitx.com` should permanently redirect to the canonical `www` origin rather than act as an application origin. Credentialed CORS permits only exact configured origins so the browser can send the host-only refresh cookie to the API; wildcard origins remain forbidden. The synthetic market-data provider remains permitted so a production-mode staging/paper/backtesting environment can start before a licensed real-data adapter exists; it must not be presented as real NSE data.
+
+#### Application abuse controls
+
+Registration and login are rate-limited by the ASGI client address; login also has a normalized email-key limit that behaves identically whether or not an account exists. Creator enrollment, Backtest creation/execution, and Paper Execution Intent creation/execution use authenticated user IDs. Backtest execution additionally has a per-user concurrency limit. Policies are configured through the `*_LIMIT` and `*_WINDOW_SECONDS` settings shown in `backend/.env.example`, and production refuses to start with `ABUSE_PROTECTION_ENABLED=false`.
+
+These controls are async-safe but process-local. They do not coordinate across workers or replicas, and client identity deliberately ignores untrusted forwarded headers until trusted-proxy runtime configuration exists. A multi-replica deployment must replace the storage implementation with a distributed limiter such as Redis without changing route semantics. Edge/CDN/WAF controls are still required; this application layer is not DDoS protection.
+
+#### Runtime health and observability
+
+`GET /health/live` is the lightweight liveness probe: it performs no database,
+market-data, or other external call. The legacy `GET /health` remains a
+compatibility alias. `GET /health/ready` performs only a bounded PostgreSQL
+`SELECT 1`, using `READINESS_DB_TIMEOUT_SECONDS=2` by default, and returns a
+sanitized `503 {"status":"unavailable"}` when the database cannot be reached.
+Readiness deliberately never contacts a market-data provider or broker. Alembic
+head verification remains the responsibility of Task C's one-runner deployment
+migration job; it is not repeated on frequent readiness probes and the
+application never migrates on startup.
+
+Every request receives an `X-Request-ID`. A caller value is preserved only when
+it is 1–64 characters and matches the restricted identifier alphabet; otherwise
+a UUID is generated. The ID is placed in context for downstream events and
+returned in the response. It is diagnostic metadata, not a credential.
+
+Production defaults to newline-delimited JSON logs; development defaults to a
+readable console format. Request completion events include only request ID,
+method, route template/path without query text, status, and duration. Headers,
+cookies, and bodies are not logged. The centralized event helper recursively
+redacts token, cookie, password, secret, API-key, and database-credential fields,
+and also scrubs bearer values and PostgreSQL URL passwords. Unexpected failures
+are logged internally with the request ID and stack trace while clients receive
+only a generic error and reference ID. Expected HTTP/domain failures retain
+their existing API behavior.
+
+The application emits bounded security, Backtest, market-data, and paper-only
+execution lifecycle events and feeds a provider-neutral metrics interface. The
+default metrics implementation exports nothing and there is no public
+`/metrics` endpoint; a production monitoring backend remains a deployment
+choice. Because the application already emits one structured completion event,
+run Uvicorn with `--no-access-log` in production to avoid duplicate access
+records (keep Uvicorn error logs enabled).
+
+Normal ASGI graceful shutdown stops new acceptance according to the server,
+allows its configured grace period for in-flight requests, and then disposes the
+SQLAlchemy engine. Process-local limiter state is not forcibly cleared during
+shutdown. Long-running Backtests may eventually require a durable worker/job
+system; this task does not add one.
+
+#### Authentication sessions
+
+Browser authentication uses short-lived HS256 access JWTs in memory and opaque rotating refresh tokens in an HttpOnly cookie. Access JWTs contain `sub`, `type`, `exp`, `iat`, `iss`, `aud`, and `jti`, plus a `kid` header for future signing-key rotation. Refresh-token plaintext is never persisted: the database stores only a SHA-256 hash in a restrictive `AuthSession` record. Refresh rotates the token atomically; reuse of a rotated token revokes that session family. Logout revokes the current session and clears its cookies, and the configurable per-user session cap prunes older records.
+
+Refresh and logout use double-submit CSRF protection: JavaScript reads the separate non-HttpOnly `algoprofitx_csrf` cookie and sends it as `X-CSRF-Token`, while the refresh token remains inaccessible to JavaScript. Cookies are host-only by default, scoped to `/api/v1/auth`, and `SameSite=Strict`; production requires both `Secure=true` and an HttpOnly refresh cookie. Credentialed CORS remains restricted to exact configured origins.
+
+The frontend removes both `algoprofitx.auth.session` and the legacy `tradeebh.auth.session` key, never writes new tokens to browser storage, restores page reloads through refresh, retries a failed bearer request at most once, and deduplicates concurrent refresh attempts. Email verification delivery, password reset, MFA, asymmetric signing keys, and user-facing session management remain future work.
+
 ### Migrations
+
+Production uses a single migration runner; application replicas never run Alembic
+on startup. The provider-neutral release sequence is: verify backup/PITR health,
+take a manual snapshot for a significant migration when supported, stop or hold
+the new application release, run `alembic upgrade head` exactly once, verify
+`alembic current --check-heads`, and only then start or promote application
+replicas. Online Alembic runs acquire an AlgoProfitX-specific PostgreSQL advisory
+lock and fail clearly if another migrator owns it. Alembic downgrade is useful
+for development validation, but production data recovery relies on a tested
+snapshot/PITR restore plan rather than downgrade.
 
 Preferred command from `TradeEBH\`:
 
@@ -170,7 +248,7 @@ Preferred command from `TradeEBH\`:
 .\scripts\migrate.ps1
 ```
 
-The current Alembic head is `e5a1b2c3d4f6` (`rebrand_synthetic_instrument`). Direct manual-venv commands:
+The current Alembic head is `c6d1e8f3a9b2` (`harden_historical_retention`). Direct manual-venv commands:
 
 ```powershell
 cd backend
@@ -178,6 +256,54 @@ cd backend
 python -m alembic -c alembic.ini upgrade head
 python -m alembic -c alembic.ini current --check-heads
 ```
+
+#### Production database durability
+
+Production application processes use SQLAlchemy's async adapted queue pool with
+conservative defaults: `DB_POOL_SIZE=5`, `DB_MAX_OVERFLOW=2`,
+`DB_POOL_TIMEOUT_SECONDS=10`, `DB_POOL_RECYCLE_SECONDS=1800`, and
+`DB_POOL_PRE_PING=true`. Development and tests retain `NullPool` for isolation.
+Set `DB_EXTERNAL_TRANSACTION_POOLER=true` only when `DATABASE_URL` explicitly
+targets a separately operated transaction-mode pooler; this project does not
+deploy one. TLS connect arguments remain active in either mode. FastAPI disposes
+the engine during graceful shutdown.
+
+Size PostgreSQL deliberately: approximate maximum application connections as
+`workers × (pool_size + max_overflow)`, plus migration, administration, and
+provider-reserved capacity. At the defaults, two workers can open at most
+`2 × (5 + 2) = 14` application connections. Production expects managed
+PostgreSQL with encryption at rest, encrypted transport, automated backups,
+PITR, and private-network access; the database must not be publicly exposed.
+
+Historical retention treats Strategy Versions, Backtests, market-data datasets
+and provenance, Allocations, and Execution Intents/results as reproducibility
+records. Their parent foreign keys restrict deletion. A user account should be
+deactivated and, when required, anonymized instead of deleted once it owns or
+requested history. A published/deployed/archived Strategy is archived, not
+deleted; only an unused draft can be deleted. Dataset-owned candles, user-role
+links, profiles, and Auth Sessions remain lifecycle children and may be removed
+with their aggregate. Instrument and vendor-mapping references remain
+restrictive; deactivate superseded reference data instead of deleting it.
+
+Initial product objectives are **RPO <= 15 minutes** and **RTO <= 2 hours**.
+These are targets, not guarantees, until the selected managed service is
+configured and restore drills demonstrate them. Before significant migrations,
+confirm automated backup/PITR health, confirm restore capability, take a manual
+snapshot when supported, retain the recovery point and instructions, migrate
+once, and verify the Alembic head.
+
+A provider-neutral restore drill must never overwrite production:
+
+1. Create an isolated restore database and restore the chosen snapshot/PITR point.
+2. Verify private TLS connectivity and run `alembic current --check-heads` plus `alembic check`.
+3. Compare critical counts and relationships for users, strategies, Strategy Versions, Backtests, datasets/candles, Allocations, executions, and relevant Auth Sessions.
+4. Check that every historical child resolves its required parent, dataset candle counts/checksums are internally consistent, and execution/allocation strategy-version pairs match.
+5. Run registration/authentication, strategy/history reads, backtest reads, and paper-execution read smoke checks against the isolated environment.
+6. Record timings and findings, then destroy the isolated drill environment according to the provider's safe process.
+
+Restoring the application database does not guarantee that an external market
+data vendor can reproduce data that was never persisted; vendor licensing,
+availability, and separate source retention remain external concerns.
 
 ### Market and Instrument bootstrap
 
@@ -214,7 +340,8 @@ cd backend
 python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-- Health: <http://127.0.0.1:8000/health>
+- Liveness: <http://127.0.0.1:8000/health/live> (`/health` remains an alias)
+- Readiness: <http://127.0.0.1:8000/health/ready>
 - Swagger UI: <http://127.0.0.1:8000/docs>
 - OpenAPI: <http://127.0.0.1:8000/openapi.json>
 
@@ -270,13 +397,30 @@ pnpm dev
 
 Open <http://localhost:5173>. The backend needs `CORS_ALLOWED_ORIGINS=http://localhost:5173`. If CORS errors appear, update `backend\.env` and restart the backend.
 
+The intended production topology is `https://www.algoprofitx.com` for the SPA
+and `https://api.algoprofitx.com` for the API. Production builds accept only
+`VITE_API_BASE_URL=https://api.algoprofitx.com/api/v1`; localhost remains valid
+for development. All `VITE_*` variables are public browser configuration and
+must never contain passwords, tokens, API keys, signing secrets, or private
+vendor settings. Domain ownership and these configuration targets do not mean
+the frontend is deployed: it remains a localhost/development application until
+separate hosting, DNS, certificate, and release work is completed.
+
+The provider-neutral [frontend production hosting contract](docs/frontend-production-hosting.md)
+defines the required HTTPS and apex-to-`www` redirects, browser-history SPA
+fallback, CSP and other security headers, cache behavior, source-map policy,
+and API boundary. The eventual frontend hosting/edge layer must apply these
+headers and rewrite rules; no provider has been selected or configured here.
+
 Frontend validation:
 
 ```powershell
 cd frontend
 pnpm typecheck
 pnpm test
+$env:VITE_API_BASE_URL='https://api.algoprofitx.com/api/v1'
 pnpm build
+Remove-Item Env:VITE_API_BASE_URL
 ```
 
 With the API running, regenerate TypeScript OpenAPI contracts after backend schema changes:
@@ -288,7 +432,12 @@ pnpm generate:api-types
 
 The script defaults to `http://127.0.0.1:8000/openapi.json`; set the process-only `OPENAPI_URL` variable for another local endpoint.
 
-The development frontend stores JWTs in `sessionStorage`, clears them after a `401`, and has no refresh-token flow. This is MVP behavior, not production session hardening.
+Access JWTs remain in memory only and legacy browser-storage keys are actively
+removed. Refresh uses the Secure, HttpOnly, host-only API cookie through
+`credentials: include`; frontend JavaScript reads only the separate CSRF cookie
+and sends `X-CSRF-Token`. The exact production frontend origin must remain in
+the backend credentialed CORS allowlist. Localhost uses environment-specific
+cookie/CORS settings without weakening production cookie policy.
 
 ## Two-terminal workflow
 
