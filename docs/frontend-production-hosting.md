@@ -11,6 +11,9 @@ is not deployable infrastructure and does not indicate that production is live.
   `https://www.algoprofitx.com` with 301 or 308 status.
 - The browser API origin is `https://api.algoprofitx.com`; production builds
   must set `VITE_API_BASE_URL=https://api.algoprofitx.com/api/v1`.
+- Production-mode staging builds may use the separately approved
+  `VITE_API_BASE_URL=https://api-staging.algoprofitx.com/api/v1`; all other
+  production-build API origins remain rejected.
 - Every `VITE_*` value is public browser configuration. It must never contain a
   password, token, API key, signing secret, or private vendor setting.
 
@@ -53,7 +56,8 @@ only for older clients.
 The frontend sends API requests with `credentials: include`. The API refresh
 cookie is Secure, HttpOnly, SameSite=Strict, host-only to
 `api.algoprofitx.com`, and scoped to `/api/v1/auth`; frontend JavaScript neither
-needs nor can read it. JavaScript reads only the non-HttpOnly CSRF cookie and
-echoes it in `X-CSRF-Token` for refresh/logout. Access tokens remain in memory.
+needs nor can read it. JavaScript reads only the non-HttpOnly CSRF cookie,
+which uses `Domain=algoprofitx.com; Path=/` so the separate frontend subdomain
+can echo it in `X-CSRF-Token` for refresh/logout. Access tokens remain in memory.
 The API must allow the exact credentialed origin `https://www.algoprofitx.com`;
 localhost remains a separate development configuration.

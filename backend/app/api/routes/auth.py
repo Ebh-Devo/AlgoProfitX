@@ -48,33 +48,49 @@ def _set_session_cookies(response: Response, refresh_token: str, csrf_token: str
     common = {
         "secure": settings.auth_cookie_secure,
         "samesite": settings.auth_cookie_samesite,
-        "path": settings.auth_cookie_path,
-        "domain": settings.auth_cookie_domain,
         "max_age": max_age,
     }
     response.set_cookie(
         settings.auth_refresh_cookie_name,
         refresh_token,
         httponly=settings.auth_cookie_httponly,
+        path=settings.auth_cookie_path,
+        domain=settings.auth_cookie_domain,
         **common,
     )
     response.set_cookie(
         settings.auth_csrf_cookie_name,
         csrf_token,
         httponly=False,
+        path=settings.auth_csrf_cookie_path,
+        domain=settings.auth_csrf_cookie_domain,
         **common,
     )
 
 
 def _clear_session_cookies(response: Response) -> None:
     settings = get_settings()
-    for name in (settings.auth_refresh_cookie_name, settings.auth_csrf_cookie_name):
+    cookie_scopes = (
+        (
+            settings.auth_refresh_cookie_name,
+            settings.auth_cookie_path,
+            settings.auth_cookie_domain,
+            True,
+        ),
+        (
+            settings.auth_csrf_cookie_name,
+            settings.auth_csrf_cookie_path,
+            settings.auth_csrf_cookie_domain,
+            False,
+        ),
+    )
+    for name, path, domain, httponly in cookie_scopes:
         response.delete_cookie(
             name,
-            path=settings.auth_cookie_path,
-            domain=settings.auth_cookie_domain,
+            path=path,
+            domain=domain,
             secure=settings.auth_cookie_secure,
-            httponly=name == settings.auth_refresh_cookie_name,
+            httponly=httponly,
             samesite=settings.auth_cookie_samesite,
         )
 

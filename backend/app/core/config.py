@@ -2,7 +2,7 @@ from enum import StrEnum
 from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, Literal, Self
-from urllib.parse import urlsplit
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from pydantic import PositiveFloat, PositiveInt, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
@@ -11,6 +11,12 @@ from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 BACKEND_DIR = Path(__file__).resolve().parents[2]
 CANONICAL_FRONTEND_ORIGIN = "https://www.algoprofitx.com"
 PRODUCTION_API_ORIGIN = "https://api.algoprofitx.com"
+STAGING_FRONTEND_ORIGIN = "https://staging.algoprofitx.com"
+STAGING_API_ORIGIN = "https://api-staging.algoprofitx.com"
+APPROVED_PUBLIC_ORIGIN_PAIRS = {
+    (CANONICAL_FRONTEND_ORIGIN, PRODUCTION_API_ORIGIN),
+    (STAGING_FRONTEND_ORIGIN, STAGING_API_ORIGIN),
+}
 
 
 class AppEnvironment(StrEnum):
@@ -51,6 +57,8 @@ class Settings(BaseSettings):
     auth_cookie_samesite: Literal["strict", "lax", "none"] = "strict"
     auth_cookie_path: str = "/api/v1/auth"
     auth_cookie_domain: str | None = None
+    auth_csrf_cookie_path: str = "/"
+    auth_csrf_cookie_domain: str | None = None
     cors_allowed_origins: Annotated[tuple[str, ...], NoDecode] = ()
     frontend_public_url: str = "http://localhost:5173"
     api_public_url: str = "http://127.0.0.1:8000"
@@ -107,6 +115,27 @@ class Settings(BaseSettings):
             return tuple(str(origin).strip().rstrip("/") for origin in value)
         raise ValueError("CORS_ALLOWED_ORIGINS must be a comma-separated list")
 
+    @field_validator("database_url", mode="before")
+    @classmethod
+    def normalize_database_url(cls, value: object) -> object:
+        """Adapt provider PostgreSQL URIs to SQLAlchemy's asyncpg dialect."""
+        raw = value.get_secret_value() if isinstance(value, SecretStr) else value
+        if not isinstance(raw, str):
+            return value
+        parsed = urlsplit(raw)
+        if parsed.scheme not in {"postgresql", "postgres"}:
+            return value
+        query = urlencode(
+            [
+                (key, item)
+                for key, item in parse_qsl(parsed.query, keep_blank_values=True)
+                if key not in {"sslmode", "sslrootcert"}
+            ]
+        )
+        return urlunsplit(
+            ("postgresql+asyncpg", parsed.netloc, parsed.path, query, parsed.fragment)
+        )
+
     @field_validator("request_id_header")
     @classmethod
     def validate_request_id_header(cls, value: str) -> str:
@@ -141,6 +170,14 @@ class Settings(BaseSettings):
             errors.append("AUTH_COOKIE_HTTPONLY must be true in production")
         if self.auth_cookie_path != "/api/v1/auth":
             errors.append("AUTH_COOKIE_PATH must be /api/v1/auth in production")
+        if self.auth_cookie_domain is not None:
+            errors.append("AUTH_COOKIE_DOMAIN must be unset for a host-only refresh cookie")
+        if self.auth_csrf_cookie_path != "/":
+            errors.append("AUTH_CSRF_COOKIE_PATH must be / in production")
+        if self.auth_csrf_cookie_domain != "algoprofitx.com":
+            errors.append(
+                "AUTH_CSRF_COOKIE_DOMAIN must be algoprofitx.com in production"
+            )
         if not self.auth_jwt_issuer.strip() or not self.auth_jwt_audience.strip():
             errors.append("JWT issuer and audience must be configured in production")
         if self.access_token_expire_minutes > 30:
@@ -169,10 +206,10 @@ class Settings(BaseSettings):
 
         if "*" in self.cors_allowed_origins:
             errors.append("CORS_ALLOWED_ORIGINS must not contain '*' in production")
-        if CANONICAL_FRONTEND_ORIGIN not in self.cors_allowed_origins:
-            errors.append(
-                f"CORS_ALLOWED_ORIGINS must include {CANONICAL_FRONTEND_ORIGIN}"
-            )
+        frontend_origin = self.frontend_public_url.rstrip("/")
+        api_origin = self.api_public_url.rstrip("/")
+        if frontend_origin not in self.cors_allowed_origins:
+            errors.append("CORS_ALLOWED_ORIGINS must include FRONTEND_PUBLIC_URL")
         for origin in self.cors_allowed_origins:
             parsed = urlsplit(origin)
             if parsed.scheme != "https":
@@ -187,12 +224,14 @@ class Settings(BaseSettings):
             if urlsplit(public_url).scheme != "https":
                 errors.append(f"{field_name} must use HTTPS in production")
 
-        if self.frontend_public_url.rstrip("/") != CANONICAL_FRONTEND_ORIGIN:
-            errors.append(
-                f"FRONTEND_PUBLIC_URL must be {CANONICAL_FRONTEND_ORIGIN} in production"
-            )
-        if self.api_public_url.rstrip("/") != PRODUCTION_API_ORIGIN:
-            errors.append(f"API_PUBLIC_URL must be {PRODUCTION_API_ORIGIN} in production")
+        if (frontend_origin, api_origin) not in APPROVED_PUBLIC_ORIGIN_PAIRS:
+            errors.append("FRONTEND_PUBLIC_URL and API_PUBLIC_URL must be an approved pair")
+        allowed_cors_origins = {frontend_origin}
+        if frontend_origin == CANONICAL_FRONTEND_ORIGIN:
+            allowed_cors_origins.add("https://algoprofitx.com")
+        unexpected_origins = set(self.cors_allowed_origins) - allowed_cors_origins
+        if unexpected_origins:
+            errors.append("CORS_ALLOWED_ORIGINS contains an unapproved production origin")
 
         database_url = self.database_url.get_secret_value()
         parsed_database_url = urlsplit(database_url)

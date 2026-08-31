@@ -54,9 +54,12 @@ async def test_login_creates_hashed_session_and_secure_cookie_shape(client):
     assert "refresh" not in response.json()
     set_cookies = response.headers.get_list("set-cookie")
     refresh_header = next(item for item in set_cookies if settings.auth_refresh_cookie_name in item)
+    csrf_header = next(item for item in set_cookies if settings.auth_csrf_cookie_name in item)
     assert "HttpOnly" in refresh_header
     assert "SameSite=strict" in refresh_header
     assert "Path=/api/v1/auth" in refresh_header
+    assert "HttpOnly" not in csrf_header
+    assert "Path=/" in csrf_header
 
     async with AsyncSessionLocal() as session:
         stored = (await session.execute(select(AuthSession))).scalar_one()

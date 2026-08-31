@@ -57,9 +57,12 @@ Optional tunables with application defaults:
 - `PORT`, `UVICORN_GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS`, `LOG_LEVEL`, `LOG_FORMAT`, `API_DOCS_ENABLED`, `READINESS_DB_TIMEOUT_SECONDS`, and `REQUEST_ID_HEADER`.
 - `DB_POOL_SIZE`, `DB_MAX_OVERFLOW`, `DB_POOL_TIMEOUT_SECONDS`, `DB_POOL_RECYCLE_SECONDS`, `DB_POOL_PRE_PING`, and `DB_EXTERNAL_TRANSACTION_POOLER`.
 - Access/refresh/session lifetime, cookie name/domain, and all login, registration, creator, Backtest, and execution abuse-control settings.
+- Refresh cookies remain host-only; a cross-subdomain frontend sets only the readable double-submit token to `AUTH_CSRF_COOKIE_DOMAIN=algoprofitx.com` and `AUTH_CSRF_COOKIE_PATH=/`.
 - Synthetic market-data timeout, retry, range, and candle limits.
 
 `backend/.env.example` is the field-by-field development reference. Production values belong in the runtime secret/config store. Logs go to stdout/stderr (JSON by default in production). Historical datasets remain in PostgreSQL; there is no local SQLite or persistent-filesystem fallback.
+
+Managed platforms may inject `postgresql://` resource URIs with libpq-only `sslmode` parameters. Settings normalize these to `postgresql+asyncpg://` and use `DATABASE_REQUIRE_TLS=true` for asyncpg's native SSL option.
 
 ## Local image test
 
