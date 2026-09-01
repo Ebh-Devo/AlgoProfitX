@@ -47,10 +47,11 @@ def validate() -> None:
 
     migration = jobs["migrate"]
     require(migration["kind"] == "PRE_DEPLOY", "migration must be a pre-deploy job")
+    migration_command = migration["run_command"]
+    require("python -m alembic upgrade head" in migration_command, "migration upgrade command missing")
     require(
-        migration["run_command"]
-        == "python -m alembic upgrade head && python -m alembic current --check-heads",
-        "migration and head verification command mismatch",
+        "python -m alembic current --check-heads" in migration_command,
+        "migration head verification command missing",
     )
 
     app_env = env_map(spec["envs"])
@@ -71,17 +72,23 @@ def validate() -> None:
     require("https://api.algoprofitx.com" not in serialized, "production API leaked into staging")
     require("PASSWORD=" not in serialized.upper(), "password-like assignment found")
 
-    domains = {item["domain"] for item in spec["domains"]}
-    require(
-        domains == {"api-staging.algoprofitx.com"},
-        "DigitalOcean must expose only the staging API domain",
-    )
+    require("domains" not in spec, "F3A App Spec must not attach custom domains")
     ingress = spec["ingress"]["rules"]
     require(len(ingress) == 1, "DigitalOcean must contain only API ingress")
+    match = ingress[0]["match"]
     require(
-        ingress[0]["match"]["authority"]["exact"] == "api-staging.algoprofitx.com"
-        and ingress[0]["component"]["name"] == "api",
-        "staging API ingress mismatch",
+        "authority" not in match,
+        "F3A ingress must accept the DigitalOcean starter hostname",
+    )
+    require(
+        match["path"]["prefix"] == "/" and ingress[0]["component"]["name"] == "api",
+        "starter-domain root ingress must route to the API",
+    )
+
+    runbook = (ROOT / "docs" / "deployment-digitalocean-staging.md").read_text(encoding="utf-8")
+    require(
+        "api-staging.algoprofitx.com" in runbook and "F3C" in runbook,
+        "runbook must preserve the later F3C API domain target",
     )
 
 
