@@ -38,6 +38,11 @@ def validate() -> None:
     require(set(jobs) == {"migrate"}, "exactly one migration job is required")
     require(set(databases) == {"staging-postgres"}, "managed staging DB attachment is required")
 
+    database = databases["staging-postgres"]
+    require(database["cluster_name"] == "algoprofitx-staging-db", "physical staging DB cluster mismatch")
+    require(database["db_name"] == "algoprofitx_staging", "application database name mismatch")
+    require(database["db_user"] == "algoprofitx_staging_app", "dedicated application DB user mismatch")
+
     api = services["api"]
     require(api["dockerfile_path"] == "backend/Dockerfile", "F1 Dockerfile must be used")
     require(api["source_dir"] == "backend", "backend must be the Docker build context")
@@ -65,11 +70,14 @@ def validate() -> None:
     }
     for key, value in expected.items():
         require(app_env[key]["value"] == value, f"{key} staging value mismatch")
+    require(app_env["DATABASE_REQUIRE_TLS"]["value"] == "true", "database TLS must be required")
     require("SECRET_KEY" not in app_env, "SECRET_KEY must not be committed")
 
     serialized = SPEC_PATH.read_text(encoding="utf-8")
     require("https://www.algoprofitx.com" not in serialized, "production frontend leaked into staging")
     require("https://api.algoprofitx.com" not in serialized, "production API leaked into staging")
+    require("DATABASE_PRIVATE_URL" not in serialized, "private DB binding is deferred")
+    require("vpc:" not in serialized.lower(), "App Platform VPC is deferred")
     require("PASSWORD=" not in serialized.upper(), "password-like assignment found")
 
     require("domains" not in spec, "F3A App Spec must not attach custom domains")
@@ -89,6 +97,10 @@ def validate() -> None:
     require(
         "api-staging.algoprofitx.com" in runbook and "F3C" in runbook,
         "runbook must preserve the later F3C API domain target",
+    )
+    require(
+        "trusted source" in runbook.lower() and "0.0.0.0/0" in runbook,
+        "runbook must require restricted database trusted sources",
     )
 
 
