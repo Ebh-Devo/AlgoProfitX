@@ -21,6 +21,12 @@ Browser
 
 DigitalOcean also runs the one-shot `PRE_DEPLOY` Alembic migration job. Cloudflare does not proxy or protect the API. Production's future domains remain `www.algoprofitx.com` and `api.algoprofitx.com`; neither is deployed here.
 
+The staging rollout is deliberately phased:
+
+- **F3A:** create the DigitalOcean database and API, use the assigned `*.ondigitalocean.app` starter hostname, and attach no custom domain or DNS.
+- **F3B:** create the Cloudflare Pages frontend without changing the API domain.
+- **F3C:** attach `api-staging.algoprofitx.com` to App Platform and `staging.algoprofitx.com` to Pages, then configure and verify DNS/TLS under separate authorization.
+
 ## Sizing and verified cost estimate
 
 | Provider/component | Configuration | Estimated monthly cost |
@@ -37,7 +43,7 @@ The database permits 22 backend connections. `DB_POOL_SIZE=3` and `DB_MAX_OVERFL
 
 ## DigitalOcean contract
 
-[`deploy/digitalocean/staging.yaml`](../deploy/digitalocean/staging.yaml) contains exactly one Dockerfile API service, one `PRE_DEPLOY` migration job, and the managed cluster attachment in `blr`. It has no `static_sites` component and owns only `api-staging.algoprofitx.com`. Source is `Roshan-Baghwar/TradeEBH` branch `main`; `deploy_on_push: false` keeps rollout operator-approved.
+[`deploy/digitalocean/staging.yaml`](../deploy/digitalocean/staging.yaml) contains exactly one Dockerfile API service, one `PRE_DEPLOY` migration job, and the managed cluster attachment in `blr`. It has no `static_sites` or `domains` section. Its path-only `/` ingress accepts the DigitalOcean starter hostname and routes all paths to the API. Source is `Roshan-Baghwar/TradeEBH` branch `main`; `deploy_on_push: false` keeps rollout operator-approved.
 
 The API uses `backend/Dockerfile`, port 8080, one worker, DB-dependent `/health/ready`, DB-independent `/health/live`, and termination draining. The migrator runs:
 
@@ -77,7 +83,7 @@ The refresh cookie is Secure, HttpOnly, SameSite=Strict, host-only to `api-stagi
 
 First associate `staging.algoprofitx.com` in the Pages dashboard. Current Cloudflare documentation states that a custom **subdomain** need not be a Cloudflare zone: the existing authoritative DNS provider can CNAME it to the assigned `<project>.pages.dev`. Moving authoritative nameservers is required for an apex Pages domain, which is not requested. F3 should therefore prefer the subdomain CNAME path and must not move the whole `algoprofitx.com` zone without a separate decision.
 
-`api-staging.algoprofitx.com` attaches only to DigitalOcean App Platform. No DNS or TLS mutation is part of F2.1. During F3, check CAA compatibility, associate both custom domains with their providers before adding records, then verify issuance and TLS.
+`api-staging.algoprofitx.com` will attach only to DigitalOcean App Platform during F3C. F3A uses the starter hostname and makes no custom-domain, DNS, or TLS mutation. During F3C, check CAA compatibility, associate both custom domains with their providers before adding records, then verify issuance and TLS. The F3C App Spec update may add authority-specific routing only after the custom domain is attached; the F3A path-only rule must remain reachable until then.
 
 ## Future gated deployment sequence
 
@@ -85,14 +91,14 @@ Each infrastructure action requires separate authorization.
 
 1. Confirm provider access, green `main`, reviewed SHA, and approve the cost.
 2. Create the Bangalore PostgreSQL 17 cluster, application DB/user, trusted source, backups, and TLS settings.
-3. Create the DigitalOcean API App from the reviewed spec and attach the managed DB.
+3. Create the DigitalOcean API App from the reviewed spec, attach the managed DB, and record the assigned `*.ondigitalocean.app` starter hostname. Do not attach a custom domain.
 4. Add the encrypted backend `SECRET_KEY`; verify all runtime configuration and exact CORS.
 5. Approve deployment; require the migration job to succeed and reach Alembic head.
 6. Verify the App Platform URL plus `/health/live` and `/health/ready` before custom DNS.
 7. Create the Cloudflare Pages GitHub project with production and preview automatic deployments disabled.
 8. Configure root/build/output and production `VITE_API_BASE_URL`; deploy only the approved SHA.
 9. Verify `dist/_headers`, SPA deep links, asset misses, and the `pages.dev` deployment.
-10. Associate `staging.algoprofitx.com` with Pages and `api-staging.algoprofitx.com` with App Platform.
+10. In F3C, associate `staging.algoprofitx.com` with Pages and `api-staging.algoprofitx.com` with App Platform.
 11. Separately approve and add only the two staging DNS records; do not change nameservers.
 12. Verify certificates, HTTPS, effective headers/cache behavior, exact CORS, cookies, CSRF, reload refresh, and logout.
 13. Run the full product smoke suite with synthetic data and paper execution only.

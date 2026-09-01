@@ -55,11 +55,6 @@ databases:
     db_name: algoprofitx_staging
     db_user: algoprofitx_staging_app
 
-domains:
-  - domain: api-staging.algoprofitx.com
-    type: PRIMARY
-    minimum_tls_version: "1.2"
-
 envs:
   - key: APP_ENV
     value: production
@@ -145,8 +140,6 @@ envs:
 ingress:
   rules:
     - match:
-        authority:
-          exact: api-staging.algoprofitx.com
         path:
           prefix: /
       component:
