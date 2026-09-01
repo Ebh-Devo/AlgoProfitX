@@ -33,24 +33,6 @@ services:
       drain_seconds: 30
       grace_period_seconds: 45
 
-static_sites:
-  - name: frontend
-    github:
-      repo: Roshan-Baghwar/TradeEBH
-      branch: main
-      deploy_on_push: false
-    source_dir: frontend
-    environment_slug: node-js
-    build_command: pnpm build
-    output_dir: dist
-    index_document: index.html
-    catchall_document: index.html
-    envs:
-      - key: VITE_API_BASE_URL
-        value: https://api-staging.algoprofitx.com/api/v1
-        scope: BUILD_TIME
-        type: GENERAL
-
 jobs:
   - name: migrate
     kind: PRE_DEPLOY
@@ -74,11 +56,8 @@ databases:
     db_user: algoprofitx_staging_app
 
 domains:
-  - domain: staging.algoprofitx.com
-    type: PRIMARY
-    minimum_tls_version: "1.2"
   - domain: api-staging.algoprofitx.com
-    type: ALIAS
+    type: PRIMARY
     minimum_tls_version: "1.2"
 
 envs:
@@ -173,15 +152,6 @@ ingress:
       component:
         name: api
         preserve_path_prefix: true
-    - match:
-        authority:
-          exact: staging.algoprofitx.com
-        path:
-          prefix: /
-      component:
-        name: frontend
-        preserve_path_prefix: true
-
 alerts:
   - rule: DEPLOYMENT_FAILED
   - rule: DOMAIN_FAILED

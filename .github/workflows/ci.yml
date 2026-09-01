@@ -95,7 +95,11 @@ jobs:
         run: pnpm test
       - name: Build
         working-directory: frontend
+        env:
+          VITE_API_BASE_URL: https://api-staging.algoprofitx.com/api/v1
         run: pnpm build
+      - name: Validate Cloudflare Pages staging artifact
+        run: python scripts/validate-cloudflare-staging.py
 
   backend-container:
     runs-on: ubuntu-latest

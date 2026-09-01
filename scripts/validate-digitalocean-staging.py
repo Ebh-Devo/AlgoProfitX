@@ -31,11 +31,10 @@ def validate() -> None:
     require(spec["region"] == "blr", "App Platform region must be Bangalore (blr)")
 
     services = keyed(spec.get("services", []))
-    sites = keyed(spec.get("static_sites", []))
     jobs = keyed(spec.get("jobs", []))
     databases = keyed(spec.get("databases", []))
     require(set(services) == {"api"}, "exactly one API service is required")
-    require(set(sites) == {"frontend"}, "exactly one frontend site is required")
+    require("static_sites" not in spec, "DigitalOcean must not contain a frontend static site")
     require(set(jobs) == {"migrate"}, "exactly one migration job is required")
     require(set(databases) == {"staging-postgres"}, "managed staging DB attachment is required")
 
@@ -52,16 +51,6 @@ def validate() -> None:
         migration["run_command"]
         == "python -m alembic upgrade head && python -m alembic current --check-heads",
         "migration and head verification command mismatch",
-    )
-
-    frontend = sites["frontend"]
-    require(frontend["build_command"] == "pnpm build", "frontend build command mismatch")
-    require(frontend["output_dir"] == "dist", "frontend output directory mismatch")
-    require(frontend["catchall_document"] == "index.html", "SPA fallback is required")
-    frontend_env = env_map(frontend["envs"])
-    require(
-        frontend_env["VITE_API_BASE_URL"]["value"] == f"{STAGING_API}/api/v1",
-        "frontend staging API URL mismatch",
     )
 
     app_env = env_map(spec["envs"])
@@ -84,8 +73,15 @@ def validate() -> None:
 
     domains = {item["domain"] for item in spec["domains"]}
     require(
-        domains == {"staging.algoprofitx.com", "api-staging.algoprofitx.com"},
-        "staging domain set mismatch",
+        domains == {"api-staging.algoprofitx.com"},
+        "DigitalOcean must expose only the staging API domain",
+    )
+    ingress = spec["ingress"]["rules"]
+    require(len(ingress) == 1, "DigitalOcean must contain only API ingress")
+    require(
+        ingress[0]["match"]["authority"]["exact"] == "api-staging.algoprofitx.com"
+        and ingress[0]["component"]["name"] == "api",
+        "staging API ingress mismatch",
     )
 
 
