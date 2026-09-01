@@ -41,6 +41,12 @@ The steady-state baseline is **$25.15/month**, plus taxes, migration runtime, an
 
 The database permits 22 backend connections. `DB_POOL_SIZE=3` and `DB_MAX_OVERFLOW=1` cap the single API worker at four; the migrator uses one, leaving at least 17 for platform and administration. Do not change replicas, workers, or pool values independently.
 
+The three database identities are intentionally distinct:
+
+- App Platform component: `staging-postgres`, used as the bindable-variable prefix.
+- Physical Managed PostgreSQL cluster: `algoprofitx-staging-db`.
+- Application database and dedicated user: `algoprofitx_staging` and `algoprofitx_staging_app`; F3A creates/selects these before attaching the cluster and never uses `doadmin` as the application identity.
+
 ## DigitalOcean contract
 
 [`deploy/digitalocean/staging.yaml`](../deploy/digitalocean/staging.yaml) contains exactly one Dockerfile API service, one `PRE_DEPLOY` migration job, and the managed cluster attachment in `blr`. It has no `static_sites` or `domains` section. Its path-only `/` ingress accepts the DigitalOcean starter hostname and routes all paths to the API. Source is `Roshan-Baghwar/TradeEBH` branch `main`; `deploy_on_push: false` keeps rollout operator-approved.
@@ -51,7 +57,11 @@ The API uses `backend/Dockerfile`, port 8080, one worker, DB-dependent `/health/
 python -m alembic upgrade head && python -m alembic current --check-heads
 ```
 
-Failure blocks rollout. Web startup never migrates. `${staging-postgres.DATABASE_URL}` is an encrypted resource binding and `DATABASE_REQUIRE_TLS=true` enforces the database TLS contract. `SECRET_KEY` is intentionally absent and must later be added as an encrypted app-level runtime variable. Synthetic market data and paper execution remain mandatory; no broker, live trading, Droplet, Kubernetes, nginx, Redis, Celery, Terraform, VPC, or dedicated egress is introduced.
+Failure blocks rollout. Web startup never migrates. `${staging-postgres.DATABASE_URL}` is an encrypted resource binding and `DATABASE_REQUIRE_TLS=true` enforces the database TLS contract. Database access occurs only in `PRE_DEPLOY` and runtime containers, never during the Docker image build; DigitalOcean cannot provide App trusted-source network access during a build. `SECRET_KEY` is intentionally absent and must later be added as an encrypted app-level runtime variable. Synthetic market data and paper execution remain mandatory; no broker, live trading, Droplet, Kubernetes, nginx, Redis, Celery, Terraform, VPC, or dedicated egress is introduced.
+
+F3A uses the managed database's TLS public/bindable endpoint and restricts database trusted sources to the `algoprofitx-staging` App Platform app. It must not leave unrestricted database ingress, add `0.0.0.0/0`, or add workstation IPs. After attachment, verify the app is the only required trusted source and that `${staging-postgres.DATABASE_URL}` remains the selected binding.
+
+DigitalOcean supports App Platform VPC access in Bangalore (`blr` to `blr1`) and a `DATABASE_PRIVATE_URL` binding, but VPC access and App Platform dedicated egress IPs cannot coexist. AlgoProfitX may later need stable outbound egress for a broker API, although none is required or purchased now. VPC and dedicated egress are therefore both deferred: reassess the mutually exclusive network topology only when outbound integration requirements are known.
 
 The API is not behind Cloudflare Pages. Existing FastAPI CORS response handling is appropriate for browser-facing API traffic, but the application does not add general CSP/HSTS headers to API responses. CSP is not meaningful for JSON API responses; HSTS remains an API-host acceptance item. This gap is reported rather than expanding F2.1 into a backend middleware project.
 
@@ -90,8 +100,8 @@ First associate `staging.algoprofitx.com` in the Pages dashboard. Current Cloudf
 Each infrastructure action requires separate authorization.
 
 1. Confirm provider access, green `main`, reviewed SHA, and approve the cost.
-2. Create the Bangalore PostgreSQL 17 cluster, application DB/user, trusted source, backups, and TLS settings.
-3. Create the DigitalOcean API App from the reviewed spec, attach the managed DB, and record the assigned `*.ondigitalocean.app` starter hostname. Do not attach a custom domain.
+2. Create `algoprofitx-staging-db` in Bangalore with PostgreSQL 17, backups/PITR, and TLS; create/select database `algoprofitx_staging` and dedicated user `algoprofitx_staging_app` without exposing credentials.
+3. Create the `algoprofitx-staging` App from the reviewed spec, attach the cluster as component `staging-postgres`, add the app as the database trusted source, verify no unrestricted ingress exists, and record the assigned `*.ondigitalocean.app` starter hostname. Use `${staging-postgres.DATABASE_URL}` with `DATABASE_REQUIRE_TLS=true`; do not attach a custom domain or access the DB during image build.
 4. Add the encrypted backend `SECRET_KEY`; verify all runtime configuration and exact CORS.
 5. Approve deployment; require the migration job to succeed and reach Alembic head.
 6. Verify the App Platform URL plus `/health/live` and `/health/ready` before custom DNS.

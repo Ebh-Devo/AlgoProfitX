@@ -51,7 +51,7 @@ databases:
     engine: PG
     version: "17"
     production: true
-    cluster_name: algoprofitx-staging-pg
+    cluster_name: algoprofitx-staging-db
     db_name: algoprofitx_staging
     db_user: algoprofitx_staging_app
 
