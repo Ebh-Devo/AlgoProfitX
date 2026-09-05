@@ -2,6 +2,9 @@ import io
 import json
 import logging
 import re
+from pathlib import Path
+
+import certifi
 
 import pytest
 from fastapi import FastAPI
@@ -89,12 +92,14 @@ def test_production_json_and_development_console_defaults(monkeypatch):
         debug=False,
         database_url="postgresql+asyncpg://app:private@db.internal/algoprofitx",
         database_require_tls=True,
+        pgsslrootcert=Path(certifi.where()),
         secret_key="X6qvVf9mP2rL8sK4tN7wC3yH5jB0dG1z",
         cors_allowed_origins="https://www.algoprofitx.com",
         frontend_public_url="https://www.algoprofitx.com",
         api_public_url="https://api.algoprofitx.com",
         auth_cookie_secure=True,
         auth_csrf_cookie_domain="algoprofitx.com",
+        backtest_execution_mode="disabled",
         _env_file=None,
     )
     assert production.log_format == "json"

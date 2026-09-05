@@ -264,7 +264,7 @@ def test_production_database_must_be_remote_asyncpg_with_tls():
     )
 
 
-def test_digitalocean_database_url_is_adapted_for_asyncpg():
+def test_provider_database_url_is_adapted_for_asyncpg():
     settings = Settings(
         **production_values(
             database_url=(
@@ -277,7 +277,10 @@ def test_digitalocean_database_url_is_adapted_for_asyncpg():
         "postgresql+asyncpg://app:p%40ss@private.db.ondigitalocean.com:25060/"
         "algoprofitx_staging"
     )
-    assert settings.database_connect_args == {"ssl": True}
+    tls = settings.database_connect_args["ssl"]
+    assert isinstance(tls, ssl.SSLContext)
+    assert tls.verify_mode == ssl.CERT_REQUIRED
+    assert tls.check_hostname is True
 
 
 @pytest.mark.parametrize(
