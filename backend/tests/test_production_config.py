@@ -1,3 +1,8 @@
+import base64
+from pathlib import Path
+import ssl
+
+import certifi
 import pytest
 from httpx import ASGITransport, AsyncClient
 from pydantic import ValidationError
@@ -12,6 +17,10 @@ def production_values(**overrides: object) -> dict[str, object]:
         "debug": False,
         "database_url": "postgresql+asyncpg://app:private@db.internal/algoprofitx",
         "database_require_tls": True,
+        "pgsslrootcert_b64": base64.b64encode(
+            Path(certifi.where()).read_bytes()
+        ).decode("ascii"),
+        "backtest_execution_mode": "disabled",
         "secret_key": "X6qvVf9mP2rL8sK4tN7wC3yH5jB0dG1z",
         "cors_allowed_origins": "https://www.algoprofitx.com",
         "frontend_public_url": "https://www.algoprofitx.com",
@@ -58,7 +67,11 @@ def test_valid_production_configuration_is_fail_closed_by_default():
     assert settings.app_env is AppEnvironment.PRODUCTION
     assert settings.api_docs_enabled is False
     assert settings.database_echo is False
-    assert settings.database_connect_args == {"ssl": True}
+    tls = settings.database_connect_args["ssl"]
+    assert isinstance(tls, ssl.SSLContext)
+    assert tls.verify_mode == ssl.CERT_REQUIRED
+    assert tls.check_hostname is True
+    assert tls.minimum_version >= ssl.TLSVersion.TLSv1_2
     assert settings.market_data_provider == "synthetic"
     assert settings.uses_application_pool is True
     assert settings.database_engine_options["pool_size"] == 5
@@ -66,6 +79,33 @@ def test_valid_production_configuration_is_fail_closed_by_default():
     assert settings.database_engine_options["pool_timeout"] == 10
     assert settings.database_engine_options["pool_recycle"] == 1800
     assert settings.database_engine_options["pool_pre_ping"] is True
+
+
+def test_production_requires_an_explicit_ca_transport():
+    assert_production_error(
+        "PGSSLROOTCERT or PGSSLROOTCERT_B64",
+        pgsslrootcert_b64=None,
+    )
+
+
+def test_production_requires_backtests_to_fail_closed_without_a_worker():
+    assert_production_error(
+        "BACKTEST_EXECUTION_MODE must be disabled",
+        backtest_execution_mode="inline",
+    )
+
+
+def test_malformed_base64_ca_fails_without_falling_back():
+    settings = Settings(**production_values(pgsslrootcert_b64="not valid base64!"))
+    with pytest.raises(ValueError, match="valid Base64 PEM data"):
+        _ = settings.database_connect_args
+
+
+def test_non_certificate_base64_ca_fails_without_falling_back():
+    invalid = base64.b64encode(b"not a certificate").decode("ascii")
+    settings = Settings(**production_values(pgsslrootcert_b64=invalid))
+    with pytest.raises(ValueError, match="valid CA certificate"):
+        _ = settings.database_connect_args
 
 
 def test_staging_uses_production_security_with_approved_origins():
