@@ -1,0 +1,61 @@
+name: Deploy Catalyst Development
+
+on:
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    environment: catalyst-development
+    env:
+      RELEASE_RUN_ID: "33951383950"
+      RELEASE_ARTIFACT: catalyst-release-c07b5b1fda10834462334648e835235a0dcafcde
+      API_SHA256: 40c243a2fcf8095919af6d0a4922401e1ea71915088ff7e4e325f92c20d1037b
+      WEB_SHA256: 5216823289870c8f0ea2324125de0c5bc20fa5addbb0e1c080507b76aa0b57af
+      CATALYST_PROJECT_ID: "36851000000392052"
+      CATALYST_ORG_ID: "60069781151"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download the reviewed immutable release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh run download "$RELEASE_RUN_ID"
+          --repo "$GITHUB_REPOSITORY"
+          --name "$RELEASE_ARTIFACT"
+          --dir release
+      - name: Verify exact release archives
+        shell: bash
+        run: |
+          test "$(sha256sum release/algoprofitx-api.tar | cut -d' ' -f1)" = "$API_SHA256"
+          test "$(sha256sum release/algoprofitx-web.tar | cut -d' ' -f1)" = "$WEB_SHA256"
+      - name: Install official Catalyst CLI
+        run: npm install --global zcatalyst-cli@1.27.2
+      - name: Link only the approved Development services
+        shell: bash
+        env:
+          CATALYST_TOKEN: ${{ secrets.CATALYST_TOKEN }}
+        run: |
+          test -n "$CATALYST_TOKEN"
+          mkdir catalyst-deploy
+          cp release/algoprofitx-api.tar release/algoprofitx-web.tar catalyst-deploy/
+          cd catalyst-deploy
+          catalyst --token "$CATALYST_TOKEN" --dc in --org "$CATALYST_ORG_ID" --project "$CATALYST_PROJECT_ID" --non-interactive init
+          catalyst appsail:add --name algoprofitx-api --source docker-archive://algoprofitx-api.tar --port 8000
+          catalyst appsail:add --name algoprofitx-web --source docker-archive://algoprofitx-web.tar --port 8000
+      - name: Deploy to Catalyst Development only
+        working-directory: catalyst-deploy
+        env:
+          CATALYST_TOKEN: ${{ secrets.CATALYST_TOKEN }}
+        run: >-
+          catalyst
+          --token "$CATALYST_TOKEN"
+          --dc in
+          --org "$CATALYST_ORG_ID"
+          --project "$CATALYST_PROJECT_ID"
+          --non-interactive
+          deploy --only appsail
