@@ -362,6 +362,11 @@ async def execute_backtest_request(
     session: Annotated[AsyncSession, Depends(get_session)],
 ):
     settings = get_settings()
+    if settings.backtest_execution_mode == "disabled":
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Backtest execution is temporarily unavailable",
+        )
     user_key = str(current_user.id)
     await abuse_controller.enforce(
         (

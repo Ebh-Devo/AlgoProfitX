@@ -1,6 +1,9 @@
+import base64
+import binascii
 from enum import StrEnum
 from functools import lru_cache
 from pathlib import Path
+import ssl
 from typing import Annotated, Literal, Self
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
@@ -32,6 +35,8 @@ class Settings(BaseSettings):
 
     database_url: SecretStr
     database_require_tls: bool = False
+    pgsslrootcert: Path | None = None
+    pgsslrootcert_b64: SecretStr | None = None
     db_pool_size: PositiveInt = 5
     db_max_overflow: int = 2
     db_pool_timeout_seconds: PositiveInt = 10
@@ -82,6 +87,7 @@ class Settings(BaseSettings):
     execution_sustained_limit: PositiveInt = 60
     execution_sustained_window_seconds: PositiveInt = 3600
     backtest_max_concurrency_per_user: PositiveInt = 1
+    backtest_execution_mode: Literal["inline", "disabled"] = "inline"
 
     redis_url: str = "redis://localhost:6379/0"
     market_data_provider: str = "synthetic"
@@ -241,6 +247,14 @@ class Settings(BaseSettings):
             errors.append("DATABASE_URL must not target localhost in production")
         if not self.database_require_tls:
             errors.append("DATABASE_REQUIRE_TLS must be true in production")
+        if self.pgsslrootcert is None and self.pgsslrootcert_b64 is None:
+            errors.append(
+                "PGSSLROOTCERT or PGSSLROOTCERT_B64 is required in production"
+            )
+        if self.backtest_execution_mode != "disabled":
+            errors.append(
+                "BACKTEST_EXECUTION_MODE must be disabled until a durable worker is configured"
+            )
 
         if errors:
             raise ValueError("; ".join(errors))
@@ -253,8 +267,30 @@ class Settings(BaseSettings):
 
     @property
     def database_connect_args(self) -> dict[str, object]:
-        """Require encrypted asyncpg transport when configured."""
-        return {"ssl": True} if self.database_require_tls else {}
+        """Build a certificate-verifying asyncpg TLS context without writing CA data."""
+        if not self.database_require_tls:
+            return {}
+        context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
+        context.minimum_version = ssl.TLSVersion.TLSv1_2
+        context.verify_mode = ssl.CERT_REQUIRED
+        context.check_hostname = True
+        if self.pgsslrootcert is not None:
+            context.load_verify_locations(cafile=self.pgsslrootcert)
+        elif self.pgsslrootcert_b64 is not None:
+            encoded = self.pgsslrootcert_b64.get_secret_value().strip()
+            try:
+                decoded = base64.b64decode(encoded, validate=True).decode("utf-8")
+            except (binascii.Error, UnicodeDecodeError) as exc:
+                raise ValueError(
+                    "PGSSLROOTCERT_B64 must contain valid Base64 PEM data"
+                ) from exc
+            try:
+                context.load_verify_locations(cadata=decoded)
+            except ssl.SSLError as exc:
+                raise ValueError(
+                    "PGSSLROOTCERT_B64 must contain a valid CA certificate"
+                ) from exc
+        return {"ssl": context}
 
     @property
     def uses_application_pool(self) -> bool:

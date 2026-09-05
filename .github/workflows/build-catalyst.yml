@@ -1,0 +1,61 @@
+name: Build Catalyst release artifacts
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build linux/amd64 backend archive
+        uses: docker/build-push-action@v6
+        with:
+          context: backend
+          platforms: linux/amd64
+          push: false
+          tags: algoprofitx-api:${{ github.sha }}
+          outputs: type=docker,dest=/tmp/algoprofitx-api.tar
+          build-args: |
+            VCS_REF=${{ github.sha }}
+            SOURCE_URL=${{ github.server_url }}/${{ github.repository }}
+      - name: Build linux/amd64 frontend archive
+        uses: docker/build-push-action@v6
+        with:
+          context: frontend
+          platforms: linux/amd64
+          push: false
+          tags: algoprofitx-web:${{ github.sha }}
+          outputs: type=docker,dest=/tmp/algoprofitx-web.tar
+          build-args: |
+            VITE_API_BASE_URL=https://api.algoprofitx.com/api/v1
+      - name: Verify immutable images
+        shell: bash
+        run: |
+          docker load --input /tmp/algoprofitx-api.tar
+          docker load --input /tmp/algoprofitx-web.tar
+          test "$(docker image inspect algoprofitx-api:${GITHUB_SHA} --format '{{.Os}}/{{.Architecture}}')" = "linux/amd64"
+          test "$(docker image inspect algoprofitx-web:${GITHUB_SHA} --format '{{.Os}}/{{.Architecture}}')" = "linux/amd64"
+          test "$(docker image inspect algoprofitx-api:${GITHUB_SHA} --format '{{.Config.User}}')" = "10001:10001"
+          test "$(docker image inspect algoprofitx-web:${GITHUB_SHA} --format '{{.Config.User}}')" = "10001:10001"
+          docker run --rm --entrypoint python algoprofitx-api:${GITHUB_SHA} --version | grep '^Python 3\.13\.'
+          docker run --rm --entrypoint python algoprofitx-web:${GITHUB_SHA} --version | grep '^Python 3\.13\.'
+          docker run --rm --entrypoint sh algoprofitx-api:${GITHUB_SHA} -c 'test ! -e /app/.env && test ! -d /app/tests && test ! -d /app/.git'
+          docker run --rm --entrypoint sh algoprofitx-web:${GITHUB_SHA} -c 'test ! -e /app/.env && test ! -d /app/node_modules && test ! -d /app/.git'
+          sha256sum /tmp/algoprofitx-api.tar /tmp/algoprofitx-web.tar > /tmp/SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: catalyst-release-${{ github.sha }}
+          path: |
+            /tmp/algoprofitx-api.tar
+            /tmp/algoprofitx-web.tar
+            /tmp/SHA256SUMS
+          retention-days: 1
+          if-no-files-found: error

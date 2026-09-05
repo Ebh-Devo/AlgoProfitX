@@ -1,4 +1,4 @@
-# Generated for CPython 3.13 on Windows on 2026-08-20.
+# Fully pinned CPython 3.13 dependency set, validated on Linux in CI.
 # Update intentionally with: python -m pip install --dry-run -r requirements.txt
 # and review the resolved versions before changing this file.
 Mako==1.4.1
