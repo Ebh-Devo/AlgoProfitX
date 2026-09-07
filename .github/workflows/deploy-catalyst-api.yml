@@ -1,0 +1,100 @@
+name: Deploy verified Catalyst Development API
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Exact approved API source commit
+        required: true
+      runtime_run_id:
+        description: Successful Verify Catalyst API runtime run
+        required: true
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: algoprofitx-development-api
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Verify successful immutable runtime gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          RUN_ID: ${{ inputs.runtime_run_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$RUN_ID" =~ ^[0-9]+$ ]]
+          gh api "repos/Ebhadmin/AlgoProfitX/actions/runs/$RUN_ID" > "$RUNNER_TEMP/gate.json"
+          python3 - <<'PY'
+          import json, os
+          with open(os.environ['RUNNER_TEMP'] + '/gate.json') as stream:
+              gate = json.load(stream)
+          assert gate['head_sha'] == os.environ['SOURCE_SHA']
+          assert gate['conclusion'] == 'success'
+          assert gate['path'] == '.github/workflows/verify-catalyst-api.yml'
+          print('Verified successful runtime gate for exact source commit')
+          PY
+      - uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          repository: Ebhadmin/AlgoProfitX
+          run-id: ${{ inputs.runtime_run_id }}
+          name: algoprofitx-api-${{ inputs.source_sha }}
+          path: release
+      - name: Verify archive and metadata
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: |
+          cd release
+          sha256sum --check algoprofitx-api.tar.sha256
+          python3 - <<'PY'
+          import json, os
+          with open('api-runtime.json') as stream:
+              metadata = json.load(stream)
+          assert metadata['APP_SOURCE_SHA'] == os.environ['SOURCE_SHA']
+          assert metadata['APP_SOURCE_REPO'] == 'Ebhadmin/AlgoProfitX'
+          assert metadata['architecture'] == 'amd64' and metadata['os'] == 'linux'
+          assert all(c['live'] == 200 and c['stays_running'] for c in metadata['checks'])
+          PY
+      - name: Install pinned CLI and verify supported syntax
+        run: |
+          npm install --global --no-audit --no-fund zcatalyst-cli@1.27.2 >/dev/null 2>&1
+          test "$(catalyst --version)" = "1.27.2"
+          catalyst deploy appsail --help > "$RUNNER_TEMP/appsail-help.txt"
+          python3 - <<'PY'
+          import os
+          with open(os.environ['RUNNER_TEMP'] + '/appsail-help.txt') as stream:
+              help_text = stream.read()
+          assert all(flag in help_text for flag in ('--name', '--source', '--port', 'Development'))
+          PY
+      - name: Redeploy only the existing Development API
+        env:
+          CATALYST_TOKEN: ${{ secrets.CATALYST_TOKEN }}
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import os, subprocess, tempfile
+          token = os.environ.pop('CATALYST_TOKEN')
+          assert token, 'Temporary deployment token is missing'
+          archive = os.path.abspath('release/algoprofitx-api.tar')
+          with tempfile.TemporaryDirectory() as work:
+              result = subprocess.run([
+                  'catalyst', '--token', token, '--dc', 'in', '--org', '60069781151',
+                  '--project', '36851000000392052', '--non-interactive',
+                  'deploy', 'appsail', '--name', 'algoprofitx-api',
+                  '--source', 'docker-archive://' + archive, '--port', '8000',
+              ], cwd=work, capture_output=True, text=True, timeout=900)
+              success = result.returncode == 0 and 'Catalyst AppSail Deploy completed successfully' in result.stdout
+              print('Development API deployment success:', success)
+              if not success:
+                  raise SystemExit('Deployment failed; raw output suppressed. Inspect scoped console diagnostics.')
+          PY
