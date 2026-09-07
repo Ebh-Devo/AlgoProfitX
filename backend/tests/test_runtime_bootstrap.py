@@ -19,7 +19,7 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 from app.core.config import Settings
 with patch.dict(Settings.model_config, {"env_file": None}):
-    from app.bootstrap import app
+    from app.runtime import app
 with TestClient(app) as client:
     assert client.get('/health/live').status_code == 200
     for method, path in [('GET', '/health/ready'), ('POST', '/api/v1/auth/login'),
@@ -45,7 +45,7 @@ def test_invalid_production_configuration_remains_unavailable():
                SECRET_KEY="sentinel-secret-never-log")
     code = '''
 from fastapi.testclient import TestClient
-from app.bootstrap import app
+from app.runtime import app
 with TestClient(app) as client:
     assert client.get('/health/live').status_code == 200
     assert client.get('/health/ready').status_code == 503
