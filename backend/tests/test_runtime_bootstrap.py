@@ -58,3 +58,26 @@ with TestClient(app) as client:
     assert result.returncode == 0, "Invalid production configuration enabled the API"
     for marker in ("sentinel-password", "sentinel-secret-never-log", "input_value"):
         assert marker not in result.stdout + result.stderr
+    assert "fields=" in result.stderr
+
+
+def test_configuration_failure_fields_never_include_input_values():
+    from pydantic import ValidationError
+
+    from app.core.config import Settings
+    from app.runtime import _configuration_failure_fields
+
+    with pytest.raises(ValidationError) as caught:
+        Settings(
+            app_env="production",
+            database_url="postgresql+asyncpg://user:sentinel-password@localhost/app",
+            secret_key="sentinel-secret-never-log",
+        )
+
+    fields = _configuration_failure_fields(caught.value)
+    assert "DATABASE_URL" in fields
+    assert "DEBUG" in fields
+    assert "SECRET_KEY" in fields
+    rendered = repr(fields)
+    assert "sentinel-password" not in rendered
+    assert "sentinel-secret-never-log" not in rendered
