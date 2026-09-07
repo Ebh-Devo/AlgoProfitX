@@ -1,0 +1,33 @@
+name: Verify Catalyst API runtime
+
+on:
+  push:
+    branches: [codex/catalyst-api-liveness]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  runtime:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the real Linux AMD64 API
+        run: >-
+          docker build --platform linux/amd64
+          --build-arg VCS_REF=${{ github.sha }}
+          --build-arg SOURCE_URL=https://github.com/Ebhadmin/AlgoProfitX
+          --tag algoprofitx-api:${{ github.sha }} backend
+      - name: Reproduce startup failure and verify corrected runtime
+        run: python3 scripts/verify-api-runtime.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: algoprofitx-api-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/algoprofitx-api.tar
+            ${{ runner.temp }}/algoprofitx-api.tar.sha256
+            ${{ runner.temp }}/api-runtime.json
+          retention-days: 3
+          if-no-files-found: error
