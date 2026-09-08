@@ -23,10 +23,7 @@ async def database_ready(timeout_seconds: float) -> bool:
             if database != expected_database or user != expected_user:
                 raise RuntimeError("Database identity does not match runtime configuration")
             if revision != settings.readiness_alembic_head:
-                raise RuntimeError(
-                    "Database schema is not at the configured Alembic head: "
-                    f"expected={settings.readiness_alembic_head}, observed={revision}"
-                )
+                raise RuntimeError("Database schema is not at the configured Alembic head")
             privilege_result = await connection.execute(
                 text(
                     "SELECT coalesce(bool_and("
