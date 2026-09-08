@@ -56,6 +56,7 @@ async def test_readiness_success_and_sanitized_failure(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_readiness_succeeds_against_isolated_test_database():
+    await health.database_ready(2.0)
     application = create_app()
     async with AsyncClient(transport=ASGITransport(app=application), base_url="http://test") as client:
         response = await client.get("/health/ready")
