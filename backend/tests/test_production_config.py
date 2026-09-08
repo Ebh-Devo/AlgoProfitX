@@ -81,6 +81,11 @@ def test_valid_production_configuration_is_fail_closed_by_default():
     assert settings.database_engine_options["pool_pre_ping"] is True
 
 
+def test_valid_production_configuration_allows_durable_backtest_worker():
+    settings = Settings(**production_values(backtest_execution_mode="worker"))
+    assert settings.backtest_execution_mode == "worker"
+
+
 def test_production_requires_an_explicit_ca_transport():
     assert_production_error(
         "PGSSLROOTCERT or PGSSLROOTCERT_B64",

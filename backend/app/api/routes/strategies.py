@@ -408,6 +408,8 @@ async def execute_backtest_request(
         settings.backtest_max_concurrency_per_user,
     ):
         try:
+            if settings.backtest_execution_mode == "worker":
+                return backtest
             return await execute_backtest(session, backtest.id)
         except BacktestExecutionConflict as exc:
             raise HTTPException(

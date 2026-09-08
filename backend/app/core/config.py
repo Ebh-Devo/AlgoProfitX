@@ -46,6 +46,7 @@ class Settings(BaseSettings):
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
     log_format: Literal["console", "json"] | None = None
     readiness_db_timeout_seconds: PositiveFloat = 2.0
+    readiness_alembic_head: str = "f4b2c9d7e1a3"
     request_id_header: str = "X-Request-ID"
 
     secret_key: SecretStr
@@ -87,7 +88,9 @@ class Settings(BaseSettings):
     execution_sustained_limit: PositiveInt = 60
     execution_sustained_window_seconds: PositiveInt = 3600
     backtest_max_concurrency_per_user: PositiveInt = 1
-    backtest_execution_mode: Literal["inline", "disabled"] = "inline"
+    backtest_execution_mode: Literal["inline", "worker", "disabled"] = "inline"
+    backtest_worker_poll_seconds: PositiveFloat = 2.0
+    backtest_worker_stale_seconds: PositiveFloat = 900.0
 
     redis_url: str = "redis://localhost:6379/0"
     market_data_provider: str = "synthetic"
@@ -155,6 +158,8 @@ class Settings(BaseSettings):
     def enforce_environment_policy(self) -> Self:
         if self.db_max_overflow < 0:
             raise ValueError("DB_MAX_OVERFLOW must be greater than or equal to 0")
+        if not self.readiness_alembic_head.strip():
+            raise ValueError("READINESS_ALEMBIC_HEAD must not be blank")
         if self.api_docs_enabled is None:
             self.api_docs_enabled = self.app_env is not AppEnvironment.PRODUCTION
         if self.log_format is None:
@@ -251,9 +256,9 @@ class Settings(BaseSettings):
             errors.append(
                 "PGSSLROOTCERT or PGSSLROOTCERT_B64 is required in production"
             )
-        if self.backtest_execution_mode != "disabled":
+        if self.backtest_execution_mode == "inline":
             errors.append(
-                "BACKTEST_EXECUTION_MODE must be disabled until a durable worker is configured"
+                "BACKTEST_EXECUTION_MODE must be disabled or use a durable worker in production"
             )
 
         if errors:

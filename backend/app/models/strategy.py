@@ -183,3 +183,4 @@ class StrategyVersion(Base):
         foreign_keys=[strategy_id],
     )
     instrument: Mapped[Instrument | None] = relationship()
+    

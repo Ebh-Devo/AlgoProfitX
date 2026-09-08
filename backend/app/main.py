@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+import asyncio
 import logging
 import re
 import time
@@ -22,6 +23,7 @@ from app.core.observability import (
     log_event,
     request_id_context,
 )
+from app.backtesting.worker import run_backtest_worker
 from app.db.session import dispose_engine
 
 
@@ -35,8 +37,19 @@ def _request_id(request: Request, header: str) -> str:
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    yield
-    await dispose_engine()
+    settings = get_settings()
+    stop_event = asyncio.Event()
+    worker = None
+    if settings.backtest_execution_mode == "worker":
+        worker = asyncio.create_task(run_backtest_worker(stop_event))
+    try:
+        yield
+    finally:
+        if worker is not None:
+            stop_event.set()
+            worker.cancel()
+            await asyncio.gather(worker, return_exceptions=True)
+        await dispose_engine()
 
 
 def create_app() -> FastAPI:
