@@ -16,7 +16,7 @@ from app.api.routes.executions import router as executions_router
 from app.api.routes.instruments import router as instruments_router
 from app.api.routes.marketplace import router as marketplace_router
 from app.api.routes.strategies import router as strategies_router
-from app.core.config import get_settings
+from app.core.config import AppEnvironment, get_settings
 from app.core import health
 from app.core.metrics import metrics
 from app.core.observability import (
@@ -30,6 +30,14 @@ from app.persistence.catalyst import CatalystPersistenceClient, CatalystPersiste
 
 
 REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$")
+
+
+def _catalyst_probe_crud_allowed(settings) -> bool:
+    """Keep the destructive connectivity probe out of Production."""
+    return (
+        settings.app_env is AppEnvironment.DEVELOPMENT
+        or settings.catalyst_probe_crud_enabled
+    ) and settings.app_env is not AppEnvironment.PRODUCTION
 
 
 def _request_id(request: Request, header: str) -> str:
@@ -194,7 +202,7 @@ def create_app() -> FastAPI:
 
     @application.post("/health/catalyst/crud", include_in_schema=False)
     async def health_catalyst_crud(request: Request):
-        if not settings.catalyst_probe_crud_enabled:
+        if not _catalyst_probe_crud_allowed(settings):
             return JSONResponse(status_code=404, content={"status": "not_found"})
 
         catalyst_client = CatalystPersistenceClient(request=request)
