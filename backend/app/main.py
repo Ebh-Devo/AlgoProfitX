@@ -168,14 +168,29 @@ def create_app() -> FastAPI:
     @application.get("/health/catalyst", include_in_schema=False)
     async def health_catalyst():
         try:
-            await catalyst_client.async_readiness(settings.catalyst_probe_table)
-        except (CatalystPersistenceError, ValueError):
-            metrics.increment("readiness.failures", tags={"dependency": "catalyst"})
-            return JSONResponse(
-                status_code=503,
-                content={"status": "unavailable", "dependency": "catalyst"},
+            checks = await catalyst_client.async_connectivity_checks(
+                settings.catalyst_probe_table
             )
-        return {"status": "ok", "dependency": "catalyst"}
+        except (CatalystPersistenceError, ValueError):
+            checks = {
+                "sdk_initialization": False,
+                "datastore_access": False,
+                "zcql_access": False,
+            }
+        ready = all(checks.values())
+        if not ready:
+            metrics.increment("readiness.failures", tags={"dependency": "catalyst"})
+        return JSONResponse(
+            status_code=200 if ready else 503,
+            content={
+                "status": "ok" if ready else "unavailable",
+                "dependency": "catalyst",
+                "checks": {
+                    name: "PASS" if passed else "FAIL"
+                    for name, passed in checks.items()
+                },
+            },
+        )
 
     @application.post("/health/catalyst/crud", include_in_schema=False)
     async def health_catalyst_crud():

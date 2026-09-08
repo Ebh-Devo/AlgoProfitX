@@ -137,8 +137,40 @@ class CatalystPersistenceClient:
         self.execute_query(f"SELECT ROWID FROM {table_name} LIMIT 1")
         return True
 
+    def connectivity_checks(self, probe_table: str) -> dict[str, bool]:
+        """Return safe stage results without serializing SDK exceptions."""
+        table_name = _validate_identifier(probe_table, "probe table name")
+        checks = {
+            "sdk_initialization": False,
+            "datastore_access": False,
+            "zcql_access": False,
+        }
+        try:
+            self.initialize()
+        except CatalystPersistenceError:
+            return checks
+        checks["sdk_initialization"] = True
+
+        try:
+            self.datastore()
+        except CatalystPersistenceError:
+            pass
+        else:
+            checks["datastore_access"] = True
+
+        try:
+            self.execute_query(f"SELECT ROWID FROM {table_name} LIMIT 1")
+        except CatalystPersistenceError:
+            pass
+        else:
+            checks["zcql_access"] = True
+        return checks
+
     async def async_readiness(self, probe_table: str) -> bool:
         return await asyncio.to_thread(self.readiness, probe_table)
+
+    async def async_connectivity_checks(self, probe_table: str) -> dict[str, bool]:
+        return await asyncio.to_thread(self.connectivity_checks, probe_table)
 
     async def async_insert_row(
         self,

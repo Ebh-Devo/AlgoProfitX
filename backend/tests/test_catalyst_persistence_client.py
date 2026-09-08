@@ -57,6 +57,30 @@ def test_readiness_uses_a_validated_probe_table(catalyst_services):
     )
 
 
+def test_connectivity_checks_report_each_safe_stage(catalyst_services):
+    app, _, zcql = catalyst_services
+    client = CatalystPersistenceClient(Mock(return_value=app))
+
+    assert client.connectivity_checks("MigrationProbe") == {
+        "sdk_initialization": True,
+        "datastore_access": True,
+        "zcql_access": True,
+    }
+    zcql.execute_query.assert_called_once_with(
+        "SELECT ROWID FROM MigrationProbe LIMIT 1"
+    )
+
+
+def test_connectivity_checks_fail_closed_without_exposing_sdk_errors():
+    client = CatalystPersistenceClient(Mock(side_effect=RuntimeError("secret")))
+
+    assert client.connectivity_checks("MigrationProbe") == {
+        "sdk_initialization": False,
+        "datastore_access": False,
+        "zcql_access": False,
+    }
+
+
 @pytest.mark.parametrize("table_name", ["Migration Probe", "probe;DROP", "1probe"])
 def test_rejects_untrusted_table_names(catalyst_services, table_name):
     app, _, _ = catalyst_services
