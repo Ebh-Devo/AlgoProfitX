@@ -20,18 +20,20 @@ def _validate_identifier(value: str, label: str) -> str:
 
 
 class CatalystPersistenceClient:
-    """Lazy, process-scoped access to Catalyst Data Store and ZCQL.
+    """Lazy, request-scoped access to Catalyst Data Store and ZCQL.
 
     The SDK is synchronous, so async callers should use the async wrappers.
     The client accepts an initializer only to make the SDK boundary testable;
-    production uses the SDK's native ``zcatalyst_sdk.initialize()`` call.
+    production passes the active AppSail request to ``zcatalyst_sdk.initialize``.
     """
 
     def __init__(
         self,
         initializer: Callable[[], Any] | None = None,
+        request: Any | None = None,
     ) -> None:
         self._initializer = initializer
+        self._request = request
         self._app: Any | None = None
         self._lock = Lock()
 
@@ -50,7 +52,7 @@ class CatalystPersistenceClient:
                     raise CatalystPersistenceError(
                         "Catalyst SDK is not installed"
                     ) from exc
-                initializer = zcatalyst_sdk.initialize
+                initializer = lambda: zcatalyst_sdk.initialize(req=self._request)
             try:
                 self._app = initializer()
             except Exception as exc:

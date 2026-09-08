@@ -97,3 +97,16 @@ def test_wraps_sdk_initialization_errors():
         client.initialize()
 
     assert "secret" not in str(error.value)
+
+
+def test_default_initializer_passes_the_request_to_the_sdk(monkeypatch):
+    request = object()
+    initialized_app = Mock()
+    initialize = Mock(return_value=initialized_app)
+    sdk = Mock(initialize=initialize)
+    monkeypatch.setitem(__import__("sys").modules, "zcatalyst_sdk", sdk)
+
+    client = CatalystPersistenceClient(request=request)
+
+    assert client.initialize() is initialized_app
+    initialize.assert_called_once_with(req=request)

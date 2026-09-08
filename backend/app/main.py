@@ -30,7 +30,6 @@ from app.persistence.catalyst import CatalystPersistenceClient, CatalystPersiste
 
 
 REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$")
-catalyst_client = CatalystPersistenceClient()
 
 
 def _request_id(request: Request, header: str) -> str:
@@ -166,7 +165,8 @@ def create_app() -> FastAPI:
         return JSONResponse(status_code=503, content={"status": "unavailable"})
 
     @application.get("/health/catalyst", include_in_schema=False)
-    async def health_catalyst():
+    async def health_catalyst(request: Request):
+        catalyst_client = CatalystPersistenceClient(request=request)
         try:
             checks = await catalyst_client.async_connectivity_checks(
                 settings.catalyst_probe_table
@@ -193,10 +193,11 @@ def create_app() -> FastAPI:
         )
 
     @application.post("/health/catalyst/crud", include_in_schema=False)
-    async def health_catalyst_crud():
+    async def health_catalyst_crud(request: Request):
         if not settings.catalyst_probe_crud_enabled:
             return JSONResponse(status_code=404, content={"status": "not_found"})
 
+        catalyst_client = CatalystPersistenceClient(request=request)
         table_name = settings.catalyst_probe_table
         marker = secrets.token_urlsafe(18)
         result = {
