@@ -157,8 +157,11 @@ def create_app() -> FastAPI:
 
     @application.get("/health/ready", include_in_schema=False)
     async def health_ready():
-        if await health.database_ready(settings.readiness_db_timeout_seconds):
-            return {"status": "ok"}
+        try:
+            if await health.database_ready(settings.readiness_db_timeout_seconds):
+                return {"status": "ok"}
+        except Exception:
+            pass
         metrics.increment("readiness.failures", tags={"dependency": "database"})
         return JSONResponse(status_code=503, content={"status": "unavailable"})
 

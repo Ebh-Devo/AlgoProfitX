@@ -47,8 +47,5 @@ async def database_ready(timeout_seconds: float) -> bool:
             if not privilege_result.scalar_one():
                 raise RuntimeError("Runtime database account lacks application table privileges")
 
-    try:
-        await asyncio.wait_for(check(), timeout=timeout_seconds)
-    except Exception:
-        return False
+    await asyncio.wait_for(check(), timeout=timeout_seconds)
     return True
