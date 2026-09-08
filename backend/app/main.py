@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 import asyncio
 import logging
 import re
+import secrets
 import time
 import uuid
 
@@ -25,9 +26,11 @@ from app.core.observability import (
 )
 from app.backtesting.worker import run_backtest_worker
 from app.db.session import dispose_engine
+from app.persistence.catalyst import CatalystPersistenceClient, CatalystPersistenceError
 
 
 REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$")
+catalyst_client = CatalystPersistenceClient()
 
 
 def _request_id(request: Request, header: str) -> str:
@@ -158,6 +161,81 @@ def create_app() -> FastAPI:
             return {"status": "ok"}
         metrics.increment("readiness.failures", tags={"dependency": "database"})
         return JSONResponse(status_code=503, content={"status": "unavailable"})
+
+    @application.get("/health/catalyst", include_in_schema=False)
+    async def health_catalyst():
+        try:
+            await catalyst_client.async_readiness(settings.catalyst_probe_table)
+        except (CatalystPersistenceError, ValueError):
+            metrics.increment("readiness.failures", tags={"dependency": "catalyst"})
+            return JSONResponse(
+                status_code=503,
+                content={"status": "unavailable", "dependency": "catalyst"},
+            )
+        return {"status": "ok", "dependency": "catalyst"}
+
+    @application.post("/health/catalyst/crud", include_in_schema=False)
+    async def health_catalyst_crud():
+        if not settings.catalyst_probe_crud_enabled:
+            return JSONResponse(status_code=404, content={"status": "not_found"})
+
+        table_name = settings.catalyst_probe_table
+        marker = secrets.token_urlsafe(18)
+        result = {
+            "insert": "FAIL",
+            "select": "FAIL",
+            "update": "FAIL",
+            "delete": "FAIL",
+            "probe_cleanup": "FAIL",
+        }
+        row_id: str | None = None
+        try:
+            inserted = await catalyst_client.async_insert_row(
+                table_name,
+                {"probe_value": "connectivity-test", "probe_marker": marker},
+            )
+            row_id = str(inserted.get("ROWID", ""))
+            if not row_id or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", row_id):
+                raise CatalystPersistenceError("Catalyst returned an invalid probe row")
+            result["insert"] = "PASS"
+
+            selected = await asyncio.to_thread(
+                catalyst_client.execute_query,
+                f"SELECT ROWID, probe_value, probe_marker FROM {table_name} "
+                f"WHERE ROWID = '{row_id}' LIMIT 1",
+            )
+            if (
+                isinstance(selected, list)
+                and selected
+                and selected[0].get("ROWID") is not None
+                and selected[0].get("probe_marker") == marker
+            ):
+                result["select"] = "PASS"
+
+            updated = await catalyst_client.async_update_row(
+                table_name,
+                {"ROWID": row_id, "probe_value": "connectivity-updated"},
+            )
+            if updated.get("ROWID") == row_id:
+                result["update"] = "PASS"
+
+            await catalyst_client.async_delete_row(table_name, row_id)
+            result["delete"] = "PASS"
+
+            remaining = await asyncio.to_thread(
+                catalyst_client.execute_query,
+                f"SELECT ROWID FROM {table_name} WHERE ROWID = '{row_id}' LIMIT 1",
+            )
+            if isinstance(remaining, list) and not remaining:
+                result["probe_cleanup"] = "PASS"
+        except (CatalystPersistenceError, ValueError):
+            if row_id and result["delete"] != "PASS":
+                try:
+                    await catalyst_client.async_delete_row(table_name, row_id)
+                    result["probe_cleanup"] = "PASS"
+                except (CatalystPersistenceError, ValueError):
+                    pass
+        return result
 
     return application
 

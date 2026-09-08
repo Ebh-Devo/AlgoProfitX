@@ -4,6 +4,7 @@
 
 fastapi
 uvicorn[standard]
+zcatalyst-sdk==1.4.0
 sqlalchemy
 asyncpg
 alembic

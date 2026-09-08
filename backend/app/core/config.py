@@ -47,6 +47,8 @@ class Settings(BaseSettings):
     log_format: Literal["console", "json"] | None = None
     readiness_db_timeout_seconds: PositiveFloat = 2.0
     readiness_alembic_head: str = "f4b2c9d7e1a3"
+    catalyst_probe_table: str = "MigrationProbe"
+    catalyst_probe_crud_enabled: bool = False
     request_id_header: str = "X-Request-ID"
 
     secret_key: SecretStr
