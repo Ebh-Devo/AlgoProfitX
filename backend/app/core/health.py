@@ -1,9 +1,13 @@
 import asyncio
+import logging
 from urllib.parse import unquote, urlsplit
 
 from app.core.config import get_settings
 from app.db.session import engine
 from sqlalchemy import text
+
+
+logger = logging.getLogger(__name__)
 
 
 async def database_ready(timeout_seconds: float) -> bool:
@@ -49,6 +53,10 @@ async def database_ready(timeout_seconds: float) -> bool:
 
     try:
         await asyncio.wait_for(check(), timeout=timeout_seconds)
-    except Exception:
+    except Exception as exc:
+        logger.warning(
+            "database_readiness_failed error_type=%s",
+            type(exc).__name__,
+        )
         return False
     return True
