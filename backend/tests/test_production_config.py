@@ -41,6 +41,7 @@ def assert_production_error(message: str, **overrides: object) -> None:
 
 def test_development_configuration_remains_usable():
     settings = Settings(
+        app_env="development",
         database_url="postgresql+asyncpg://app:local@localhost/app",
         secret_key="local-secret",
         _env_file=None,
