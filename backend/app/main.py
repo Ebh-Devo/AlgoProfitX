@@ -1,10 +1,13 @@
 from contextlib import asynccontextmanager
 import asyncio
+import hashlib
+import hmac
 import logging
 import re
 import secrets
 import time
 import uuid
+from datetime import datetime, timedelta, timezone
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
@@ -28,10 +31,12 @@ from app.core.observability import (
 from app.backtesting.worker import run_backtest_worker
 from app.db.session import dispose_engine
 from app.persistence.catalyst import (
+    CatalystAuthSessionRepository,
     CatalystIdentityRepository,
     CatalystPersistenceClient,
     CatalystPersistenceError,
 )
+from app.persistence.auth_session import SessionTokenRejected
 
 
 REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$")
@@ -325,6 +330,104 @@ def create_app() -> FastAPI:
                         result["probe_cleanup"] = "PASS"
                 except (CatalystPersistenceError, ValueError):
                     pass
+        return result
+
+    @application.post("/health/catalyst/auth-sessions", include_in_schema=False)
+    async def health_catalyst_auth_sessions(request: Request):
+        if not _catalyst_probe_crud_allowed(settings):
+            return JSONResponse(status_code=404, content={"status": "not_found"})
+
+        repository = CatalystAuthSessionRepository(
+            CatalystPersistenceClient(request=request)
+        )
+        user_id = uuid.uuid4()
+        created_ids: set[uuid.UUID] = set()
+        result = {
+            "session_create": "FAIL",
+            "refresh_rotation": "FAIL",
+            "reuse_detection": "FAIL",
+            "session_limit": "FAIL",
+            "revocation": "FAIL",
+            "probe_cleanup": "FAIL",
+        }
+
+        def token_hash() -> str:
+            return hashlib.sha256(secrets.token_bytes(48)).hexdigest()
+
+        try:
+            first_id = uuid.uuid4()
+            first_hash = token_hash()
+            rotated_hash = token_hash()
+            await repository.create_session(
+                session_id=first_id,
+                user_id=user_id,
+                refresh_token_hash=first_hash,
+                expires_at=datetime.now(timezone.utc) + timedelta(minutes=15),
+                max_sessions=1,
+            )
+            created_ids.add(first_id)
+            result["session_create"] = "PASS"
+
+            rotated = await repository.rotate_session(
+                session_id=first_id,
+                supplied_token_hash=first_hash,
+                replacement_token_hash=rotated_hash,
+            )
+            if hmac.compare_digest(rotated.refresh_token_hash, rotated_hash):
+                result["refresh_rotation"] = "PASS"
+
+            try:
+                await repository.rotate_session(
+                    session_id=first_id,
+                    supplied_token_hash=first_hash,
+                    replacement_token_hash=token_hash(),
+                )
+            except SessionTokenRejected as exc:
+                if exc.suspicious_reuse:
+                    result["reuse_detection"] = "PASS"
+
+            limited_id = uuid.uuid4()
+            limited_hash = token_hash()
+            await repository.create_session(
+                session_id=limited_id,
+                user_id=user_id,
+                refresh_token_hash=limited_hash,
+                expires_at=datetime.now(timezone.utc) + timedelta(minutes=15),
+                max_sessions=1,
+            )
+            created_ids.add(limited_id)
+            try:
+                await repository.rotate_session(
+                    session_id=first_id,
+                    supplied_token_hash=rotated_hash,
+                    replacement_token_hash=token_hash(),
+                )
+            except SessionTokenRejected:
+                result["session_limit"] = "PASS"
+
+            revoked = await repository.revoke_session(
+                session_id=limited_id,
+                supplied_token_hash=limited_hash,
+            )
+            if revoked.revoked_at is not None:
+                result["revocation"] = "PASS"
+        except (CatalystPersistenceError, SessionTokenRejected, ValueError):
+            pass
+        finally:
+            cleanup_ok = True
+            for session_id in created_ids:
+                try:
+                    await repository.delete_session(session_id)
+                except (CatalystPersistenceError, ValueError):
+                    cleanup_ok = False
+            for session_id in created_ids:
+                try:
+                    if await repository.delete_session(session_id):
+                        cleanup_ok = False
+                except (CatalystPersistenceError, ValueError):
+                    cleanup_ok = False
+            if cleanup_ok and created_ids:
+                result["probe_cleanup"] = "PASS"
         return result
 
     return application
