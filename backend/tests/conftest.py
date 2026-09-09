@@ -10,6 +10,10 @@ from sqlalchemy.engine import make_url
 
 BACKEND_ENV_FILE = Path(__file__).resolve().parents[1] / ".env"
 
+# Route persistence is selected by environment. Tests must never inherit the
+# application's Development default and accidentally contact Catalyst.
+os.environ["APP_ENV"] = "test"
+
 
 def _require_test_database() -> str:
     # Direct pytest invocations from CMD do not run the PowerShell environment

@@ -24,6 +24,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     env:
+      APP_ENV: test
       DATABASE_URL: postgresql+asyncpg://tradebh:ci-test-password@localhost:5432/tradeebh_test
       TEST_DATABASE_URL: postgresql+asyncpg://tradebh:ci-test-password@localhost:5432/tradeebh_test
       SECRET_KEY: ci-only-secret-not-for-production
