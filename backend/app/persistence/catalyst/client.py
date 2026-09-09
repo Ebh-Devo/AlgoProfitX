@@ -207,3 +207,10 @@ class CatalystPersistenceClient:
 
     async def async_delete_row(self, table_name: str, row_id: str) -> Any:
         return await asyncio.to_thread(self.delete_row, table_name, row_id)
+
+    async def async_query_rows(
+        self,
+        query: str,
+        table_name: str,
+    ) -> list[dict[str, Any]]:
+        return await asyncio.to_thread(self.query_rows, query, table_name)
