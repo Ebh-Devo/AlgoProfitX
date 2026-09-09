@@ -16,7 +16,7 @@ def catalyst_services():
     datastore = Mock()
     datastore.table.return_value = table
     zcql = Mock()
-    zcql.execute_query.return_value = [{"ROWID": "probe-1"}]
+    zcql.execute_query.return_value = [{"MigrationProbe": {"ROWID": "probe-1"}}]
     app = Mock(datastore=Mock(return_value=datastore), zcql=Mock(return_value=zcql))
     return app, table, zcql
 
@@ -34,7 +34,7 @@ def test_initializes_once_and_exposes_documented_crud(catalyst_services):
     client.delete_row("MigrationProbe", inserted["ROWID"])
 
     assert inserted["ROWID"] == "probe-1"
-    assert selected == [{"ROWID": "probe-1"}]
+    assert selected == [{"MigrationProbe": {"ROWID": "probe-1"}}]
     assert updated["value"] == "after"
     initializer.assert_called_once_with()
     table.insert_row.assert_called_once_with({"value": "before"})
@@ -55,6 +55,33 @@ def test_readiness_uses_a_validated_probe_table(catalyst_services):
     zcql.execute_query.assert_called_once_with(
         "SELECT ROWID FROM MigrationProbe LIMIT 1"
     )
+
+
+def test_query_rows_unwraps_the_documented_table_key(catalyst_services):
+    app, _, zcql = catalyst_services
+    client = CatalystPersistenceClient(Mock(return_value=app))
+
+    rows = client.query_rows(
+        "SELECT ROWID FROM MigrationProbe LIMIT 1",
+        "MigrationProbe",
+    )
+
+    assert rows == [{"ROWID": "probe-1"}]
+    zcql.execute_query.assert_called_once_with(
+        "SELECT ROWID FROM MigrationProbe LIMIT 1"
+    )
+
+
+def test_query_rows_rejects_unexpected_zcql_shapes(catalyst_services):
+    app, _, zcql = catalyst_services
+    zcql.execute_query.return_value = [{"ROWID": "probe-1"}]
+    client = CatalystPersistenceClient(Mock(return_value=app))
+
+    with pytest.raises(CatalystPersistenceError, match="invalid rows"):
+        client.query_rows(
+            "SELECT ROWID FROM MigrationProbe LIMIT 1",
+            "MigrationProbe",
+        )
 
 
 def test_connectivity_checks_report_each_safe_stage(catalyst_services):

@@ -227,9 +227,10 @@ def create_app() -> FastAPI:
             result["insert"] = "PASS"
 
             selected = await asyncio.to_thread(
-                catalyst_client.execute_query,
+                catalyst_client.query_rows,
                 f"SELECT ROWID, probe_value, probe_marker FROM {table_name} "
                 f"WHERE ROWID = '{row_id}' LIMIT 1",
+                table_name,
             )
             if (
                 isinstance(selected, list)
@@ -250,8 +251,9 @@ def create_app() -> FastAPI:
             result["delete"] = "PASS"
 
             remaining = await asyncio.to_thread(
-                catalyst_client.execute_query,
+                catalyst_client.query_rows,
                 f"SELECT ROWID FROM {table_name} WHERE ROWID = '{row_id}' LIMIT 1",
+                table_name,
             )
             if isinstance(remaining, list) and not remaining:
                 result["probe_cleanup"] = "PASS"

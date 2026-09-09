@@ -134,6 +134,23 @@ class CatalystPersistenceClient:
         except Exception as exc:
             raise CatalystPersistenceError("Catalyst ZCQL query failed") from exc
 
+    def query_rows(self, query: str, table_name: str) -> list[dict[str, Any]]:
+        """Return rows from the table-keyed structure produced by ZCQL."""
+        validated_table = _validate_identifier(table_name, "table name")
+        result = self.execute_query(query)
+        if not isinstance(result, list):
+            raise CatalystPersistenceError("Catalyst ZCQL returned invalid rows")
+
+        rows: list[dict[str, Any]] = []
+        for item in result:
+            if not isinstance(item, dict):
+                raise CatalystPersistenceError("Catalyst ZCQL returned invalid rows")
+            row = item.get(validated_table)
+            if not isinstance(row, dict):
+                raise CatalystPersistenceError("Catalyst ZCQL returned invalid rows")
+            rows.append(row)
+        return rows
+
     def readiness(self, probe_table: str) -> bool:
         table_name = _validate_identifier(probe_table, "probe table name")
         self.execute_query(f"SELECT ROWID FROM {table_name} LIMIT 1")
