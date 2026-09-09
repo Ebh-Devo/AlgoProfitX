@@ -231,3 +231,21 @@ class CatalystIdentityRepository:
             "updated_at": updated_at,
         }
         return self._user_from_row(updated_row)
+
+    async def delete_user(self, user_id: uuid.UUID) -> bool:
+        identifier = str(user_id)
+        literal = _safe_literal(identifier, _SAFE_UUID, "user ID")
+        rows = await self._client.async_query_rows(
+            f"SELECT ROWID FROM {USERS_TABLE} "
+            f"WHERE user_uuid = {literal} LIMIT 1",
+            USERS_TABLE,
+        )
+        if not rows:
+            return False
+        if len(rows) != 1:
+            raise CatalystPersistenceError("Catalyst returned duplicate user rows")
+        row_id = str(rows[0].get("ROWID", ""))
+        if not row_id:
+            raise CatalystPersistenceError("Catalyst returned an invalid user row")
+        await self._client.async_delete_row(USERS_TABLE, row_id)
+        return True

@@ -189,3 +189,21 @@ async def test_role_catalog_queries_use_only_fixed_role_names():
     query, table = persistence.async_query_rows.await_args.args
     assert table == ROLES_TABLE
     assert "INVESTOR" in query
+
+
+@pytest.mark.asyncio
+async def test_delete_user_uses_internal_rowid_and_reports_missing_user():
+    persistence = client()
+    persistence.async_delete_row = AsyncMock()
+    persistence.async_query_rows.side_effect = [
+        [{"ROWID": "36851000000408776"}],
+        [],
+    ]
+    repository = CatalystIdentityRepository(persistence)
+    user_id = uuid.UUID("11111111-1111-4111-8111-111111111111")
+
+    assert await repository.delete_user(user_id) is True
+    persistence.async_delete_row.assert_awaited_once_with(
+        USERS_TABLE, "36851000000408776"
+    )
+    assert await repository.delete_user(user_id) is False

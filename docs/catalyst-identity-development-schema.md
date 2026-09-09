@@ -55,3 +55,8 @@ columns and must not be recreated.
 Auth-session tables and the atomic refresh-token claim design belong to the
 next focused slice. The Catalyst identity backend must remain disabled until
 those tables, adapters, and real Development auth smoke tests are complete.
+
+The Development-only `POST /health/catalyst/identity` probe registers a
+generated disposable identity, validates hashed lookup and password checking,
+adds the creator role, deletes the identity, and verifies cleanup. It returns
+only PASS/FAIL stages and is unavailable in Production.

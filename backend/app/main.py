@@ -17,6 +17,7 @@ from app.api.routes.instruments import router as instruments_router
 from app.api.routes.marketplace import router as marketplace_router
 from app.api.routes.strategies import router as strategies_router
 from app.core.config import AppEnvironment, get_settings
+from app.core.security import hash_password, verify_password
 from app.core import health
 from app.core.metrics import metrics
 from app.core.observability import (
@@ -26,7 +27,11 @@ from app.core.observability import (
 )
 from app.backtesting.worker import run_backtest_worker
 from app.db.session import dispose_engine
-from app.persistence.catalyst import CatalystPersistenceClient, CatalystPersistenceError
+from app.persistence.catalyst import (
+    CatalystIdentityRepository,
+    CatalystPersistenceClient,
+    CatalystPersistenceError,
+)
 
 
 REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$")
@@ -262,6 +267,62 @@ def create_app() -> FastAPI:
                 try:
                     await catalyst_client.async_delete_row(table_name, row_id)
                     result["probe_cleanup"] = "PASS"
+                except (CatalystPersistenceError, ValueError):
+                    pass
+        return result
+
+    @application.post("/health/catalyst/identity", include_in_schema=False)
+    async def health_catalyst_identity(request: Request):
+        if not _catalyst_probe_crud_allowed(settings):
+            return JSONResponse(status_code=404, content={"status": "not_found"})
+
+        catalyst_client = CatalystPersistenceClient(request=request)
+        repository = CatalystIdentityRepository(catalyst_client)
+        marker = secrets.token_urlsafe(18)
+        email = f"identity-probe-{marker}@example.invalid"
+        result = {
+            "registration": "FAIL",
+            "email_lookup": "FAIL",
+            "authentication": "FAIL",
+            "default_role": "FAIL",
+            "creator_enrollment": "FAIL",
+            "probe_cleanup": "FAIL",
+        }
+        user_id: uuid.UUID | None = None
+        try:
+            password_hash = await asyncio.to_thread(hash_password, marker)
+            registered = await repository.register_user(
+                email=email,
+                password_hash=password_hash,
+                full_name="Connectivity Probe",
+            )
+            user_id = registered.id
+            result["registration"] = "PASS"
+            if [role.name for role in registered.roles] == ["INVESTOR"]:
+                result["default_role"] = "PASS"
+
+            selected = await repository.get_user_by_email(email)
+            if selected is not None and selected.id == user_id:
+                result["email_lookup"] = "PASS"
+                if await asyncio.to_thread(
+                    verify_password,
+                    marker,
+                    selected.password_hash,
+                ):
+                    result["authentication"] = "PASS"
+
+            enrolled = await repository.enroll_creator(user_id)
+            if [role.name for role in enrolled.roles] == ["CREATOR", "INVESTOR"]:
+                result["creator_enrollment"] = "PASS"
+        except (CatalystPersistenceError, ValueError, RuntimeError):
+            pass
+        finally:
+            if user_id is not None:
+                try:
+                    deleted = await repository.delete_user(user_id)
+                    remaining = await repository.get_user_by_id(user_id)
+                    if deleted and remaining is None:
+                        result["probe_cleanup"] = "PASS"
                 except (CatalystPersistenceError, ValueError):
                     pass
         return result
