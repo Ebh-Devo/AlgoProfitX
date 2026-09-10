@@ -40,6 +40,10 @@ from app.persistence.catalyst import (
     CatalystPersistenceError,
     CatalystStrategyRepository,
 )
+from app.persistence.catalyst.backtest import (
+    BACKTEST_JOB_HEADER,
+    CatalystBacktestConflict,
+)
 from app.persistence.auth_session import SessionTokenRejected
 from app.models.instrument import InstrumentType
 from app.models.backtest import BacktestStatus
@@ -76,7 +80,10 @@ async def lifespan(_: FastAPI):
     settings = get_settings()
     stop_event = asyncio.Event()
     worker = None
-    if settings.backtest_execution_mode == "worker":
+    if (
+        settings.backtest_execution_mode == "worker"
+        and settings.app_env is not AppEnvironment.DEVELOPMENT
+    ):
         worker = asyncio.create_task(run_backtest_worker(stop_event))
     try:
         yield
@@ -734,6 +741,31 @@ def create_app() -> FastAPI:
             if cleanup_ok and strategy_id is not None and backtest_id is not None:
                 result["probe_cleanup"] = "PASS"
         return result
+
+    @application.post("/internal/backtests/process", include_in_schema=False)
+    async def process_catalyst_backtest_job(request: Request):
+        if (
+            settings.app_env is not AppEnvironment.DEVELOPMENT
+            or request.headers.get("x-algoprofitx-job") != BACKTEST_JOB_HEADER
+        ):
+            return JSONResponse(status_code=404, content={"status": "not_found"})
+        try:
+            payload = await request.json()
+            backtest_id = uuid.UUID(str(payload["backtest_id"]))
+        except (KeyError, TypeError, ValueError):
+            return JSONResponse(status_code=400, content={"status": "invalid_request"})
+        repository = CatalystBacktestRepository(
+            CatalystPersistenceClient(request=request)
+        )
+        try:
+            completed = await execute_catalyst_backtest(repository, backtest_id)
+        except CatalystBacktestConflict:
+            return JSONResponse(status_code=202, content={"status": "accepted"})
+        if completed.status is BacktestStatus.QUEUED:
+            return JSONResponse(
+                status_code=503, content={"status": "retry_scheduled"}
+            )
+        return {"status": completed.status.value}
 
     return application
 

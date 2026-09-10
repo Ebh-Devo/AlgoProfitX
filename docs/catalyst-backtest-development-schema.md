@@ -65,3 +65,10 @@ append-only audit trail.
 
 The unique terminal receipt is the authoritative outcome. Reads repair an
 incomplete projection update after a process interruption.
+
+## Durable execution
+
+`AlgoProfitXBacktests` is also the name of the Development AppSail Job Pool.
+The execute endpoint submits an immediate job targeting
+`algoprofitx-api:/internal/backtests/process`. Catalyst owns job delivery and
+retries, while the claim and terminal tables make repeated delivery safe.

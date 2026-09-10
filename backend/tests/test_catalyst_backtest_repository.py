@@ -25,6 +25,11 @@ class MemoryClient:
     def __init__(self):
         self.rows = {BACKTESTS_TABLE: [], BACKTEST_CLAIMS_TABLE: [], BACKTEST_TERMINALS_TABLE: []}
         self.counter = 0
+        self.jobs = []
+
+    async def async_submit_job(self, payload):
+        self.jobs.append(payload)
+        return {"job_id": str(len(self.jobs))}
 
     async def async_insert_row(self, table, payload):
         unique = {
@@ -148,3 +153,20 @@ async def test_reference_execution_completes_from_catalyst_snapshots():
     assert completed.result_summary is not None
     assert completed.result_summary["engine_identifier"] == "ema-crossover-reference-v1"
     assert len(completed.result_summary["equity_curve"]) == 64
+
+
+@pytest.mark.asyncio
+async def test_submit_job_targets_the_catalyst_appsail_worker_without_secrets():
+    client = MemoryClient()
+    repository = CatalystBacktestRepository(client)
+    backtest_id = uuid.uuid4()
+    await repository.submit_job(backtest_id)
+
+    assert len(client.jobs) == 1
+    job = client.jobs[0]
+    assert job["jobpool_name"] == "AlgoProfitXBacktests"
+    assert job["target_type"] == "AppSail"
+    assert job["target_name"] == "algoprofitx-api"
+    assert job["url"] == "/internal/backtests/process"
+    assert str(backtest_id) in job["request_body"]
+    assert job["job_config"] == {"number_of_retries": 2, "retry_interval": 300}

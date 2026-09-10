@@ -134,6 +134,18 @@ class CatalystPersistenceClient:
         except Exception as exc:
             raise CatalystPersistenceError("Catalyst ZCQL query failed") from exc
 
+    def submit_job(self, job_meta: dict[str, Any]) -> dict[str, Any]:
+        """Submit one Catalyst Job Scheduling job with admin scope."""
+        try:
+            result = self.initialize().job_scheduling().job.submit_job(dict(job_meta))
+        except CatalystPersistenceError:
+            raise
+        except Exception as exc:
+            raise CatalystPersistenceError("Catalyst job submission failed") from exc
+        if not isinstance(result, dict):
+            raise CatalystPersistenceError("Catalyst job submission returned invalid data")
+        return result
+
     def query_rows(self, query: str, table_name: str) -> list[dict[str, Any]]:
         """Return rows from the table-keyed structure produced by ZCQL."""
         validated_table = _validate_identifier(table_name, "table name")
@@ -214,3 +226,6 @@ class CatalystPersistenceClient:
         table_name: str,
     ) -> list[dict[str, Any]]:
         return await asyncio.to_thread(self.query_rows, query, table_name)
+
+    async def async_submit_job(self, job_meta: dict[str, Any]) -> dict[str, Any]:
+        return await asyncio.to_thread(self.submit_job, job_meta)

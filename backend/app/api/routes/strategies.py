@@ -15,6 +15,7 @@ from app.persistence.catalyst import (
     CatalystBacktestRepository,
     CatalystInstrumentRepository,
     CatalystPersistenceClient,
+    CatalystPersistenceError,
     CatalystStrategyRepository,
 )
 from app.persistence.catalyst.backtest import CatalystBacktestConflict
@@ -614,6 +615,14 @@ async def execute_backtest_request(
     ):
         try:
             if settings.backtest_execution_mode == "worker":
+                if catalyst_repository is not None:
+                    try:
+                        await catalyst_repository.submit_job(backtest.id)
+                    except CatalystPersistenceError as exc:
+                        raise HTTPException(
+                            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                            detail="Backtest scheduling is temporarily unavailable",
+                        ) from exc
                 return backtest
             if catalyst_repository is not None:
                 return await execute_catalyst_backtest(catalyst_repository, backtest.id)

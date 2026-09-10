@@ -18,6 +18,8 @@ from app.schemas.backtest import BacktestCreateRequest
 BACKTESTS_TABLE = "AlgoProfitXBacktests"
 BACKTEST_CLAIMS_TABLE = "AlgoProfitXBacktestClaims"
 BACKTEST_TERMINALS_TABLE = "AlgoProfitXBacktestTerminals"
+BACKTEST_JOB_POOL = "AlgoProfitXBacktests"
+BACKTEST_JOB_HEADER = "backtest-v1"
 MAX_ATTEMPTS = 3
 _SAFE_UUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 _SAFE_HEX = re.compile(r"^[0-9a-f]{64}$")
@@ -127,6 +129,26 @@ class CatalystBacktestRepository:
 
     def __init__(self, client: CatalystPersistenceClient) -> None:
         self._client = client
+
+    async def submit_job(self, backtest_id: uuid.UUID) -> None:
+        await self._client.async_submit_job(
+            {
+                "job_name": f"backtest_{backtest_id.hex}_{secrets.token_hex(4)}",
+                "jobpool_name": BACKTEST_JOB_POOL,
+                "target_type": "AppSail",
+                "target_name": "algoprofitx-api",
+                "request_method": "POST",
+                "url": "/internal/backtests/process",
+                "headers": {
+                    "content-type": "application/json",
+                    "x-algoprofitx-job": BACKTEST_JOB_HEADER,
+                },
+                "request_body": json.dumps(
+                    {"backtest_id": str(backtest_id)}, separators=(",", ":")
+                ),
+                "job_config": {"number_of_retries": 2, "retry_interval": 300},
+            }
+        )
 
     @staticmethod
     def _record(row: dict[str, Any]) -> BacktestRecord:
