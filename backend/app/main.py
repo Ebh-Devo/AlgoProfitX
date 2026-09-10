@@ -35,8 +35,10 @@ from app.persistence.catalyst import (
     CatalystIdentityRepository,
     CatalystPersistenceClient,
     CatalystPersistenceError,
+    CatalystStrategyRepository,
 )
 from app.persistence.auth_session import SessionTokenRejected
+from app.persistence.strategy import DuplicateStrategySlug
 
 
 REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$")
@@ -428,6 +430,99 @@ def create_app() -> FastAPI:
                     cleanup_ok = False
             if cleanup_ok and created_ids:
                 result["probe_cleanup"] = "PASS"
+        return result
+
+    @application.post("/health/catalyst/strategies", include_in_schema=False)
+    async def health_catalyst_strategies(request: Request):
+        if not _catalyst_probe_crud_allowed(settings):
+            return JSONResponse(status_code=404, content={"status": "not_found"})
+
+        repository = CatalystStrategyRepository(
+            CatalystPersistenceClient(request=request)
+        )
+        creator_id = uuid.uuid4()
+        marker = secrets.token_hex(12)
+        slug = f"strategy-probe-{marker}"
+        updated_slug = f"strategy-probe-updated-{marker}"
+        result = {
+            "create": "FAIL",
+            "owned_read": "FAIL",
+            "list": "FAIL",
+            "update": "FAIL",
+            "duplicate_slug": "FAIL",
+            "delete": "FAIL",
+            "probe_cleanup": "FAIL",
+        }
+        strategy_id: uuid.UUID | None = None
+        try:
+            created = await repository.create_strategy(
+                creator_id=creator_id,
+                name="Connectivity Strategy",
+                slug=slug,
+                description="Generated Development connectivity probe",
+            )
+            strategy_id = created.id
+            result["create"] = "PASS"
+
+            selected = await repository.get_strategy(
+                strategy_id=strategy_id,
+                creator_id=creator_id,
+            )
+            if selected is not None and selected.id == strategy_id:
+                result["owned_read"] = "PASS"
+
+            listed = await repository.list_strategies(creator_id)
+            if [item.id for item in listed] == [strategy_id]:
+                result["list"] = "PASS"
+
+            updated = await repository.update_strategy(
+                strategy_id=strategy_id,
+                creator_id=creator_id,
+                updates={
+                    "name": "Updated Connectivity Strategy",
+                    "slug": updated_slug,
+                },
+            )
+            if updated is not None and updated.slug == updated_slug:
+                result["update"] = "PASS"
+
+            try:
+                await repository.create_strategy(
+                    creator_id=uuid.uuid4(),
+                    name="Duplicate Connectivity Strategy",
+                    slug=updated_slug,
+                    description=None,
+                )
+            except DuplicateStrategySlug:
+                result["duplicate_slug"] = "PASS"
+
+            if await repository.delete_strategy(
+                strategy_id=strategy_id,
+                creator_id=creator_id,
+            ):
+                result["delete"] = "PASS"
+        except (CatalystPersistenceError, DuplicateStrategySlug, ValueError):
+            pass
+        finally:
+            if strategy_id is not None:
+                try:
+                    remaining = await repository.get_strategy(
+                        strategy_id=strategy_id,
+                        creator_id=creator_id,
+                    )
+                    if remaining is not None:
+                        await repository.delete_strategy(
+                            strategy_id=strategy_id,
+                            creator_id=creator_id,
+                        )
+                    verified = await repository.get_strategy(
+                        strategy_id=strategy_id,
+                        creator_id=creator_id,
+                    )
+                    if verified is None:
+                        result["probe_cleanup"] = "PASS"
+                except (CatalystPersistenceError, ValueError):
+                    pass
         return result
 
     return application
