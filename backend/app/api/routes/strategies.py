@@ -12,10 +12,12 @@ from app.models.strategy import Strategy, StrategyStatus
 from app.models.user import User
 from app.instrument_identity import SYNTHETIC_EQUITY_ID, SYNTHETIC_EQUITY_SYMBOLS
 from app.persistence.catalyst import (
+    CatalystBacktestRepository,
     CatalystInstrumentRepository,
     CatalystPersistenceClient,
     CatalystStrategyRepository,
 )
+from app.persistence.catalyst.backtest import CatalystBacktestConflict
 from app.persistence.strategy import (
     DuplicateStrategySlug,
     ExchangeSnapshotRecord,
@@ -60,6 +62,7 @@ from app.services.backtest import (
     get_backtest,
     get_backtests_for_strategy_version,
 )
+from app.services.catalyst_backtest import execute_catalyst_backtest
 from app.services.instrument import get_instrument
 
 
@@ -378,11 +381,24 @@ async def get_version(
 
 
 async def _get_owned_strategy_version(
+    request: Request,
     session: AsyncSession,
     strategy_id: uuid.UUID,
     version_id: uuid.UUID,
     creator_id: uuid.UUID,
 ):
+    if _uses_catalyst_strategies():
+        version = await _catalyst_repository(request).get_version(
+            strategy_id=strategy_id,
+            version_id=version_id,
+            creator_id=creator_id,
+        )
+        if version is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Strategy version not found",
+            )
+        return version
     strategy = await get_strategy(
         session=session,
         strategy_id=strategy_id,
@@ -417,6 +433,7 @@ async def create_backtest_request(
     strategy_id: uuid.UUID,
     version_id: uuid.UUID,
     data: BacktestCreateRequest,
+    request: Request,
     current_user: Annotated[User, Depends(require_creator)],
     session: Annotated[AsyncSession, Depends(get_session)],
 ):
@@ -440,11 +457,16 @@ async def create_backtest_request(
         settings.abuse_protection_enabled,
     )
     version = await _get_owned_strategy_version(
+        request=request,
         session=session,
         strategy_id=strategy_id,
         version_id=version_id,
         creator_id=current_user.id,
     )
+    if _uses_catalyst_strategies():
+        return await CatalystBacktestRepository(
+            CatalystPersistenceClient(request=request)
+        ).create(version=version, requested_by_user_id=current_user.id, data=data)
     backtest = await create_backtest(
         session=session,
         strategy_version=version,
@@ -462,17 +484,23 @@ async def create_backtest_request(
 async def list_backtest_requests(
     strategy_id: uuid.UUID,
     version_id: uuid.UUID,
+    request: Request,
     current_user: Annotated[User, Depends(require_creator)],
     session: Annotated[AsyncSession, Depends(get_session)],
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
     offset: Annotated[int, Query(ge=0)] = 0,
 ):
     version = await _get_owned_strategy_version(
+        request=request,
         session=session,
         strategy_id=strategy_id,
         version_id=version_id,
         creator_id=current_user.id,
     )
+    if _uses_catalyst_strategies():
+        return await CatalystBacktestRepository(
+            CatalystPersistenceClient(request=request)
+        ).list(strategy_version_id=version.id, limit=limit, offset=offset)
     return await get_backtests_for_strategy_version(
         session=session,
         strategy_version_id=version.id,
@@ -489,15 +517,24 @@ async def get_backtest_request(
     strategy_id: uuid.UUID,
     version_id: uuid.UUID,
     backtest_id: uuid.UUID,
+    request: Request,
     current_user: Annotated[User, Depends(require_creator)],
     session: Annotated[AsyncSession, Depends(get_session)],
 ):
     version = await _get_owned_strategy_version(
+        request=request,
         session=session,
         strategy_id=strategy_id,
         version_id=version_id,
         creator_id=current_user.id,
     )
+    if _uses_catalyst_strategies():
+        backtest = await CatalystBacktestRepository(
+            CatalystPersistenceClient(request=request)
+        ).get(strategy_version_id=version.id, backtest_id=backtest_id)
+        if backtest is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Backtest not found")
+        return backtest
     backtest = await get_backtest(
         session=session,
         strategy_version_id=version.id,
@@ -519,6 +556,7 @@ async def execute_backtest_request(
     strategy_id: uuid.UUID,
     version_id: uuid.UUID,
     backtest_id: uuid.UUID,
+    request: Request,
     current_user: Annotated[User, Depends(require_creator)],
     session: Annotated[AsyncSession, Depends(get_session)],
 ):
@@ -547,16 +585,22 @@ async def execute_backtest_request(
         settings.abuse_protection_enabled,
     )
     version = await _get_owned_strategy_version(
+        request=request,
         session=session,
         strategy_id=strategy_id,
         version_id=version_id,
         creator_id=current_user.id,
     )
-    backtest = await get_backtest(
-        session=session,
-        strategy_version_id=version.id,
-        backtest_id=backtest_id,
-    )
+    catalyst_repository = None
+    if _uses_catalyst_strategies():
+        catalyst_repository = CatalystBacktestRepository(CatalystPersistenceClient(request=request))
+        backtest = await catalyst_repository.get(strategy_version_id=version.id, backtest_id=backtest_id)
+    else:
+        backtest = await get_backtest(
+            session=session,
+            strategy_version_id=version.id,
+            backtest_id=backtest_id,
+        )
     if backtest is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -571,8 +615,10 @@ async def execute_backtest_request(
         try:
             if settings.backtest_execution_mode == "worker":
                 return backtest
+            if catalyst_repository is not None:
+                return await execute_catalyst_backtest(catalyst_repository, backtest.id)
             return await execute_backtest(session, backtest.id)
-        except BacktestExecutionConflict as exc:
+        except (BacktestExecutionConflict, CatalystBacktestConflict) as exc:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=str(exc),
@@ -587,20 +633,27 @@ async def get_backtest_analytics(
     strategy_id: uuid.UUID,
     version_id: uuid.UUID,
     backtest_id: uuid.UUID,
+    request: Request,
     current_user: Annotated[User, Depends(require_creator)],
     session: Annotated[AsyncSession, Depends(get_session)],
 ):
     version = await _get_owned_strategy_version(
+        request=request,
         session=session,
         strategy_id=strategy_id,
         version_id=version_id,
         creator_id=current_user.id,
     )
-    backtest = await get_backtest(
-        session=session,
-        strategy_version_id=version.id,
-        backtest_id=backtest_id,
-    )
+    if _uses_catalyst_strategies():
+        backtest = await CatalystBacktestRepository(
+            CatalystPersistenceClient(request=request)
+        ).get(strategy_version_id=version.id, backtest_id=backtest_id)
+    else:
+        backtest = await get_backtest(
+            session=session,
+            strategy_version_id=version.id,
+            backtest_id=backtest_id,
+        )
     if backtest is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

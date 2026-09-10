@@ -5,10 +5,13 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import update
 
 from app.core.config import get_settings
+from app.core.config import AppEnvironment
 from app.core.observability import log_event
 from app.db.session import AsyncSessionLocal
 from app.models.backtest import Backtest, BacktestStatus
 from app.services.backtest import BacktestExecutionConflict, execute_backtest
+from app.persistence.catalyst import CatalystBacktestRepository, CatalystPersistenceClient
+from app.services.catalyst_backtest import process_oldest_catalyst_backtest
 
 
 logger = logging.getLogger(__name__)
@@ -53,8 +56,23 @@ async def _oldest_queued_backtest_id():
 
 async def run_backtest_worker(stop_event: asyncio.Event) -> None:
     settings = get_settings()
+    catalyst_repository = (
+        CatalystBacktestRepository(CatalystPersistenceClient())
+        if settings.app_env is AppEnvironment.DEVELOPMENT
+        else None
+    )
     while not stop_event.is_set():
         try:
+            if catalyst_repository is not None:
+                processed = await process_oldest_catalyst_backtest(catalyst_repository)
+                if processed is None:
+                    try:
+                        await asyncio.wait_for(
+                            stop_event.wait(), timeout=settings.backtest_worker_poll_seconds
+                        )
+                    except asyncio.TimeoutError:
+                        pass
+                continue
             recovered = await _recover_stale_backtests()
             if recovered:
                 log_event("backtest_stale_jobs_requeued", count=recovered)

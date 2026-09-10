@@ -33,6 +33,7 @@ from app.backtesting.worker import run_backtest_worker
 from app.db.session import dispose_engine
 from app.persistence.catalyst import (
     CatalystAuthSessionRepository,
+    CatalystBacktestRepository,
     CatalystIdentityRepository,
     CatalystInstrumentRepository,
     CatalystPersistenceClient,
@@ -41,12 +42,17 @@ from app.persistence.catalyst import (
 )
 from app.persistence.auth_session import SessionTokenRejected
 from app.models.instrument import InstrumentType
+from app.models.backtest import BacktestStatus
 from app.models.strategy import StrategyStatus
 from app.persistence.strategy import (
     DuplicateStrategySlug,
     ExchangeSnapshotRecord,
     InstrumentSnapshotRecord,
 )
+from app.schemas.backtest import BacktestCreateRequest
+from app.services.analytics import build_backtest_analytics
+from app.services.catalyst_backtest import execute_catalyst_backtest
+from app.instrument_identity import SYNTHETIC_EQUITY_ID, SYNTHETIC_EQUITY_SYMBOL
 
 
 REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$")
@@ -645,6 +651,88 @@ def create_app() -> FastAPI:
                 result["filters"] = "PASS"
         except (CatalystPersistenceError, ValueError):
             pass
+        return result
+
+    @application.post("/health/catalyst/backtests", include_in_schema=False)
+    async def health_catalyst_backtests(request: Request):
+        if not _catalyst_probe_crud_allowed(settings):
+            return JSONResponse(status_code=404, content={"status": "not_found"})
+        client = CatalystPersistenceClient(request=request)
+        strategies = CatalystStrategyRepository(client)
+        instruments = CatalystInstrumentRepository(client)
+        backtests = CatalystBacktestRepository(client)
+        creator_id = uuid.uuid4()
+        marker = secrets.token_hex(12)
+        strategy_id: uuid.UUID | None = None
+        backtest_id: uuid.UUID | None = None
+        result = {
+            "queue": "FAIL",
+            "claim": "FAIL",
+            "execute": "FAIL",
+            "terminal_read": "FAIL",
+            "analytics": "FAIL",
+            "probe_cleanup": "FAIL",
+        }
+        try:
+            instrument = await instruments.get_instrument(SYNTHETIC_EQUITY_ID)
+            if instrument is None:
+                return result
+            strategy = await strategies.create_strategy(
+                creator_id=creator_id,
+                name="Backtest Connectivity Strategy",
+                slug=f"backtest-probe-{marker}",
+                description="Generated Development backtest probe",
+            )
+            strategy_id = strategy.id
+            version = await strategies.create_version(
+                strategy_id=strategy.id,
+                creator_id=creator_id,
+                instrument=instrument,
+                configuration={
+                    "instrument": SYNTHETIC_EQUITY_SYMBOL,
+                    "entry": {"type": "ema_crossover", "fast_period": 5, "slow_period": 20},
+                },
+                backtest_configuration={"initial_capital": "100000", "timeframe": "1d"},
+            )
+            queued = await backtests.create(
+                version=version,
+                requested_by_user_id=creator_id,
+                data=BacktestCreateRequest(),
+            )
+            backtest_id = queued.id
+            if queued.status is BacktestStatus.QUEUED:
+                result["queue"] = "PASS"
+            completed = await execute_catalyst_backtest(backtests, queued.id)
+            if completed.attempt_count == 1:
+                result["claim"] = "PASS"
+            if completed.status is BacktestStatus.COMPLETED:
+                result["execute"] = "PASS"
+            selected = await backtests.get(
+                strategy_version_id=version.id, backtest_id=queued.id
+            )
+            if selected is not None and selected.status is BacktestStatus.COMPLETED:
+                result["terminal_read"] = "PASS"
+                analytics = build_backtest_analytics(selected)
+                if analytics["backtest_id"] == queued.id:
+                    result["analytics"] = "PASS"
+        except (CatalystPersistenceError, ValueError):
+            pass
+        finally:
+            cleanup_ok = True
+            if backtest_id is not None:
+                try:
+                    await backtests.cleanup(backtest_id)
+                except (CatalystPersistenceError, ValueError):
+                    cleanup_ok = False
+            if strategy_id is not None:
+                try:
+                    await strategies.cleanup_probe_strategy(
+                        strategy_id=strategy_id, creator_id=creator_id
+                    )
+                except (CatalystPersistenceError, ValueError):
+                    cleanup_ok = False
+            if cleanup_ok and strategy_id is not None and backtest_id is not None:
+                result["probe_cleanup"] = "PASS"
         return result
 
     return application
