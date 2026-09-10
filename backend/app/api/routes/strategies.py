@@ -1,15 +1,22 @@
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.abuse import RateLimitRule, abuse_controller
-from app.core.config import get_settings
+from app.core.config import AppEnvironment, get_settings
 from app.core.dependencies import require_creator
 from app.db.session import get_session
-from app.models.strategy import Strategy
+from app.models.strategy import Strategy, StrategyStatus
 from app.models.user import User
+from app.instrument_identity import SYNTHETIC_EQUITY_ID, SYNTHETIC_EQUITY_SYMBOLS
+from app.persistence.catalyst import CatalystPersistenceClient, CatalystStrategyRepository
+from app.persistence.strategy import (
+    DuplicateStrategySlug,
+    ExchangeSnapshotRecord,
+    InstrumentSnapshotRecord,
+)
 from app.schemas.backtest import (
     BacktestAnalyticsResponse,
     BacktestCreateRequest,
@@ -49,12 +56,77 @@ from app.services.backtest import (
     get_backtest,
     get_backtests_for_strategy_version,
 )
+from app.services.instrument import get_instrument
 
 
 router = APIRouter(
     prefix="/strategies",
     tags=["Strategies"],
 )
+
+
+def _uses_catalyst_strategies() -> bool:
+    return get_settings().app_env is AppEnvironment.DEVELOPMENT
+
+
+def _catalyst_repository(request: Request) -> CatalystStrategyRepository:
+    return CatalystStrategyRepository(CatalystPersistenceClient(request=request))
+
+
+async def _validated_instrument_snapshot(
+    session: AsyncSession, data: StrategyVersionCreateRequest
+) -> InstrumentSnapshotRecord:
+    instrument = await get_instrument(session, data.instrument_id)
+    if instrument is None:
+        raise StrategyVersionValidationError("Instrument not found")
+    if not instrument.is_active:
+        raise StrategyVersionValidationError("Instrument is inactive")
+    if not instrument.exchange.is_active:
+        raise StrategyVersionValidationError("Instrument Exchange is inactive")
+    legacy_identity = data.configuration.get("instrument")
+    if legacy_identity is not None:
+        matching_symbols = {
+            instrument.canonical_symbol.casefold(),
+            instrument.exchange_symbol.casefold(),
+        }
+        if instrument.id == SYNTHETIC_EQUITY_ID:
+            matching_symbols.update(
+                symbol.casefold() for symbol in SYNTHETIC_EQUITY_SYMBOLS
+            )
+        if (
+            not isinstance(legacy_identity, str)
+            or legacy_identity.casefold() not in matching_symbols
+        ):
+            raise StrategyVersionValidationError(
+                "configuration.instrument conflicts with instrument_id"
+            )
+    exchange = instrument.exchange
+    return InstrumentSnapshotRecord(
+        id=instrument.id,
+        exchange=ExchangeSnapshotRecord(
+            id=exchange.id,
+            code=exchange.code,
+            name=exchange.name,
+            country_code=exchange.country_code,
+            timezone=exchange.timezone,
+            default_currency=exchange.default_currency,
+            calendar_code=exchange.calendar_code,
+            is_active=exchange.is_active,
+        ),
+        canonical_symbol=instrument.canonical_symbol,
+        exchange_symbol=instrument.exchange_symbol,
+        name=instrument.name,
+        instrument_type=instrument.instrument_type,
+        quote_currency=instrument.quote_currency,
+        tick_size=instrument.tick_size,
+        lot_size=instrument.lot_size,
+        is_tradeable=instrument.is_tradeable,
+        isin=instrument.isin,
+        is_synthetic=instrument.is_synthetic,
+        is_active=instrument.is_active,
+        created_at=instrument.created_at,
+        updated_at=instrument.updated_at,
+    )
 
 
 @router.post(
@@ -64,6 +136,7 @@ router = APIRouter(
 )
 async def create(
     data: StrategyCreateRequest,
+    request: Request,
     current_user: Annotated[
         User,
         Depends(require_creator),
@@ -74,13 +147,20 @@ async def create(
     ],
 ):
     try:
-        strategy = await create_strategy(
-            session=session,
-            creator_id=current_user.id,
-            data=data,
-        )
-
-        await session.commit()
+        if _uses_catalyst_strategies():
+            strategy = await _catalyst_repository(request).create_strategy(
+                creator_id=current_user.id,
+                name=data.name,
+                slug=data.slug,
+                description=data.description,
+            )
+        else:
+            strategy = await create_strategy(
+                session=session,
+                creator_id=current_user.id,
+                data=data,
+            )
+            await session.commit()
 
     except ValueError as exc:
         raise HTTPException(
@@ -96,6 +176,7 @@ async def create(
     response_model=list[StrategyResponse],
 )
 async def list_my_strategies(
+    request: Request,
     current_user: Annotated[
         User,
         Depends(require_creator),
@@ -105,6 +186,8 @@ async def list_my_strategies(
         Depends(get_session),
     ],
 ):
+    if _uses_catalyst_strategies():
+        return await _catalyst_repository(request).list_strategies(current_user.id)
     return await get_strategies_for_creator(
         session=session,
         creator_id=current_user.id,
@@ -119,9 +202,40 @@ async def list_my_strategies(
 async def create_version(
     strategy_id: uuid.UUID,
     data: StrategyVersionCreateRequest,
+    request: Request,
     current_user: Annotated[User, Depends(require_creator)],
     session: Annotated[AsyncSession, Depends(get_session)],
 ):
+    if _uses_catalyst_strategies():
+        repository = _catalyst_repository(request)
+        strategy = await repository.get_strategy(
+            strategy_id=strategy_id, creator_id=current_user.id
+        )
+        if strategy is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Strategy not found",
+            )
+        try:
+            instrument = await _validated_instrument_snapshot(session, data)
+            return await repository.create_version(
+                strategy_id=strategy_id,
+                creator_id=current_user.id,
+                instrument=instrument,
+                configuration=data.configuration,
+                backtest_configuration=data.backtest_configuration,
+            )
+        except StrategyVersionValidationError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=str(exc),
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=str(exc),
+            )
+
     strategy = await get_strategy(
         session=session,
         strategy_id=strategy_id,
@@ -161,9 +275,24 @@ async def create_version(
 )
 async def list_versions(
     strategy_id: uuid.UUID,
+    request: Request,
     current_user: Annotated[User, Depends(require_creator)],
     session: Annotated[AsyncSession, Depends(get_session)],
 ):
+    if _uses_catalyst_strategies():
+        repository = _catalyst_repository(request)
+        strategy = await repository.get_strategy(
+            strategy_id=strategy_id, creator_id=current_user.id
+        )
+        if strategy is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Strategy not found",
+            )
+        return await repository.list_versions(
+            strategy_id=strategy_id, creator_id=current_user.id
+        )
+
     strategy = await get_strategy(
         session=session,
         strategy_id=strategy_id,
@@ -186,9 +315,32 @@ async def list_versions(
 async def get_version(
     strategy_id: uuid.UUID,
     version_id: uuid.UUID,
+    request: Request,
     current_user: Annotated[User, Depends(require_creator)],
     session: Annotated[AsyncSession, Depends(get_session)],
 ):
+    if _uses_catalyst_strategies():
+        repository = _catalyst_repository(request)
+        strategy = await repository.get_strategy(
+            strategy_id=strategy_id, creator_id=current_user.id
+        )
+        if strategy is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Strategy not found",
+            )
+        version = await repository.get_version(
+            strategy_id=strategy_id,
+            version_id=version_id,
+            creator_id=current_user.id,
+        )
+        if version is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Strategy version not found",
+            )
+        return version
+
     strategy = await get_strategy(
         session=session,
         strategy_id=strategy_id,
@@ -461,9 +613,27 @@ async def get_backtest_analytics(
 )
 async def publish(
     strategy_id: uuid.UUID,
+    request: Request,
     current_user: Annotated[User, Depends(require_creator)],
     session: Annotated[AsyncSession, Depends(get_session)],
 ):
+    if _uses_catalyst_strategies():
+        try:
+            strategy = await _catalyst_repository(request).transition_strategy(
+                strategy_id=strategy_id,
+                creator_id=current_user.id,
+                target=StrategyStatus.PUBLISHED,
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT, detail=str(exc)
+            )
+        if strategy is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Strategy not found"
+            )
+        return strategy
+
     strategy = await get_strategy(
         session=session,
         strategy_id=strategy_id,
@@ -494,9 +664,27 @@ async def publish(
 )
 async def deploy(
     strategy_id: uuid.UUID,
+    request: Request,
     current_user: Annotated[User, Depends(require_creator)],
     session: Annotated[AsyncSession, Depends(get_session)],
 ):
+    if _uses_catalyst_strategies():
+        try:
+            strategy = await _catalyst_repository(request).transition_strategy(
+                strategy_id=strategy_id,
+                creator_id=current_user.id,
+                target=StrategyStatus.DEPLOYED,
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT, detail=str(exc)
+            )
+        if strategy is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Strategy not found"
+            )
+        return strategy
+
     strategy = await get_strategy(
         session=session,
         strategy_id=strategy_id,
@@ -527,9 +715,27 @@ async def deploy(
 )
 async def archive(
     strategy_id: uuid.UUID,
+    request: Request,
     current_user: Annotated[User, Depends(require_creator)],
     session: Annotated[AsyncSession, Depends(get_session)],
 ):
+    if _uses_catalyst_strategies():
+        try:
+            strategy = await _catalyst_repository(request).transition_strategy(
+                strategy_id=strategy_id,
+                creator_id=current_user.id,
+                target=StrategyStatus.ARCHIVED,
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT, detail=str(exc)
+            )
+        if strategy is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Strategy not found"
+            )
+        return strategy
+
     strategy = await get_strategy(
         session=session,
         strategy_id=strategy_id,
@@ -560,6 +766,7 @@ async def archive(
 )
 async def get_my_strategy(
     strategy_id: uuid.UUID,
+    request: Request,
     current_user: Annotated[
         User,
         Depends(require_creator),
@@ -569,6 +776,16 @@ async def get_my_strategy(
         Depends(get_session),
     ],
 ):
+    if _uses_catalyst_strategies():
+        strategy = await _catalyst_repository(request).get_strategy(
+            strategy_id=strategy_id, creator_id=current_user.id
+        )
+        if strategy is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Strategy not found"
+            )
+        return strategy
+
     strategy = await get_strategy(
         session=session,
         strategy_id=strategy_id,
@@ -591,6 +808,7 @@ async def get_my_strategy(
 async def update_my_strategy(
     strategy_id: uuid.UUID,
     data: StrategyUpdateRequest,
+    request: Request,
     current_user: Annotated[
         User,
         Depends(require_creator),
@@ -600,6 +818,23 @@ async def update_my_strategy(
         Depends(get_session),
     ],
 ):
+    if _uses_catalyst_strategies():
+        try:
+            strategy = await _catalyst_repository(request).update_strategy(
+                strategy_id=strategy_id,
+                creator_id=current_user.id,
+                updates=data.model_dump(exclude_unset=True),
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT, detail=str(exc)
+            )
+        if strategy is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Strategy not found"
+            )
+        return strategy
+
     strategy = await get_strategy(
         session=session,
         strategy_id=strategy_id,
@@ -636,6 +871,7 @@ async def update_my_strategy(
 )
 async def delete_my_strategy(
     strategy_id: uuid.UUID,
+    request: Request,
     current_user: Annotated[
         User,
         Depends(require_creator),
@@ -645,6 +881,21 @@ async def delete_my_strategy(
         Depends(get_session),
     ],
 ):
+    if _uses_catalyst_strategies():
+        try:
+            deleted = await _catalyst_repository(request).delete_strategy(
+                strategy_id=strategy_id, creator_id=current_user.id
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT, detail=str(exc)
+            )
+        if not deleted:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Strategy not found"
+            )
+        return None
+
     strategy = await get_strategy(
         session=session,
         strategy_id=strategy_id,
