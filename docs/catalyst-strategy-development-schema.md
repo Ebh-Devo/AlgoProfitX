@@ -27,6 +27,35 @@ lookup key used by ZCQL, so user-provided slug text is never interpolated into a
 query. Native uniqueness on both identifiers is required for race-safe create
 and slug update behavior.
 
-The initial repository slice supports owned draft CRUD only. Lifecycle,
-versions, history protection, and their atomic command tables are added before
-the public Development strategy routes switch to Catalyst.
+## `AlgoProfitXStrategyVersions`
+
+| Column | Type | Max length | Mandatory | Unique |
+| --- | --- | ---: | --- | --- |
+| `version_uuid` | Var Char | 36 | Yes | Yes |
+| `strategy_uuid` | Var Char | 36 | Yes | No |
+| `version_key` | Var Char | 64 | Yes | Yes |
+| `instrument_uuid` | Var Char | 36 | Yes | No |
+| `version_number` | BigInt | n/a | Yes | No |
+| `configuration` | Text | 10000 | Yes | No |
+| `backtest_configuration` | Text | 10000 | Yes | No |
+| `instrument_snapshot` | Text | 10000 | Yes | No |
+| `created_at` | Var Char | 40 | Yes | No |
+
+Version records are immutable. `version_key` is SHA-256 of the strategy UUID
+and server-allocated version number. Its native uniqueness is the final guard
+against concurrent allocation. The instrument snapshot contains only the safe
+public instrument and exchange fields returned by the API; provider mappings
+and credentials are never stored in it.
+
+## `AlgoProfitXStrategyLocks`
+
+| Column | Type | Max length | Mandatory | Unique |
+| --- | --- | ---: | --- | --- |
+| `strategy_uuid` | Var Char | 36 | Yes | Yes |
+| `owner_token` | Var Char | 64 | Yes | Yes |
+| `acquired_at` | Var Char | 40 | Yes | No |
+
+The lock row serializes version allocation and lifecycle transitions. A unique
+strategy UUID permits one owner, the opaque token protects release ownership,
+and a bounded stale-lock recovery path prevents a terminated request from
+blocking the aggregate permanently.

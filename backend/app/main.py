@@ -8,6 +8,7 @@ import secrets
 import time
 import uuid
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
@@ -38,7 +39,13 @@ from app.persistence.catalyst import (
     CatalystStrategyRepository,
 )
 from app.persistence.auth_session import SessionTokenRejected
-from app.persistence.strategy import DuplicateStrategySlug
+from app.models.instrument import InstrumentType
+from app.models.strategy import StrategyStatus
+from app.persistence.strategy import (
+    DuplicateStrategySlug,
+    ExchangeSnapshotRecord,
+    InstrumentSnapshotRecord,
+)
 
 
 REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$")
@@ -450,7 +457,12 @@ def create_app() -> FastAPI:
             "list": "FAIL",
             "update": "FAIL",
             "duplicate_slug": "FAIL",
-            "delete": "FAIL",
+            "version_create": "FAIL",
+            "version_read": "FAIL",
+            "version_list": "FAIL",
+            "publish": "FAIL",
+            "deploy": "FAIL",
+            "archive": "FAIL",
             "probe_cleanup": "FAIL",
         }
         strategy_id: uuid.UUID | None = None
@@ -496,25 +508,84 @@ def create_app() -> FastAPI:
             except DuplicateStrategySlug:
                 result["duplicate_slug"] = "PASS"
 
-            if await repository.delete_strategy(
+            now = datetime.now(timezone.utc)
+            instrument = InstrumentSnapshotRecord(
+                id=uuid.uuid4(),
+                exchange=ExchangeSnapshotRecord(
+                    id=uuid.uuid4(),
+                    code="PROBE",
+                    name="Development Probe Exchange",
+                    country_code="IN",
+                    timezone="Asia/Kolkata",
+                    default_currency="INR",
+                    calendar_code="PROBE",
+                    is_active=True,
+                ),
+                canonical_symbol="PROBE_EQ",
+                exchange_symbol="PROBE_EQ",
+                name="Development Probe Equity",
+                instrument_type=InstrumentType.EQUITY,
+                quote_currency="INR",
+                tick_size=Decimal("0.05"),
+                lot_size=1,
+                is_tradeable=True,
+                isin=None,
+                is_synthetic=True,
+                is_active=True,
+                created_at=now,
+                updated_at=now,
+            )
+            version = await repository.create_version(
                 strategy_id=strategy_id,
                 creator_id=creator_id,
-            ):
-                result["delete"] = "PASS"
+                instrument=instrument,
+                configuration={"probe": True},
+                backtest_configuration={},
+            )
+            result["version_create"] = "PASS"
+            selected_version = await repository.get_version(
+                strategy_id=strategy_id,
+                version_id=version.id,
+                creator_id=creator_id,
+            )
+            if selected_version is not None and selected_version.id == version.id:
+                result["version_read"] = "PASS"
+            versions = await repository.list_versions(
+                strategy_id=strategy_id, creator_id=creator_id
+            )
+            if [item.id for item in versions] == [version.id]:
+                result["version_list"] = "PASS"
+
+            published = await repository.transition_strategy(
+                strategy_id=strategy_id,
+                creator_id=creator_id,
+                target=StrategyStatus.PUBLISHED,
+            )
+            if published is not None and published.current_version_id == version.id:
+                result["publish"] = "PASS"
+            deployed = await repository.transition_strategy(
+                strategy_id=strategy_id,
+                creator_id=creator_id,
+                target=StrategyStatus.DEPLOYED,
+            )
+            if deployed is not None and deployed.deployed_at is not None:
+                result["deploy"] = "PASS"
+            archived = await repository.transition_strategy(
+                strategy_id=strategy_id,
+                creator_id=creator_id,
+                target=StrategyStatus.ARCHIVED,
+            )
+            if archived is not None and not archived.is_public:
+                result["archive"] = "PASS"
         except (CatalystPersistenceError, DuplicateStrategySlug, ValueError):
             pass
         finally:
             if strategy_id is not None:
                 try:
-                    remaining = await repository.get_strategy(
+                    await repository.cleanup_probe_strategy(
                         strategy_id=strategy_id,
                         creator_id=creator_id,
                     )
-                    if remaining is not None:
-                        await repository.delete_strategy(
-                            strategy_id=strategy_id,
-                            creator_id=creator_id,
-                        )
                     verified = await repository.get_strategy(
                         strategy_id=strategy_id,
                         creator_id=creator_id,

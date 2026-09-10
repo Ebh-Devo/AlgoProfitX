@@ -3,8 +3,10 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Protocol
+from decimal import Decimal
+from typing import Any, Protocol
 
+from app.models.instrument import InstrumentType
 from app.models.strategy import StrategyStatus
 
 
@@ -22,6 +24,49 @@ class StrategyRecord:
     updated_at: datetime
     published_at: datetime | None
     deployed_at: datetime | None
+
+
+@dataclass(frozen=True, slots=True)
+class ExchangeSnapshotRecord:
+    id: uuid.UUID
+    code: str
+    name: str
+    country_code: str
+    timezone: str
+    default_currency: str
+    calendar_code: str
+    is_active: bool
+
+
+@dataclass(frozen=True, slots=True)
+class InstrumentSnapshotRecord:
+    id: uuid.UUID
+    exchange: ExchangeSnapshotRecord
+    canonical_symbol: str
+    exchange_symbol: str
+    name: str
+    instrument_type: InstrumentType
+    quote_currency: str
+    tick_size: Decimal | None
+    lot_size: int | None
+    is_tradeable: bool
+    isin: str | None
+    is_synthetic: bool
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class StrategyVersionRecord:
+    id: uuid.UUID
+    strategy_id: uuid.UUID
+    instrument_id: uuid.UUID | None
+    instrument: InstrumentSnapshotRecord | None
+    version_number: int
+    configuration: dict[str, Any]
+    backtest_configuration: dict[str, Any]
+    created_at: datetime
 
 
 class DuplicateStrategySlug(ValueError):
@@ -50,3 +95,25 @@ class StrategyRepository(Protocol):
     async def delete_strategy(
         self, *, strategy_id: uuid.UUID, creator_id: uuid.UUID
     ) -> bool: ...
+
+    async def create_version(
+        self,
+        *,
+        strategy_id: uuid.UUID,
+        creator_id: uuid.UUID,
+        instrument: InstrumentSnapshotRecord,
+        configuration: dict[str, Any],
+        backtest_configuration: dict[str, Any],
+    ) -> StrategyVersionRecord: ...
+
+    async def list_versions(
+        self, *, strategy_id: uuid.UUID, creator_id: uuid.UUID
+    ) -> list[StrategyVersionRecord]: ...
+
+    async def get_version(
+        self,
+        *,
+        strategy_id: uuid.UUID,
+        version_id: uuid.UUID,
+        creator_id: uuid.UUID,
+    ) -> StrategyVersionRecord | None: ...

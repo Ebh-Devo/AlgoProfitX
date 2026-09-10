@@ -1,17 +1,21 @@
 import hashlib
 import uuid
+from datetime import datetime, timezone
+from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
 
 from app.models.strategy import StrategyStatus
+from app.models.instrument import InstrumentType
 from app.persistence.catalyst.client import CatalystPersistenceError
 from app.persistence.catalyst.strategy import (
     STRATEGIES_TABLE,
     CatalystStrategyRepository,
 )
 from app.persistence.strategy import DuplicateStrategySlug
+from app.persistence.strategy import ExchangeSnapshotRecord, InstrumentSnapshotRecord
 
 
 STRATEGY_ID = uuid.UUID("11111111-1111-4111-8111-111111111111")
@@ -46,6 +50,61 @@ def client() -> SimpleNamespace:
         async_update_row=AsyncMock(),
         async_delete_row=AsyncMock(),
     )
+
+
+def instrument() -> InstrumentSnapshotRecord:
+    moment = datetime(2026, 9, 9, 6, 30, tzinfo=timezone.utc)
+    return InstrumentSnapshotRecord(
+        id=uuid.UUID("44444444-4444-4444-8444-444444444444"),
+        exchange=ExchangeSnapshotRecord(
+            id=uuid.UUID("55555555-5555-4555-8555-555555555555"),
+            code="NSE",
+            name="National Stock Exchange",
+            country_code="IN",
+            timezone="Asia/Kolkata",
+            default_currency="INR",
+            calendar_code="XNSE",
+            is_active=True,
+        ),
+        canonical_symbol="TEST",
+        exchange_symbol="TEST",
+        name="Test Equity",
+        instrument_type=InstrumentType.EQUITY,
+        quote_currency="INR",
+        tick_size=Decimal("0.05"),
+        lot_size=1,
+        is_tradeable=True,
+        isin=None,
+        is_synthetic=True,
+        is_active=True,
+        created_at=moment,
+        updated_at=moment,
+    )
+
+
+def version_row(**overrides: object) -> dict[str, object]:
+    selected = instrument()
+    number = int(overrides.get("version_number", 1))
+    row: dict[str, object] = {
+        "ROWID": "version-row-1",
+        "version_uuid": "66666666-6666-4666-8666-666666666666",
+        "strategy_uuid": str(STRATEGY_ID),
+        "version_key": hashlib.sha256(
+            f"{STRATEGY_ID}:{number}".encode("ascii")
+        ).hexdigest(),
+        "instrument_uuid": str(selected.id),
+        "version_number": number,
+        "configuration": "{\"lookback\":20}",
+        "backtest_configuration": "{}",
+        "instrument_snapshot": __import__("json").dumps(
+            CatalystStrategyRepository._instrument_payload(selected),
+            sort_keys=True,
+            separators=(",", ":"),
+        ),
+        "created_at": "2026-09-09T06:30:00+00:00",
+    }
+    row.update(overrides)
+    return row
 
 
 @pytest.mark.asyncio
@@ -170,6 +229,7 @@ async def test_delete_allows_owned_draft_and_rejects_historical_state():
     persistence = client()
     persistence.async_query_rows.side_effect = [
         [strategy_row()],
+        [],
         [strategy_row(status="published", is_public=True)],
     ]
     repository = CatalystStrategyRepository(persistence)
@@ -185,3 +245,118 @@ async def test_delete_allows_owned_draft_and_rejects_historical_state():
         await repository.delete_strategy(
             strategy_id=STRATEGY_ID, creator_id=CREATOR_ID
         )
+
+
+@pytest.mark.asyncio
+async def test_create_version_allocates_number_under_native_lock_and_round_trips_snapshot():
+    persistence = client()
+    lock_row = {
+        "ROWID": "lock-row-1",
+        "strategy_uuid": str(STRATEGY_ID),
+        "owner_token": "pending",
+        "acquired_at": "2026-09-09T06:30:00+00:00",
+    }
+    persistence.async_query_rows.side_effect = [
+        [strategy_row()],
+        [strategy_row()],
+        [],
+        [lock_row],
+    ]
+    persistence.async_insert_row.side_effect = [
+        {"ROWID": "lock-row-1"},
+        {"ROWID": "version-row-1"},
+    ]
+    repository = CatalystStrategyRepository(persistence)
+
+    # Keep the generated owner token observable to the mocked release lookup.
+    async def insert(table, payload):
+        if table.endswith("Locks"):
+            lock_row["owner_token"] = payload["owner_token"]
+            return {"ROWID": "lock-row-1"}
+        return {"ROWID": "version-row-1"}
+
+    persistence.async_insert_row.side_effect = insert
+    created = await repository.create_version(
+        strategy_id=STRATEGY_ID,
+        creator_id=CREATOR_ID,
+        instrument=instrument(),
+        configuration={"lookback": 20},
+        backtest_configuration={},
+    )
+
+    assert created.version_number == 1
+    assert created.instrument is not None
+    assert created.instrument.exchange.code == "NSE"
+    version_call = persistence.async_insert_row.await_args_list[1]
+    assert version_call.args[0] == "AlgoProfitXStrategyVersions"
+    assert "vendor" not in version_call.args[1]["instrument_snapshot"]
+    persistence.async_delete_row.assert_awaited_once_with(
+        "AlgoProfitXStrategyLocks", "lock-row-1"
+    )
+
+
+@pytest.mark.asyncio
+async def test_publish_uses_latest_version_and_serialized_state_update():
+    persistence = client()
+    lock_row = {
+        "ROWID": "lock-row-1",
+        "strategy_uuid": str(STRATEGY_ID),
+        "owner_token": "pending",
+        "acquired_at": "2026-09-09T06:30:00+00:00",
+    }
+
+    async def insert(table, payload):
+        if table.endswith("Locks"):
+            lock_row["owner_token"] = payload["owner_token"]
+        return {"ROWID": "lock-row-1"}
+
+    persistence.async_insert_row.side_effect = insert
+    persistence.async_query_rows.side_effect = [
+        [strategy_row()],
+        [version_row(version_number=1), version_row(
+            ROWID="version-row-2",
+            version_uuid="77777777-7777-4777-8777-777777777777",
+            version_number=2,
+            version_key=hashlib.sha256(f"{STRATEGY_ID}:2".encode("ascii")).hexdigest(),
+        )],
+        [lock_row],
+    ]
+    repository = CatalystStrategyRepository(persistence)
+
+    published = await repository.transition_strategy(
+        strategy_id=STRATEGY_ID,
+        creator_id=CREATOR_ID,
+        target=StrategyStatus.PUBLISHED,
+    )
+
+    assert published is not None
+    assert published.status is StrategyStatus.PUBLISHED
+    assert published.current_version_id == uuid.UUID(
+        "77777777-7777-4777-8777-777777777777"
+    )
+    payload = persistence.async_update_row.await_args.args[1]
+    assert payload["is_public"] is True
+
+
+@pytest.mark.asyncio
+async def test_fresh_native_lock_rejects_a_concurrent_lifecycle_command():
+    persistence = client()
+    persistence.async_insert_row.side_effect = CatalystPersistenceError(
+        "Catalyst row insert failed"
+    )
+    persistence.async_query_rows.return_value = [{
+        "ROWID": "lock-row-1",
+        "strategy_uuid": str(STRATEGY_ID),
+        "owner_token": "a" * 64,
+        "acquired_at": datetime.now(timezone.utc).isoformat(),
+    }]
+    repository = CatalystStrategyRepository(persistence)
+
+    with pytest.raises(ValueError, match="being updated"):
+        await repository.transition_strategy(
+            strategy_id=STRATEGY_ID,
+            creator_id=CREATOR_ID,
+            target=StrategyStatus.PUBLISHED,
+        )
+
+    persistence.async_update_row.assert_not_awaited()
