@@ -11,7 +11,11 @@ from app.db.session import get_session
 from app.models.strategy import Strategy, StrategyStatus
 from app.models.user import User
 from app.instrument_identity import SYNTHETIC_EQUITY_ID, SYNTHETIC_EQUITY_SYMBOLS
-from app.persistence.catalyst import CatalystPersistenceClient, CatalystStrategyRepository
+from app.persistence.catalyst import (
+    CatalystInstrumentRepository,
+    CatalystPersistenceClient,
+    CatalystStrategyRepository,
+)
 from app.persistence.strategy import (
     DuplicateStrategySlug,
     ExchangeSnapshotRecord,
@@ -74,9 +78,14 @@ def _catalyst_repository(request: Request) -> CatalystStrategyRepository:
 
 
 async def _validated_instrument_snapshot(
-    session: AsyncSession, data: StrategyVersionCreateRequest
+    request: Request, session: AsyncSession, data: StrategyVersionCreateRequest
 ) -> InstrumentSnapshotRecord:
-    instrument = await get_instrument(session, data.instrument_id)
+    if _uses_catalyst_strategies():
+        instrument = await CatalystInstrumentRepository(
+            CatalystPersistenceClient(request=request)
+        ).get_instrument(data.instrument_id)
+    else:
+        instrument = await get_instrument(session, data.instrument_id)
     if instrument is None:
         raise StrategyVersionValidationError("Instrument not found")
     if not instrument.is_active:
@@ -217,7 +226,7 @@ async def create_version(
                 detail="Strategy not found",
             )
         try:
-            instrument = await _validated_instrument_snapshot(session, data)
+            instrument = await _validated_instrument_snapshot(request, session, data)
             return await repository.create_version(
                 strategy_id=strategy_id,
                 creator_id=current_user.id,

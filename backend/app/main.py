@@ -34,6 +34,7 @@ from app.db.session import dispose_engine
 from app.persistence.catalyst import (
     CatalystAuthSessionRepository,
     CatalystIdentityRepository,
+    CatalystInstrumentRepository,
     CatalystPersistenceClient,
     CatalystPersistenceError,
     CatalystStrategyRepository,
@@ -594,6 +595,56 @@ def create_app() -> FastAPI:
                         result["probe_cleanup"] = "PASS"
                 except (CatalystPersistenceError, ValueError):
                     pass
+        return result
+
+    @application.post("/health/catalyst/instruments", include_in_schema=False)
+    async def health_catalyst_instruments(request: Request):
+        if not _catalyst_probe_crud_allowed(settings):
+            return JSONResponse(status_code=404, content={"status": "not_found"})
+        repository = CatalystInstrumentRepository(
+            CatalystPersistenceClient(request=request)
+        )
+        result = {
+            "bootstrap": "FAIL",
+            "detail": "FAIL",
+            "list": "FAIL",
+            "filters": "FAIL",
+        }
+        try:
+            exchanges, instruments = await repository.bootstrap_defaults()
+            if (exchanges, instruments) == (2, 3):
+                result["bootstrap"] = "PASS"
+            selected = await repository.get_instrument(
+                uuid.UUID("20000000-0000-4000-8000-000000000001")
+            )
+            if selected is not None and selected.exchange.code == "NSE":
+                result["detail"] = "PASS"
+            listed = await repository.list_instruments(
+                exchange_code=None,
+                instrument_type=None,
+                symbol=None,
+                search=None,
+                is_tradeable=None,
+                is_active=True,
+                limit=20,
+                offset=0,
+            )
+            if len(listed) == 3:
+                result["list"] = "PASS"
+            filtered = await repository.list_instruments(
+                exchange_code="nse",
+                instrument_type=InstrumentType.INDEX,
+                symbol=None,
+                search="bank",
+                is_tradeable=False,
+                is_active=True,
+                limit=20,
+                offset=0,
+            )
+            if len(filtered) == 1 and filtered[0].canonical_symbol == "NSE:BANK_NIFTY":
+                result["filters"] = "PASS"
+        except (CatalystPersistenceError, ValueError):
+            pass
         return result
 
     return application
