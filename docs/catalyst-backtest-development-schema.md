@@ -69,6 +69,8 @@ incomplete projection update after a process interruption.
 ## Durable execution
 
 `AlgoProfitXBacktests` is also the name of the Development AppSail Job Pool.
+The application pins the Development pool and AppSail target IDs so a renamed
+resource cannot silently redirect work.
 The execute endpoint submits an immediate job targeting
 `algoprofitx-api:/internal/backtests/process`. Catalyst owns job delivery and
 retries, while the claim and terminal tables make repeated delivery safe.

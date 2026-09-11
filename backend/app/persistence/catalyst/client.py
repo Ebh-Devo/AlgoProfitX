@@ -142,7 +142,11 @@ class CatalystPersistenceClient:
             raise
         except Exception as exc:
             raise CatalystPersistenceError("Catalyst job submission failed") from exc
-        if not isinstance(result, dict):
+        if (
+            not isinstance(result, dict)
+            or result.get("status") is not True
+            or not result.get("job_id")
+        ):
             raise CatalystPersistenceError("Catalyst job submission returned invalid data")
         return result
 

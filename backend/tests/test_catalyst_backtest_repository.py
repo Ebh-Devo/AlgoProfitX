@@ -29,7 +29,7 @@ class MemoryClient:
 
     async def async_submit_job(self, payload):
         self.jobs.append(payload)
-        return {"job_id": str(len(self.jobs))}
+        return {"status": True, "job_id": str(len(self.jobs))}
 
     async def async_insert_row(self, table, payload):
         unique = {
@@ -164,9 +164,9 @@ async def test_submit_job_targets_the_catalyst_appsail_worker_without_secrets():
 
     assert len(client.jobs) == 1
     job = client.jobs[0]
-    assert job["jobpool_name"] == "AlgoProfitXBacktests"
+    assert job["jobpool_id"] == "36851000000414985"
     assert job["target_type"] == "AppSail"
-    assert job["target_name"] == "algoprofitx-api"
+    assert job["target_id"] == "36851000000379407"
     assert job["url"] == "/internal/backtests/process"
     assert str(backtest_id) in job["request_body"]
     assert job["job_config"] == {"number_of_retries": 2, "retry_interval": 300}

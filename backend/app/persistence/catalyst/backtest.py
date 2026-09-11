@@ -19,6 +19,8 @@ BACKTESTS_TABLE = "AlgoProfitXBacktests"
 BACKTEST_CLAIMS_TABLE = "AlgoProfitXBacktestClaims"
 BACKTEST_TERMINALS_TABLE = "AlgoProfitXBacktestTerminals"
 BACKTEST_JOB_POOL = "AlgoProfitXBacktests"
+BACKTEST_JOB_POOL_ID = "36851000000414985"
+BACKTEST_APPSAIL_ID = "36851000000379407"
 BACKTEST_JOB_HEADER = "backtest-v1"
 MAX_ATTEMPTS = 3
 _SAFE_UUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
@@ -134,9 +136,9 @@ class CatalystBacktestRepository:
         await self._client.async_submit_job(
             {
                 "job_name": f"backtest_{backtest_id.hex}_{secrets.token_hex(4)}",
-                "jobpool_name": BACKTEST_JOB_POOL,
+                "jobpool_id": BACKTEST_JOB_POOL_ID,
                 "target_type": "AppSail",
-                "target_name": "algoprofitx-api",
+                "target_id": BACKTEST_APPSAIL_ID,
                 "request_method": "POST",
                 "url": "/internal/backtests/process",
                 "headers": {
