@@ -370,6 +370,56 @@ class CatalystStrategyRepository:
             reverse=True,
         )
 
+    async def list_marketplace(
+        self, *, limit: int, offset: int
+    ) -> list[tuple[StrategyRecord, int | None]]:
+        rows = await self._client.async_query_rows(
+            f"SELECT {_COLUMNS} FROM {STRATEGIES_TABLE}", STRATEGIES_TABLE
+        )
+        discoverable = [
+            self._record(row)
+            for row in rows
+            if str(row.get("status"))
+            in {StrategyStatus.PUBLISHED.value, StrategyStatus.DEPLOYED.value}
+            and _parse_bool(row.get("is_public"), "visibility")
+        ]
+        discoverable.sort(
+            key=lambda item: (
+                item.published_at or datetime.min.replace(tzinfo=timezone.utc),
+                str(item.id),
+            ),
+            reverse=True,
+        )
+        selected = discoverable[offset : offset + limit]
+        return [
+            (item, await self._current_version_number(item)) for item in selected
+        ]
+
+    async def get_marketplace_by_slug(
+        self, slug: str
+    ) -> tuple[StrategyRecord, int | None] | None:
+        if not _SAFE_SLUG.fullmatch(slug):
+            return None
+        item = await self._by_slug(slug)
+        if (
+            item is None
+            or not item.is_public
+            or item.status
+            not in {StrategyStatus.PUBLISHED, StrategyStatus.DEPLOYED}
+        ):
+            return None
+        return item, await self._current_version_number(item)
+
+    async def _current_version_number(self, item: StrategyRecord) -> int | None:
+        if item.current_version_id is None:
+            return None
+        row = await self._version_by_id(item.id, item.current_version_id)
+        if row is None:
+            raise CatalystPersistenceError(
+                "Catalyst marketplace strategy has no current version"
+            )
+        return self._version_record(row).version_number
+
     async def get_strategy(
         self, *, strategy_id: uuid.UUID, creator_id: uuid.UUID
     ) -> StrategyRecord | None:

@@ -360,3 +360,44 @@ async def test_fresh_native_lock_rejects_a_concurrent_lifecycle_command():
         )
 
     persistence.async_update_row.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_marketplace_filters_visibility_and_resolves_current_version():
+    persistence = client()
+    published = strategy_row(
+        status="published",
+        is_public=True,
+        current_version_uuid="66666666-6666-4666-8666-666666666666",
+        published_at="2026-09-09T07:00:00+00:00",
+    )
+    persistence.async_query_rows.side_effect = [
+        [published, strategy_row(ROWID="draft-row")],
+        [version_row()],
+        [published],
+        [version_row()],
+    ]
+    repository = CatalystStrategyRepository(persistence)
+
+    listed = await repository.list_marketplace(limit=20, offset=0)
+    selected = await repository.get_marketplace_by_slug("momentum-strategy")
+
+    assert [(item.slug, number) for item, number in listed] == [
+        ("momentum-strategy", 1)
+    ]
+    assert selected is not None
+    assert selected[0].status is StrategyStatus.PUBLISHED
+    assert selected[1] == 1
+
+
+@pytest.mark.asyncio
+async def test_marketplace_hides_archived_and_private_strategies():
+    persistence = client()
+    persistence.async_query_rows.side_effect = [
+        [],
+        [strategy_row(status="archived", is_public=False)],
+    ]
+    repository = CatalystStrategyRepository(persistence)
+
+    assert await repository.list_marketplace(limit=20, offset=0) == []
+    assert await repository.get_marketplace_by_slug("momentum-strategy") is None
