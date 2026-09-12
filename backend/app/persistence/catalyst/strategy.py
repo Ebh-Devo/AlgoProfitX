@@ -410,6 +410,57 @@ class CatalystStrategyRepository:
             return None
         return item, await self._current_version_number(item)
 
+    async def get_allocation_target(
+        self, strategy_id: uuid.UUID
+    ) -> tuple[StrategyRecord, StrategyVersionRecord] | None:
+        """Resolve the public deployed strategy and its pinned current version."""
+        strategy_literal = _literal(str(strategy_id), _SAFE_UUID, "strategy ID")
+        rows = await self._client.async_query_rows(
+            f"SELECT {_COLUMNS} FROM {STRATEGIES_TABLE} "
+            f"WHERE strategy_uuid = {strategy_literal} LIMIT 1",
+            STRATEGIES_TABLE,
+        )
+        if not rows:
+            return None
+        if len(rows) != 1:
+            raise CatalystPersistenceError("Catalyst returned duplicate strategies")
+        strategy = self._record(rows[0])
+        if (
+            strategy.status is not StrategyStatus.DEPLOYED
+            or not strategy.is_public
+            or strategy.current_version_id is None
+        ):
+            return None
+        version_row = await self._version_by_id(
+            strategy.id, strategy.current_version_id
+        )
+        if version_row is None:
+            raise CatalystPersistenceError(
+                "Catalyst allocation strategy has no current version"
+            )
+        return strategy, self._version_record(version_row)
+
+    async def get_execution_target(
+        self, strategy_id: uuid.UUID, version_id: uuid.UUID
+    ) -> tuple[StrategyRecord, StrategyVersionRecord] | None:
+        strategy_literal = _literal(str(strategy_id), _SAFE_UUID, "strategy ID")
+        rows = await self._client.async_query_rows(
+            f"SELECT {_COLUMNS} FROM {STRATEGIES_TABLE} "
+            f"WHERE strategy_uuid = {strategy_literal} LIMIT 1",
+            STRATEGIES_TABLE,
+        )
+        if not rows:
+            return None
+        if len(rows) != 1:
+            raise CatalystPersistenceError("Catalyst returned duplicate strategies")
+        strategy = self._record(rows[0])
+        if strategy.status is not StrategyStatus.DEPLOYED or not strategy.is_public:
+            return None
+        version_row = await self._version_by_id(strategy.id, version_id)
+        if version_row is None:
+            return None
+        return strategy, self._version_record(version_row)
+
     async def _current_version_number(self, item: StrategyRecord) -> int | None:
         if item.current_version_id is None:
             return None
