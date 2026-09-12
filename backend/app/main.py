@@ -82,7 +82,7 @@ async def lifespan(_: FastAPI):
     worker = None
     if (
         settings.backtest_execution_mode == "worker"
-        and settings.app_env is not AppEnvironment.DEVELOPMENT
+        and not settings.uses_catalyst_persistence
     ):
         worker = asyncio.create_task(run_backtest_worker(stop_event))
     try:
@@ -196,13 +196,22 @@ def create_app() -> FastAPI:
         return {"status": "ok"}
 
     @application.get("/health/ready", include_in_schema=False)
-    async def health_ready():
+    async def health_ready(request: Request):
         try:
-            if await health.database_ready(settings.readiness_db_timeout_seconds):
+            if settings.uses_catalyst_persistence:
+                client = CatalystPersistenceClient(request=request)
+                checks = await client.async_connectivity_checks(
+                    settings.catalyst_probe_table
+                )
+                ready = all(checks.values())
+            else:
+                ready = await health.database_ready(settings.readiness_db_timeout_seconds)
+            if ready:
                 return {"status": "ok"}
         except Exception:
             pass
-        metrics.increment("readiness.failures", tags={"dependency": "database"})
+        dependency = "catalyst" if settings.uses_catalyst_persistence else "database"
+        metrics.increment("readiness.failures", tags={"dependency": dependency})
         return JSONResponse(status_code=503, content={"status": "unavailable"})
 
     @application.get("/health/catalyst", include_in_schema=False)
@@ -745,7 +754,7 @@ def create_app() -> FastAPI:
     @application.post("/internal/backtests/process", include_in_schema=False)
     async def process_catalyst_backtest_job(request: Request):
         if (
-            settings.app_env is not AppEnvironment.DEVELOPMENT
+            not settings.uses_catalyst_persistence
             or request.headers.get("x-algoprofitx-job") != BACKTEST_JOB_HEADER
         ):
             return JSONResponse(status_code=404, content={"status": "not_found"})

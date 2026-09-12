@@ -6,8 +6,6 @@ fastapi
 uvicorn[standard]
 zcatalyst-sdk==1.4.0
 sqlalchemy
-asyncpg
-alembic
 pydantic-settings
 python-jose[cryptography]
 argon2-cffi

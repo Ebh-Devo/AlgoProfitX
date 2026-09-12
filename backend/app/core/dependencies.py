@@ -37,7 +37,7 @@ async def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    if get_settings().app_env is AppEnvironment.DEVELOPMENT:
+    if get_settings().uses_catalyst_persistence:
         user = await CatalystIdentityRepository(
             CatalystPersistenceClient(request=request)
         ).get_user_by_id(user_id)

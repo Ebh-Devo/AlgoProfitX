@@ -22,8 +22,6 @@ RUN groupadd --gid 10001 app \
     && useradd --uid 10001 --gid app --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin app
 
 COPY --chown=app:app app ./app
-COPY --chown=app:app alembic ./alembic
-COPY --chown=app:app alembic.ini ./alembic.ini
 
 USER 10001:10001
 EXPOSE 8000

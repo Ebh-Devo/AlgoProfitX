@@ -33,7 +33,8 @@ class Settings(BaseSettings):
     app_env: AppEnvironment = AppEnvironment.DEVELOPMENT
     debug: bool = True
 
-    database_url: SecretStr
+    persistence_provider: Literal["postgresql", "catalyst"] | None = None
+    database_url: SecretStr | None = None
     database_require_tls: bool = False
     pgsslrootcert: Path | None = None
     pgsslrootcert_b64: SecretStr | None = None
@@ -158,6 +159,14 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def enforce_environment_policy(self) -> Self:
+        if self.persistence_provider is None:
+            self.persistence_provider = (
+                "postgresql"
+                if self.app_env is AppEnvironment.TEST
+                else "catalyst"
+            )
+        if self.persistence_provider == "postgresql" and self.database_url is None:
+            raise ValueError("DATABASE_URL is required for PostgreSQL persistence")
         if self.db_max_overflow < 0:
             raise ValueError("DB_MAX_OVERFLOW must be greater than or equal to 0")
         if not self.readiness_alembic_head.strip():
@@ -246,18 +255,20 @@ class Settings(BaseSettings):
         if unexpected_origins:
             errors.append("CORS_ALLOWED_ORIGINS contains an unapproved production origin")
 
-        database_url = self.database_url.get_secret_value()
-        parsed_database_url = urlsplit(database_url)
-        if parsed_database_url.scheme != "postgresql+asyncpg":
-            errors.append("DATABASE_URL must use postgresql+asyncpg in production")
-        if parsed_database_url.hostname in {"localhost", "127.0.0.1", "::1"}:
-            errors.append("DATABASE_URL must not target localhost in production")
-        if not self.database_require_tls:
-            errors.append("DATABASE_REQUIRE_TLS must be true in production")
-        if self.pgsslrootcert is None and self.pgsslrootcert_b64 is None:
-            errors.append(
-                "PGSSLROOTCERT or PGSSLROOTCERT_B64 is required in production"
-            )
+        if self.persistence_provider == "postgresql":
+            assert self.database_url is not None
+            database_url = self.database_url.get_secret_value()
+            parsed_database_url = urlsplit(database_url)
+            if parsed_database_url.scheme != "postgresql+asyncpg":
+                errors.append("DATABASE_URL must use postgresql+asyncpg in production")
+            if parsed_database_url.hostname in {"localhost", "127.0.0.1", "::1"}:
+                errors.append("DATABASE_URL must not target localhost in production")
+            if not self.database_require_tls:
+                errors.append("DATABASE_REQUIRE_TLS must be true in production")
+            if self.pgsslrootcert is None and self.pgsslrootcert_b64 is None:
+                errors.append(
+                    "PGSSLROOTCERT or PGSSLROOTCERT_B64 is required in production"
+                )
         if self.backtest_execution_mode == "inline":
             errors.append(
                 "BACKTEST_EXECUTION_MODE must be disabled or use a durable worker in production"
@@ -275,6 +286,8 @@ class Settings(BaseSettings):
     @property
     def database_connect_args(self) -> dict[str, object]:
         """Build a certificate-verifying asyncpg TLS context without writing CA data."""
+        if self.persistence_provider == "catalyst":
+            return {}
         if not self.database_require_tls:
             return {}
         context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
@@ -304,6 +317,7 @@ class Settings(BaseSettings):
         """Only production application processes keep a persistent connection pool."""
         return (
             self.app_env is AppEnvironment.PRODUCTION
+            and self.persistence_provider == "postgresql"
             and not self.db_external_transaction_pooler
         )
 
@@ -322,6 +336,10 @@ class Settings(BaseSettings):
                 pool_pre_ping=self.db_pool_pre_ping,
             )
         return options
+
+    @property
+    def uses_catalyst_persistence(self) -> bool:
+        return self.persistence_provider == "catalyst"
 
 
 @lru_cache

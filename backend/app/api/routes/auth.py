@@ -55,7 +55,7 @@ router = APIRouter(
 
 
 def _uses_catalyst_auth() -> bool:
-    return get_settings().app_env is AppEnvironment.DEVELOPMENT
+    return get_settings().uses_catalyst_persistence
 
 
 def _catalyst_auth_repositories(

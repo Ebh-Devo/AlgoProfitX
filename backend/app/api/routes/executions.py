@@ -28,7 +28,7 @@ router = APIRouter(tags=["Execution Intents"])
 
 
 def _uses_catalyst_executions() -> bool:
-    return get_settings().app_env is AppEnvironment.DEVELOPMENT
+    return get_settings().uses_catalyst_persistence
 
 
 def _catalyst_repository(request: Request) -> CatalystExecutionRepository:

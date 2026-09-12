@@ -2,17 +2,22 @@ import asyncio
 from urllib.parse import unquote, urlsplit
 
 from app.core.config import get_settings
-from app.db.session import engine
+from app.db import session as database_session
 from sqlalchemy import text
 
 
 async def database_ready(timeout_seconds: float) -> bool:
     async def check() -> None:
         settings = get_settings()
+        if settings.database_url is None:
+            raise RuntimeError("Database configuration is unavailable")
         database_url = urlsplit(settings.database_url.get_secret_value())
         expected_database = database_url.path.lstrip("/").split("/", 1)[0]
         expected_user = unquote(database_url.username or "")
-        async with engine.connect() as connection:
+        database_session._initialize_database()
+        if database_session.engine is None:
+            raise RuntimeError("Database engine is unavailable")
+        async with database_session.engine.connect() as connection:
             result = await connection.execute(
                 text(
                     "SELECT current_database(), current_user, "

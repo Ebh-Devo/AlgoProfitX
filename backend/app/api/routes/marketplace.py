@@ -44,7 +44,7 @@ async def list_marketplace_strategies(
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
     offset: Annotated[int, Query(ge=0)] = 0,
 ):
-    if get_settings().app_env is AppEnvironment.DEVELOPMENT:
+    if get_settings().uses_catalyst_persistence:
         strategies = await CatalystStrategyRepository(
             CatalystPersistenceClient(request=request)
         ).list_marketplace(limit=limit, offset=offset)
@@ -69,7 +69,7 @@ async def get_marketplace_strategy(
     request: Request,
     session: Annotated[AsyncSession, Depends(get_session)],
 ):
-    if get_settings().app_env is AppEnvironment.DEVELOPMENT:
+    if get_settings().uses_catalyst_persistence:
         marketplace_strategy = await CatalystStrategyRepository(
             CatalystPersistenceClient(request=request)
         ).get_marketplace_by_slug(slug)

@@ -14,6 +14,7 @@ from app.main import create_app
 def production_values(**overrides: object) -> dict[str, object]:
     values: dict[str, object] = {
         "app_env": "production",
+        "persistence_provider": "postgresql",
         "debug": False,
         "database_url": "postgresql+asyncpg://app:private@db.internal/algoprofitx",
         "database_require_tls": True,
@@ -80,6 +81,21 @@ def test_valid_production_configuration_is_fail_closed_by_default():
     assert settings.database_engine_options["pool_timeout"] == 10
     assert settings.database_engine_options["pool_recycle"] == 1800
     assert settings.database_engine_options["pool_pre_ping"] is True
+
+
+def test_catalyst_production_requires_no_postgresql_configuration():
+    values = production_values(
+        persistence_provider="catalyst",
+        database_url=None,
+        database_require_tls=False,
+        pgsslrootcert_b64=None,
+        backtest_execution_mode="worker",
+    )
+    settings = Settings(**values)
+    assert settings.uses_catalyst_persistence is True
+    assert settings.database_url is None
+    assert settings.database_connect_args == {}
+    assert settings.uses_application_pool is False
 
 
 def test_valid_production_configuration_allows_durable_backtest_worker():
