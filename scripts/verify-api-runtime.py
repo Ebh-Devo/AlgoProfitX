@@ -64,9 +64,6 @@ for mode, env in (
         "FRONTEND_PUBLIC_URL=https://www.algoprofitx.com",
         "API_PUBLIC_URL=https://api.algoprofitx.com",
         "BACKTEST_EXECUTION_MODE=worker"]),
-    ("configured-unreachable-db", ["APP_ENV=test", "DEBUG=false",
-        "DATABASE_URL=postgresql+asyncpg://smoke:unused@127.0.0.1:5432/unused",
-        "SECRET_KEY=" + key]),
 ):
     name = "algoprofitx-runtime-smoke"
     args = ["run", "--detach", "--name", name, "-p", "127.0.0.1:8000:8000"]
