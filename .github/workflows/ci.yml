@@ -120,8 +120,7 @@ jobs:
         shell: bash
         run: |
           docker run --detach --rm --name algoprofitx-backend-smoke -p 8000:8000 \
-            -e APP_ENV=test \
-            -e DATABASE_URL=postgresql+asyncpg://smoke:smoke@127.0.0.1:5432/unused \
+            -e APP_ENV=development \
             -e SECRET_KEY=ci-smoke-only \
             algoprofitx-backend:ci
           trap 'docker logs algoprofitx-backend-smoke; docker stop algoprofitx-backend-smoke >/dev/null 2>&1 || true' EXIT

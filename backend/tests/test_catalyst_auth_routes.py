@@ -177,7 +177,14 @@ def catalyst_auth(monkeypatch):
     monkeypatch.setattr(
         dependencies,
         "get_settings",
-        lambda: type("DevelopmentSettings", (), {"app_env": AppEnvironment.DEVELOPMENT})(),
+        lambda: type(
+            "DevelopmentSettings",
+            (),
+            {
+                "app_env": AppEnvironment.DEVELOPMENT,
+                "uses_catalyst_persistence": True,
+            },
+        )(),
     )
     monkeypatch.setattr(dependencies, "CatalystPersistenceClient", lambda request: object())
     monkeypatch.setattr(

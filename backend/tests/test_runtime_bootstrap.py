@@ -70,6 +70,7 @@ def test_configuration_failure_fields_never_include_input_values():
     with pytest.raises(ValidationError) as caught:
         Settings(
             app_env="production",
+            persistence_provider="postgresql",
             database_url="postgresql+asyncpg://user:sentinel-password@localhost/app",
             secret_key="sentinel-secret-never-log",
         )
