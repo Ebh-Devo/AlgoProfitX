@@ -34,6 +34,12 @@ def _initialize_database():
     return AsyncSessionLocal
 
 
+# Preserve the module-level engine and session factory used by the legacy
+# PostgreSQL runtime and its migration-backed test suite. Catalyst runtimes
+# return before importing a database driver or creating an engine.
+_initialize_database()
+
+
 async def get_session() -> AsyncGenerator[AsyncSession | None, None]:
     factory = _initialize_database()
     if factory is None:
