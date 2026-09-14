@@ -4,68 +4,95 @@ on:
   workflow_dispatch:
 
 permissions:
-  actions: read
   contents: read
+
+concurrency:
+  group: algoprofitx-development-release
+  cancel-in-progress: false
 
 jobs:
   deploy:
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     environment: catalyst-development
     env:
-      RELEASE_RUN_ID: "33951383950"
-      RELEASE_ARTIFACT: catalyst-release-c07b5b1fda10834462334648e835235a0dcafcde
-      API_SHA256: 40c243a2fcf8095919af6d0a4922401e1ea71915088ff7e4e325f92c20d1037b
-      WEB_SHA256: 5216823289870c8f0ea2324125de0c5bc20fa5addbb0e1c080507b76aa0b57af
       CATALYST_PROJECT_ID: "36851000000392052"
       CATALYST_ORG_ID: "60069781151"
       CATALYST_DC: in
-      CATALYST_TARGET_ENVIRONMENT: Development
       ZCATALYST_NON_INTERACTIVE: "1"
     steps:
       - uses: actions/checkout@v4
-      - name: Download the reviewed immutable release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: >-
-          gh run download "$RELEASE_RUN_ID"
-          --repo "$GITHUB_REPOSITORY"
-          --name "$RELEASE_ARTIFACT"
-          --dir release
-      - name: Verify exact release archives
+      - uses: docker/setup-buildx-action@v3
+      - name: Build exact-source Linux AMD64 images
         shell: bash
         run: |
-          test "$(sha256sum release/algoprofitx-api.tar | cut -d' ' -f1)" = "$API_SHA256"
-          test "$(sha256sum release/algoprofitx-web.tar | cut -d' ' -f1)" = "$WEB_SHA256"
-      - name: Install official Catalyst CLI
+          set -euo pipefail
+          docker buildx build --platform linux/amd64 \
+            --build-arg VCS_REF="$GITHUB_SHA" \
+            --build-arg SOURCE_URL="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
+            --tag "algoprofitx-api:$GITHUB_SHA" \
+            --output "type=docker,dest=$RUNNER_TEMP/algoprofitx-api.tar" backend
+          docker buildx build --platform linux/amd64 \
+            --build-arg VITE_API_BASE_URL=https://api.algoprofitx.com/api/v1 \
+            --tag "algoprofitx-web:$GITHUB_SHA" \
+            --output "type=docker,dest=$RUNNER_TEMP/algoprofitx-web.tar" frontend
+      - name: Verify immutable images
+        shell: bash
         run: |
-          npm install --global zcatalyst-cli@1.27.2
+          set -euo pipefail
+          docker load --input "$RUNNER_TEMP/algoprofitx-api.tar"
+          docker load --input "$RUNNER_TEMP/algoprofitx-web.tar"
+          test "$(docker image inspect "algoprofitx-api:$GITHUB_SHA" --format '{{.Os}}/{{.Architecture}}')" = "linux/amd64"
+          test "$(docker image inspect "algoprofitx-web:$GITHUB_SHA" --format '{{.Os}}/{{.Architecture}}')" = "linux/amd64"
+          test "$(docker image inspect "algoprofitx-api:$GITHUB_SHA" --format '{{.Config.User}}')" = "10001:10001"
+          test "$(docker image inspect "algoprofitx-web:$GITHUB_SHA" --format '{{.Config.User}}')" = "10001:10001"
+          docker run --rm --entrypoint python "algoprofitx-api:$GITHUB_SHA" --version | grep '^Python 3\.13\.'
+          docker run --rm --entrypoint python "algoprofitx-web:$GITHUB_SHA" --version | grep '^Python 3\.13\.'
+          docker run --rm --entrypoint sh "algoprofitx-api:$GITHUB_SHA" -c 'test ! -e /app/.env && test ! -d /app/tests && test ! -d /app/.git'
+          docker run --rm --entrypoint sh "algoprofitx-web:$GITHUB_SHA" -c 'test ! -e /app/.env && test ! -d /app/node_modules && test ! -d /app/.git'
+      - name: Install pinned Catalyst CLI
+        run: |
+          npm install --global --no-audit --no-fund zcatalyst-cli@1.27.2 >/dev/null 2>&1
           test "$(catalyst --version)" = "1.27.2"
       - name: Guard the fixed Development target
         shell: bash
         run: |
+          set -euo pipefail
           test "$CATALYST_PROJECT_ID" = "36851000000392052"
           test "$CATALYST_ORG_ID" = "60069781151"
           test "$CATALYST_DC" = "in"
-          test "$CATALYST_TARGET_ENVIRONMENT" = "Development"
-      - name: Deploy API to Catalyst Development
-        shell: bash
+      - name: Deploy exact-source images to Catalyst Development
         env:
           CATALYST_TOKEN: ${{ secrets.CATALYST_TOKEN }}
-        run: |
-          test -n "$CATALYST_TOKEN"
-          set +x
-          catalyst --token "$CATALYST_TOKEN" --dc "$CATALYST_DC" --org "$CATALYST_ORG_ID" --project "$CATALYST_PROJECT_ID" --non-interactive deploy appsail \
-            --name algoprofitx-api \
-            --source "docker-archive://$GITHUB_WORKSPACE/release/algoprofitx-api.tar" \
-            --port 8000
-      - name: Deploy web to Catalyst Development
         shell: bash
-        env:
-          CATALYST_TOKEN: ${{ secrets.CATALYST_TOKEN }}
         run: |
-          test -n "$CATALYST_TOKEN"
-          set +x
-          catalyst --token "$CATALYST_TOKEN" --dc "$CATALYST_DC" --org "$CATALYST_ORG_ID" --project "$CATALYST_PROJECT_ID" --non-interactive deploy appsail \
-            --name algoprofitx-web \
-            --source "docker-archive://$GITHUB_WORKSPACE/release/algoprofitx-web.tar" \
-            --port 8000
+          python3 - <<'PY'
+          import os
+          import subprocess
+          import tempfile
+
+          token = os.environ.pop("CATALYST_TOKEN")
+          assert token, "Temporary deployment token is missing"
+          common = [
+              "catalyst", "--token", token, "--dc", "in", "--org", "60069781151",
+              "--project", "36851000000392052", "--non-interactive",
+              "deploy", "appsail",
+          ]
+          archives = {
+              "algoprofitx-api": os.path.join(os.environ["RUNNER_TEMP"], "algoprofitx-api.tar"),
+              "algoprofitx-web": os.path.join(os.environ["RUNNER_TEMP"], "algoprofitx-web.tar"),
+          }
+          with tempfile.TemporaryDirectory() as work:
+              for name, archive in archives.items():
+                  result = subprocess.run(
+                      common + ["--name", name, "--source", "docker-archive://" + archive, "--port", "8000"],
+                      cwd=work,
+                      capture_output=True,
+                      text=True,
+                      timeout=900,
+                  )
+                  success = result.returncode == 0 and "Catalyst AppSail Deploy completed successfully" in result.stdout
+                  print(f"{name} Development deployment success: {success}")
+                  if not success:
+                      raise SystemExit(f"{name} deployment failed; raw output suppressed")
+          PY
