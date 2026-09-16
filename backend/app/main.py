@@ -80,10 +80,7 @@ async def lifespan(_: FastAPI):
     settings = get_settings()
     stop_event = asyncio.Event()
     worker = None
-    if (
-        settings.backtest_execution_mode == "worker"
-        and not settings.uses_catalyst_persistence
-    ):
+    if settings.backtest_execution_mode == "worker":
         worker = asyncio.create_task(run_backtest_worker(stop_event))
     try:
         yield

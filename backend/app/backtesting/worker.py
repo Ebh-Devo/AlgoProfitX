@@ -5,7 +5,6 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import update
 
 from app.core.config import get_settings
-from app.core.config import AppEnvironment
 from app.core.observability import log_event
 from app.db.session import AsyncSessionLocal
 from app.models.backtest import Backtest, BacktestStatus
@@ -58,7 +57,7 @@ async def run_backtest_worker(stop_event: asyncio.Event) -> None:
     settings = get_settings()
     catalyst_repository = (
         CatalystBacktestRepository(CatalystPersistenceClient())
-        if settings.app_env is AppEnvironment.DEVELOPMENT
+        if settings.uses_catalyst_persistence
         else None
     )
     while not stop_event.is_set():

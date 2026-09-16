@@ -1,3 +1,4 @@
+import logging
 import uuid
 from typing import Annotated
 
@@ -7,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.abuse import RateLimitRule, abuse_controller
 from app.core.config import AppEnvironment, get_settings
 from app.core.dependencies import require_creator
+from app.core.observability import log_event
 from app.db.session import get_session
 from app.models.strategy import Strategy, StrategyStatus
 from app.models.user import User
@@ -618,11 +620,15 @@ async def execute_backtest_request(
                 if catalyst_repository is not None:
                     try:
                         await catalyst_repository.submit_job(backtest.id)
-                    except CatalystPersistenceError as exc:
-                        raise HTTPException(
-                            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                            detail="Backtest scheduling is temporarily unavailable",
-                        ) from exc
+                    except CatalystPersistenceError:
+                        # AppSail also runs a datastore-backed poller. The queued
+                        # record is durable, so a Catalyst Job Scheduling outage
+                        # must not strand or reject work that the poller can claim.
+                        log_event(
+                            "backtest_job_submission_deferred",
+                            level=logging.WARNING,
+                            backtest_id=backtest.id,
+                        )
                 return backtest
             if catalyst_repository is not None:
                 return await execute_catalyst_backtest(catalyst_repository, backtest.id)
