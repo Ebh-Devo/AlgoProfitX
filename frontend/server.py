@@ -19,6 +19,15 @@ HOP_BY_HOP_HEADERS = {
     "transfer-encoding",
     "upgrade",
 }
+FORWARDED_REQUEST_HEADERS = {
+    "accept",
+    "authorization",
+    "content-type",
+    "cookie",
+    "user-agent",
+    "x-csrf-token",
+    "x-request-id",
+}
 
 if API_TARGET.scheme != "https" or not API_TARGET.hostname or API_TARGET.query or API_TARGET.fragment:
     raise RuntimeError("API_PUBLIC_ORIGIN must be an HTTPS origin")
@@ -71,8 +80,7 @@ class SpaHandler(SimpleHTTPRequestHandler):
         request_headers = {
             name: value
             for name, value in self.headers.items()
-            if name.lower() not in HOP_BY_HOP_HEADERS
-            and name.lower() not in {"host", "content-length"}
+            if name.lower() in FORWARDED_REQUEST_HEADERS
         }
         if content_length:
             request_headers["Content-Length"] = str(content_length)
@@ -95,7 +103,7 @@ class SpaHandler(SimpleHTTPRequestHandler):
             if self.command != "HEAD":
                 while chunk := response.read(64 * 1024):
                     self.wfile.write(chunk)
-        except (OSError, http.client.HTTPException):
+        except (OSError, ValueError, http.client.HTTPException):
             self.send_error(502, "API upstream unavailable")
         finally:
             connection.close()
