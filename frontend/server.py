@@ -9,6 +9,7 @@ ROOT = Path(os.environ.get("STATIC_ROOT", "/app/dist")).resolve()
 API_ORIGIN = os.environ.get("API_PUBLIC_ORIGIN", "https://api.algoprofitx.com").rstrip("/")
 API_TARGET = urlsplit(API_ORIGIN)
 MAX_PROXY_BODY_BYTES = 8 * 1024 * 1024
+MAX_TRAILER_BYTES = 8 * 1024
 HOP_BY_HOP_HEADERS = {
     "connection",
     "keep-alive",
@@ -66,24 +67,72 @@ class SpaHandler(SimpleHTTPRequestHandler):
     def _is_api_request(self) -> bool:
         return urlsplit(self.path).path.startswith("/api/")
 
-    def _proxy_api_request(self) -> None:
+    def _read_chunked_body(self) -> tuple[bool, bytes | None]:
+        body = bytearray()
+        while True:
+            size_line = self.rfile.readline(128)
+            if not size_line or not size_line.endswith(b"\r\n"):
+                self.send_error(400, "Invalid chunked request body")
+                return False, None
+            try:
+                size = int(size_line[:-2].split(b";", 1)[0].strip(), 16)
+            except ValueError:
+                self.send_error(400, "Invalid chunked request body")
+                return False, None
+            if size < 0 or len(body) + size > MAX_PROXY_BODY_BYTES:
+                self.send_error(413, "Request body too large")
+                return False, None
+            if size == 0:
+                trailer_bytes = 0
+                while True:
+                    trailer = self.rfile.readline(MAX_TRAILER_BYTES + 1)
+                    trailer_bytes += len(trailer)
+                    if not trailer or trailer_bytes > MAX_TRAILER_BYTES:
+                        self.send_error(400, "Invalid chunked request body")
+                        return False, None
+                    if trailer == b"\r\n":
+                        return True, bytes(body)
+            chunk = self.rfile.read(size)
+            if len(chunk) != size or self.rfile.read(2) != b"\r\n":
+                self.send_error(400, "Invalid chunked request body")
+                return False, None
+            body.extend(chunk)
+
+    def _read_request_body(self) -> tuple[bool, bytes | None]:
+        transfer_encoding = self.headers.get("Transfer-Encoding", "").lower().strip()
+        if transfer_encoding:
+            if transfer_encoding != "chunked":
+                self.send_error(400, "Unsupported Transfer-Encoding")
+                return False, None
+            return self._read_chunked_body()
         try:
             content_length = int(self.headers.get("Content-Length", "0"))
         except ValueError:
             self.send_error(400, "Invalid Content-Length")
-            return
-        if content_length > MAX_PROXY_BODY_BYTES:
+            return False, None
+        if content_length < 0 or content_length > MAX_PROXY_BODY_BYTES:
             self.send_error(413, "Request body too large")
+            return False, None
+        if not content_length:
+            return True, None
+        body = self.rfile.read(content_length)
+        if len(body) != content_length:
+            self.send_error(400, "Incomplete request body")
+            return False, None
+        return True, body
+
+    def _proxy_api_request(self) -> None:
+        body_ok, body = self._read_request_body()
+        if not body_ok:
             return
 
-        body = self.rfile.read(content_length) if content_length else None
         request_headers = {
             name: value
             for name, value in self.headers.items()
             if name.lower() in FORWARDED_REQUEST_HEADERS
         }
-        if content_length:
-            request_headers["Content-Length"] = str(content_length)
+        if body is not None:
+            request_headers["Content-Length"] = str(len(body))
 
         upstream_path = f"{API_TARGET.path.rstrip('/')}{self.path}"
         connection = http.client.HTTPSConnection(
