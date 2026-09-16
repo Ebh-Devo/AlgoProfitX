@@ -35,7 +35,7 @@ jobs:
           tags: algoprofitx-web:${{ github.sha }}
           outputs: type=docker,dest=/tmp/algoprofitx-web.tar
           build-args: |
-            VITE_API_BASE_URL=https://api.algoprofitx.com/api/v1
+            VITE_API_BASE_URL=https://www.algoprofitx.com/api/v1
       - name: Verify immutable images
         shell: bash
         run: |

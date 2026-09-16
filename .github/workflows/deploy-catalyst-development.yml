@@ -33,7 +33,7 @@ jobs:
             --tag "algoprofitx-api:$GITHUB_SHA" \
             --output "type=docker,dest=$RUNNER_TEMP/algoprofitx-api.tar" backend
           docker buildx build --platform linux/amd64 \
-            --build-arg VITE_API_BASE_URL=https://api.algoprofitx.com/api/v1 \
+            --build-arg VITE_API_BASE_URL=https://www.algoprofitx.com/api/v1 \
             --tag "algoprofitx-web:$GITHUB_SHA" \
             --output "type=docker,dest=$RUNNER_TEMP/algoprofitx-web.tar" frontend
       - name: Verify immutable images

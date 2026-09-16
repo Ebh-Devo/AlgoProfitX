@@ -1,11 +1,27 @@
 import os
+import http.client
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit
 
 
 ROOT = Path(os.environ.get("STATIC_ROOT", "/app/dist")).resolve()
-API_ORIGIN = os.environ.get("API_PUBLIC_ORIGIN", "https://api.algoprofitx.com")
+API_ORIGIN = os.environ.get("API_PUBLIC_ORIGIN", "https://api.algoprofitx.com").rstrip("/")
+API_TARGET = urlsplit(API_ORIGIN)
+MAX_PROXY_BODY_BYTES = 8 * 1024 * 1024
+HOP_BY_HOP_HEADERS = {
+    "connection",
+    "keep-alive",
+    "proxy-authenticate",
+    "proxy-authorization",
+    "te",
+    "trailer",
+    "transfer-encoding",
+    "upgrade",
+}
+
+if API_TARGET.scheme != "https" or not API_TARGET.hostname or API_TARGET.query or API_TARGET.fragment:
+    raise RuntimeError("API_PUBLIC_ORIGIN must be an HTTPS origin")
 
 
 class SpaHandler(SimpleHTTPRequestHandler):
@@ -37,6 +53,79 @@ class SpaHandler(SimpleHTTPRequestHandler):
         if requested != "/" and not candidate.exists() and "." not in candidate.name:
             self.path = "/index.html"
         return super().send_head()
+
+    def _is_api_request(self) -> bool:
+        return urlsplit(self.path).path.startswith("/api/")
+
+    def _proxy_api_request(self) -> None:
+        try:
+            content_length = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            self.send_error(400, "Invalid Content-Length")
+            return
+        if content_length > MAX_PROXY_BODY_BYTES:
+            self.send_error(413, "Request body too large")
+            return
+
+        body = self.rfile.read(content_length) if content_length else None
+        request_headers = {
+            name: value
+            for name, value in self.headers.items()
+            if name.lower() not in HOP_BY_HOP_HEADERS
+            and name.lower() not in {"host", "content-length"}
+        }
+        if content_length:
+            request_headers["Content-Length"] = str(content_length)
+
+        upstream_path = f"{API_TARGET.path.rstrip('/')}{self.path}"
+        connection = http.client.HTTPSConnection(
+            API_TARGET.hostname,
+            API_TARGET.port or 443,
+            timeout=30,
+        )
+        try:
+            connection.request(self.command, upstream_path, body=body, headers=request_headers)
+            response = connection.getresponse()
+            self.send_response(response.status, response.reason)
+            for name, value in response.getheaders():
+                lowered = name.lower()
+                if lowered not in HOP_BY_HOP_HEADERS and lowered not in {"server", "date"}:
+                    self.send_header(name, value)
+            self.end_headers()
+            if self.command != "HEAD":
+                while chunk := response.read(64 * 1024):
+                    self.wfile.write(chunk)
+        except (OSError, http.client.HTTPException):
+            self.send_error(502, "API upstream unavailable")
+        finally:
+            connection.close()
+
+    def do_GET(self) -> None:
+        if self._is_api_request():
+            self._proxy_api_request()
+        else:
+            super().do_GET()
+
+    def do_HEAD(self) -> None:
+        if self._is_api_request():
+            self._proxy_api_request()
+        else:
+            super().do_HEAD()
+
+    def do_POST(self) -> None:
+        self._proxy_api_request() if self._is_api_request() else self.send_error(405)
+
+    def do_PUT(self) -> None:
+        self._proxy_api_request() if self._is_api_request() else self.send_error(405)
+
+    def do_PATCH(self) -> None:
+        self._proxy_api_request() if self._is_api_request() else self.send_error(405)
+
+    def do_DELETE(self) -> None:
+        self._proxy_api_request() if self._is_api_request() else self.send_error(405)
+
+    def do_OPTIONS(self) -> None:
+        self._proxy_api_request() if self._is_api_request() else self.send_error(405)
 
 
 if __name__ == "__main__":

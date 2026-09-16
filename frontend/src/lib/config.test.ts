@@ -5,6 +5,10 @@ describe("frontend API configuration", () => {
     expect(validateApiBaseUrl("https://api.algoprofitx.com/api/v1", true)).toBe("https://api.algoprofitx.com/api/v1");
   });
 
+  it("accepts the same-origin production API proxy", () => {
+    expect(validateApiBaseUrl("https://www.algoprofitx.com/api/v1", true)).toBe("https://www.algoprofitx.com/api/v1");
+  });
+
   it("accepts the approved staging API URL in a production build", () => {
     expect(validateApiBaseUrl("https://api-staging.algoprofitx.com/api/v1", true)).toBe("https://api-staging.algoprofitx.com/api/v1");
   });

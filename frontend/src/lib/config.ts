@@ -1,5 +1,6 @@
 const PRODUCTION_API_BASE_URLS = new Set([
   "https://api.algoprofitx.com/api/v1",
+  "https://www.algoprofitx.com/api/v1",
   "https://api-staging.algoprofitx.com/api/v1",
 ]);
 
