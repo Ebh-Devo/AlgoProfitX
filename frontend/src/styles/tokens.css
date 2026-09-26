@@ -1,0 +1,174 @@
+/**
+ * AlgoProfitX — Consolidated Design Tokens
+ * Single source of truth. Imported before global.css and premium.css.
+ */
+:root {
+  /* ── Canvas / backgrounds ─────────────────────────────────── */
+  --color-canvas:           #050b12;
+  --color-canvas-subtle:    #08121d;
+  --color-surface:          #0d1a27;
+  --color-surface-raised:   #112333;
+  --color-overlay:          #0b1723;
+  --color-hover:            #172e40;
+
+  /* ── Borders ──────────────────────────────────────────────── */
+  --color-border:           #1d3548;
+  --color-border-strong:    #315269;
+
+  /* ── Text ─────────────────────────────────────────────────── */
+  --color-text-primary:     #f4f8fb;
+  --color-text-secondary:   #c6d4df;
+  --color-text-muted:       #8ea6b8;
+  --color-text-faint:       #648094;
+
+  /* ── Brand accent (teal-green) ────────────────────────────── */
+  --color-accent:           #19b995;
+  --color-accent-hover:     #28d0aa;
+  --color-accent-subtle:    #0b3c35;
+  --color-accent-text:      #cafff2;
+
+  /* ── Links / focus ────────────────────────────────────────── */
+  --color-link:             #73c7ef;
+  --color-focus:            #71d7ff;
+
+  /* ── Semantic status colors ───────────────────────────────── */
+  --color-success:          #3ca47b;
+  --color-success-subtle:   #123d31;
+  --color-success-text:     #bdf4db;
+
+  --color-warning:          #d99d42;
+  --color-warning-subtle:   #453117;
+  --color-warning-text:     #ffe0aa;
+
+  --color-danger:           #d46d70;
+  --color-danger-subtle:    #47252a;
+  --color-danger-text:      #ffd2d3;
+
+  --color-info:             #579bce;
+  --color-info-subtle:      #15364f;
+  --color-info-text:        #cceaff;
+
+  /* ── Financial state (P&L) ────────────────────────────────── */
+  --color-profit:           #4fd4a0;
+  --color-profit-subtle:    #0f3528;
+  --color-profit-text:      #c8ffe8;
+
+  --color-loss:             #e07070;
+  --color-loss-subtle:      #4a1c1c;
+  --color-loss-text:        #ffd0d0;
+
+  --color-neutral-value:    #8ea6b8;
+
+  /* ── Semantic aliases (component-level) ───────────────────── */
+  --bg-page:        var(--color-canvas);
+  --bg-card:        var(--color-surface);
+  --bg-card-raised: var(--color-surface-raised);
+  --bg-overlay:     var(--color-overlay);
+
+  --text:    var(--color-text-primary);
+  --text-2:  var(--color-text-secondary);
+  --muted:   var(--color-text-muted);
+  --faint:   var(--color-text-faint);
+
+  --border:        var(--color-border);
+  --border-strong: var(--color-border-strong);
+
+  --profit:        var(--color-profit);
+  --loss:          var(--color-loss);
+  --neutral-value: var(--color-neutral-value);
+
+  /* Back-compat aliases kept from global.css / premium.css */
+  --canvas:         var(--color-canvas);
+  --canvas-2:       var(--color-canvas-subtle);
+  --raised:         var(--color-overlay);
+  --surface:        var(--color-surface);
+  --surface-raised: var(--color-surface-raised);
+  --hover:          var(--color-hover);
+  --accent:         var(--color-accent);
+  --accent-hover:   var(--color-accent-hover);
+  --accent-soft:    var(--color-accent-subtle);
+  --accent-text:    var(--color-accent-text);
+  --link:           var(--color-link);
+  --focus:          var(--color-focus);
+  --success:        var(--color-success);
+  --success-bg:     var(--color-success-subtle);
+  --success-text:   var(--color-success-text);
+  --warning:        var(--color-warning);
+  --warning-bg:     var(--color-warning-subtle);
+  --warning-text:   var(--color-warning-text);
+  --danger:         var(--color-danger);
+  --danger-bg:      var(--color-danger-subtle);
+  --danger-text:    var(--color-danger-text);
+  --info:           var(--color-info);
+  --info-bg:        var(--color-info-subtle);
+  --info-text:      var(--color-info-text);
+
+  /* ── Typography ───────────────────────────────────────────── */
+  --font-display: "Segoe UI Variable Display", "Aptos Display", "SF Pro Display", system-ui, sans-serif;
+  --font-sans:    "IBM Plex Sans", "Segoe UI Variable", "Segoe UI", Inter, system-ui, sans-serif;
+  --font-mono:    "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
+
+  --text-xs:   0.75rem;    /* 12px */
+  --text-sm:   0.875rem;   /* 14px */
+  --text-base: 1rem;       /* 16px */
+  --text-lg:   1.125rem;   /* 18px */
+  --text-xl:   1.4rem;
+  --text-2xl:  clamp(1.8rem, 3vw, 2.6rem);
+  --text-3xl:  clamp(2.45rem, 5vw, 4rem);
+
+  /* Back-compat size aliases */
+  --xs:   var(--text-xs);
+  --sm:   var(--text-sm);
+  --base: var(--text-base);
+  --lg:   var(--text-lg);
+  --xl:   var(--text-xl);
+  --2xl:  var(--text-2xl);
+  --3xl:  var(--text-3xl);
+
+  /* ── Spacing (4px base) ───────────────────────────────────── */
+  --space-1: 0.25rem;   /* 4px  */
+  --space-2: 0.5rem;    /* 8px  */
+  --space-3: 0.75rem;   /* 12px */
+  --space-4: 1rem;      /* 16px */
+  --space-5: 1.5rem;    /* 24px */
+  --space-6: 2rem;      /* 32px */
+  --space-7: 3rem;      /* 48px */
+  --space-8: 4.5rem;    /* 72px */
+
+  /* Back-compat spacing aliases */
+  --s1: var(--space-1);
+  --s2: var(--space-2);
+  --s3: var(--space-3);
+  --s4: var(--space-4);
+  --s5: var(--space-5);
+  --s6: var(--space-6);
+  --s7: var(--space-7);
+  --s8: var(--space-8);
+
+  /* ── Border radius ────────────────────────────────────────── */
+  --radius-sm:  0.375rem;
+  --radius-md:  0.625rem;
+  --radius-lg:  0.875rem;
+  --radius-xl:  1.1rem;
+  --radius-2xl: 1.5rem;
+  --pill:       999px;
+
+  /* Back-compat radius aliases */
+  --r1: var(--radius-sm);
+  --r2: var(--radius-md);
+  --r3: var(--radius-lg);
+  --r4: var(--radius-xl);
+
+  /* ── Shadows ──────────────────────────────────────────────── */
+  --shadow-sm: 0 8px 30px rgba(0, 6, 12, 0.18);
+  --shadow-lg: 0 28px 90px rgba(0, 4, 9, 0.46);
+
+  /* ── Breakpoints (for JS reference — CSS uses media queries) ─ */
+  /* desktop: >1100px, tablet: 820px–1100px, mobile: <560px */
+
+  /* ── Z-index scale ────────────────────────────────────────── */
+  --z-nav:     10;
+  --z-overlay: 20;
+  --z-modal:   30;
+  --z-toast:   40;
+}

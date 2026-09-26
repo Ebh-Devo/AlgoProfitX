@@ -1,5 +1,6 @@
 import { lazy, Suspense, type ReactNode } from "react";
 import { createBrowserRouter, Link } from "react-router-dom";
+import { Check } from "lucide-react";
 
 import { RequireAuth, RequireCreator, RequireInvestor } from "../auth/guards";
 import { AppShell } from "../components/AppShell";
@@ -31,9 +32,9 @@ function deferred(page: ReactNode) {
 
 export function HomePage() {
   const workflow = ["Create", "Version", "Backtest", "Analyze", "Publish", "Allocate", "Paper execute"];
-  return <div className="landing-page">
+  return <><div className="landing-page">
     <section className="hero premium-hero">
-      <div className="hero-copy"><p className="eyebrow"><span className="live-dot" /> Systematic strategy workspace</p><h1>Turn trading ideas into <span>testable strategies.</span></h1><p className="lead">Build versioned strategies, run historical simulations, understand analytics, publish to a discovery marketplace, and explore allocation through paper execution.</p><div className="hero-actions"><Link className="button button-large" to="/register">Start building <span aria-hidden="true">→</span></Link><Link className="button button-secondary button-large" to="/marketplace">Explore marketplace</Link></div><div className="trust-row"><span>NSE/BSE identity</span><span>INR-native</span><span>Session-aware</span><span>Clearly simulated</span></div></div>
+      <div className="hero-copy"><p className="eyebrow"><span className="live-dot" /> Systematic strategy workspace</p><h1>Turn trading ideas into <span>testable strategies.</span></h1><p className="lead">Build versioned strategies, run historical simulations, understand analytics, publish to a discovery marketplace, and explore allocation through paper execution.</p><div className="hero-actions"><Link className="button button-large" to="/register">Start building <span aria-hidden="true">→</span></Link><Link className="button button-secondary button-large" to="/marketplace">Explore marketplace</Link></div><div className="trust-row"><span><Check size={11} aria-hidden="true" />NSE/BSE identity</span><span><Check size={11} aria-hidden="true" />INR-native</span><span><Check size={11} aria-hidden="true" />Session-aware</span><span><Check size={11} aria-hidden="true" />Clearly simulated</span></div></div>
       <div className="hero-terminal" aria-label="Representative AlgoProfitX backtest dashboard">
         <div className="terminal-bar"><span><i /><i /><i /></span><strong>Momentum Alpha · Backtest</strong><span className="badge badge-completed">Completed</span></div>
         <div className="terminal-metrics"><div><small>Total return</small><strong className="positive">+18.42%</strong><em>Simulated</em></div><div><small>Max drawdown</small><strong>−6.18%</strong><em>Historical</em></div><div><small>Win rate</small><strong>61.8%</strong><em>34 trades</em></div><div><small>Profit factor</small><strong>1.74</strong><em>Reference</em></div></div>
@@ -46,11 +47,33 @@ export function HomePage() {
     <section className="feature-split reverse"><article><p className="eyebrow">For investors</p><h2>Discover the strategy, understand the context.</h2><p>Explore public deployed strategies without exposing private Creator configuration. Pin an allocation intent to a Version and inspect every paper outcome.</p><div className="feature-list"><span><b>Curated discovery</b><small>Clear lifecycle, Version, and public strategy context.</small></span><span><b>Version-pinned allocations</b><small>Know exactly what an allocation references.</small></span><span><b>Transparent paper outcomes</b><small>Filled, no-fill, and failed states remain unmistakable.</small></span></div><Link to="/marketplace">Browse the marketplace →</Link></article><div className="discovery-stack"><div className="mini-strategy card"><span className="badge badge-deployed">Deployed</span><small>NSE · Equity</small><h3>Momentum Alpha</h3><p>Systematic trend participation with explicit risk controls.</p><footer><span>Version 4</span><b>View strategy →</b></footer></div><div className="mini-strategy card"><span className="badge badge-published">Published</span><small>NSE · Index</small><h3>Index Regime</h3><p>Reference regime classification for market research.</p><footer><span>Version 2</span><b>View strategy →</b></footer></div></div></section>
     <section className="architecture-band"><div><p className="eyebrow">Built for Indian-market identity</p><h2>Canonical Instruments. Explicit provenance.</h2></div><div className="architecture-grid"><span><b>NSE / BSE</b><small>Exchange identity</small></span><span><b>INR</b><small>Quote currency</small></span><span><b>Sessions</b><small>Calendar-aware design</small></span><span><b>Paper</b><small>No broker execution</small></span></div></section>
     <section className="disclosure-panel"><strong>Research infrastructure, clearly labelled.</strong><p>Backtests are simulated historical results, not live performance. Paper Execution does not place broker orders or use funded capital. Synthetic and reference datasets are identified wherever they appear.</p></section>
-    <section className="landing-cta"><p className="eyebrow">Start with a testable idea</p><h2>Build the strategy. Keep the evidence.</h2><p>Join AlgoProfitX at <strong>www.algoprofitx.com</strong>—the intended home for systematic strategy research and discovery.</p><div className="hero-actions"><Link className="button button-large" to="/register">Create account</Link><Link className="button button-secondary button-large" to="/instruments">Explore Instruments</Link></div></section>
-  </div>;
+    <section className="landing-cta"><p className="eyebrow">Start with a testable idea</p><h2>Build the strategy. Keep the evidence.</h2><p>Start building at <strong>www.algoprofitx.com</strong>.</p><div className="hero-actions"><Link className="button button-large" to="/register">Create account</Link><Link className="button button-secondary button-large" to="/instruments">Explore Instruments</Link></div></section>
+  </div><SiteFooter /></>;
 }
 
-function NotFoundPage() { return <section><h1>Page not found</h1></section>; }
+function SiteFooter() {
+  return (
+    <footer className="site-footer">
+      <span>© {new Date().getFullYear()} AlgoProfitX · Research infrastructure. All simulations are reference data only.</span>
+      <span style={{ display: "flex", gap: "1.25rem" }}>
+        <Link to="/marketplace">Marketplace</Link>
+        <Link to="/instruments">Instruments</Link>
+      </span>
+    </footer>
+  );
+}
+
+function NotFoundPage() {
+  return (
+    <section className="fatal-page">
+      <div className="fatal-card card">
+        <h1>Page not found</h1>
+        <p>The page you requested doesn't exist or has been moved.</p>
+        <Link className="button" to="/">Go home</Link>
+      </div>
+    </section>
+  );
+}
 
 export const router = createBrowserRouter([
   { path: "/", element: <AppShell />, children: [
