@@ -1,7 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 
-import { HomePage } from "./router";
+import { HomePage } from "../features/home/HomePage";
 
 describe("AlgoProfitX landing page", () => {
   it("communicates the product workflow with primary discovery actions", () => {
