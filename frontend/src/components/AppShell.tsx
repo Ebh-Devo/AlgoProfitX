@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Link, NavLink, Outlet, useNavigate, useLocation } from "react-router-dom";
 import { Menu, X, LogOut } from "lucide-react";
 
@@ -13,13 +13,73 @@ export function AppShell() {
   const investor = hasRole(user, INVESTOR_ROLE);
   const [mobileOpen, setMobileOpen] = useState(false);
 
+  const toggleBtnRef = useRef<HTMLButtonElement>(null);
+  const drawerRef = useRef<HTMLElement>(null);
+  const prevOpenRef = useRef(mobileOpen);
+
   /* Close drawer on route change */
-  useEffect(() => { setMobileOpen(false); }, [location.pathname]);
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [location.pathname]);
 
   /* Prevent body scroll while drawer is open */
   useEffect(() => {
     document.body.style.overflow = mobileOpen ? "hidden" : "";
     return () => { document.body.style.overflow = ""; };
+  }, [mobileOpen]);
+
+  /* Mobile drawer accessibility: focus trapping, Escape handling, and focus restoration */
+  useEffect(() => {
+    if (mobileOpen) {
+      const focusables = drawerRef.current?.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      );
+      if (focusables && focusables.length > 0) {
+        focusables[0].focus();
+      } else {
+        drawerRef.current?.focus();
+      }
+
+      const handleKeyDown = (e: KeyboardEvent) => {
+        if (e.key === "Escape") {
+          setMobileOpen(false);
+          return;
+        }
+
+        if (e.key === "Tab" && drawerRef.current) {
+          const currentFocusables = Array.from(
+            drawerRef.current.querySelectorAll<HTMLElement>(
+              'a[href], button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])'
+            )
+          );
+          if (currentFocusables.length === 0) return;
+
+          const firstEl = currentFocusables[0];
+          const lastEl = currentFocusables[currentFocusables.length - 1];
+
+          if (e.shiftKey) {
+            if (document.activeElement === firstEl) {
+              e.preventDefault();
+              lastEl.focus();
+            }
+          } else {
+            if (document.activeElement === lastEl) {
+              e.preventDefault();
+              firstEl.focus();
+            }
+          }
+        }
+      };
+
+      window.addEventListener("keydown", handleKeyDown);
+      return () => window.removeEventListener("keydown", handleKeyDown);
+    } else if (prevOpenRef.current) {
+      toggleBtnRef.current?.focus();
+    }
+  }, [mobileOpen]);
+
+  useEffect(() => {
+    prevOpenRef.current = mobileOpen;
   }, [mobileOpen]);
 
   const endSession = async () => {
@@ -72,6 +132,7 @@ export function AppShell() {
 
           {/* Hamburger — mobile only */}
           <button
+            ref={toggleBtnRef}
             className="mobile-menu-toggle"
             aria-label={mobileOpen ? "Close menu" : "Open menu"}
             aria-expanded={mobileOpen}
@@ -94,9 +155,14 @@ export function AppShell() {
 
       {/* Mobile drawer */}
       <nav
+        ref={drawerRef}
         id="mobile-nav-drawer"
+        tabIndex={-1}
         className={`mobile-nav-drawer ${mobileOpen ? "mobile-nav-drawer--open" : ""}`}
         aria-label="Mobile navigation"
+        aria-modal={mobileOpen ? "true" : undefined}
+        aria-hidden={!mobileOpen}
+        role="dialog"
       >
         <div className="mobile-nav-inner">
           {isAuthenticated && <NavLink to="/app">Dashboard</NavLink>}
@@ -125,6 +191,4 @@ export function AppShell() {
       <main className="page-container"><Outlet /></main>
     </div>
   );
-  /* Note: SiteFooter is rendered inside HomePage for landing context;
-     the app shell itself does not include a footer. */
 }

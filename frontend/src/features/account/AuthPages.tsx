@@ -9,6 +9,7 @@ import { authApi } from "../../api/auth";
 import { ApiError } from "../../api/client";
 import { useAuth } from "../../auth/auth-context";
 import { ErrorAlert } from "../../components/PageState";
+import { Input } from "../../components/ui";
 
 const loginSchema = z.object({
   email:    z.string().email("Enter a valid email address."),
@@ -55,7 +56,7 @@ function PasswordInput({
   showStrength,
   ...rest
 }: React.InputHTMLAttributes<HTMLInputElement> & {
-  label: string;
+  label: React.ReactNode;
   error?: string;
   hint?: string;
   showStrength?: boolean;
@@ -64,23 +65,27 @@ function PasswordInput({
   const value = (rest.value ?? "") as string;
 
   return (
-    <label>
-      {label}
-      <div className="password-field">
-        <input type={visible ? "text" : "password"} autoComplete={autoComplete} {...rest} />
-        <button
-          type="button"
-          className="password-toggle"
-          aria-label={visible ? "Hide password" : "Show password"}
-          onClick={() => setVisible(v => !v)}
-        >
-          {visible ? <EyeOff size={15} aria-hidden="true" /> : <Eye size={15} aria-hidden="true" />}
-        </button>
-      </div>
+    <div className="password-field-wrap">
+      <Input
+        label={label}
+        type={visible ? "text" : "password"}
+        autoComplete={autoComplete}
+        error={error}
+        hint={hint}
+        iconRight={
+          <button
+            type="button"
+            className="password-toggle"
+            aria-label={visible ? "Hide password" : "Show password"}
+            onClick={() => setVisible(v => !v)}
+          >
+            {visible ? <EyeOff size={15} aria-hidden="true" /> : <Eye size={15} aria-hidden="true" />}
+          </button>
+        }
+        {...rest}
+      />
       {showStrength && <PasswordStrength password={value} />}
-      {hint && !error && <p className="field-hint">{hint}</p>}
-      {error && <p className="field-error" role="alert">{error}</p>}
-    </label>
+    </div>
   );
 }
 
@@ -121,13 +126,13 @@ export function LoginPage() {
       {error && <ErrorAlert>{error}</ErrorAlert>}
 
       <form onSubmit={submit} noValidate>
-        <label>
-          Email
-          <input type="email" autoComplete="email" {...form.register("email")} />
-          {form.formState.errors.email && (
-            <p className="field-error" role="alert">{form.formState.errors.email.message}</p>
-          )}
-        </label>
+        <Input
+          label="Email"
+          type="email"
+          autoComplete="email"
+          error={form.formState.errors.email?.message}
+          {...form.register("email")}
+        />
 
         <PasswordInput
           label="Password"
@@ -175,21 +180,20 @@ export function RegisterPage() {
       {error && <ErrorAlert>{error}</ErrorAlert>}
 
       <form onSubmit={submit} noValidate>
-        <label>
-          Name <span style={{ color: "var(--faint)", fontWeight: 400 }}>(optional)</span>
-          <input autoComplete="name" {...form.register("full_name")} />
-          {form.formState.errors.full_name && (
-            <p className="field-error" role="alert">{form.formState.errors.full_name.message}</p>
-          )}
-        </label>
+        <Input
+          label={<>Name <span style={{ color: "var(--faint)", fontWeight: 400 }}>(optional)</span></>}
+          autoComplete="name"
+          error={form.formState.errors.full_name?.message}
+          {...form.register("full_name")}
+        />
 
-        <label>
-          Email
-          <input type="email" autoComplete="email" {...form.register("email")} />
-          {form.formState.errors.email && (
-            <p className="field-error" role="alert">{form.formState.errors.email.message}</p>
-          )}
-        </label>
+        <Input
+          label="Email"
+          type="email"
+          autoComplete="email"
+          error={form.formState.errors.email?.message}
+          {...form.register("email")}
+        />
 
         <PasswordInput
           label="Password"

@@ -279,14 +279,80 @@
   .site-header .header-actions .button { display: none; }
 }
 
-/* ── Password visibility toggle (Auth pages) ─────────────────── */
-.password-field { position: relative; }
-.password-field input { padding-right: 2.8rem; }
-.password-toggle {
+/* ── Form field primitives ───────────────────────────────────── */
+.form-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.form-label {
+  display: block;
+  color: var(--text-2);
+  font-size: var(--text-sm);
+  font-weight: 650;
+}
+.input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+.input {
+  width: 100%;
+  min-height: 2.6rem;
+  padding: 0.6rem 0.75rem;
+  color: var(--text);
+  background: rgba(4, 13, 21, 0.72);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  font-family: inherit;
+  font-size: var(--text-sm);
+  transition: border-color 0.16s ease, box-shadow 0.16s ease;
+}
+.input:hover:not(:disabled) {
+  border-color: #53738e;
+}
+.input:focus,
+.input:focus-visible {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px rgba(25, 185, 149, 0.16);
+  outline: none;
+}
+.input:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  background: rgba(5, 12, 19, 0.4);
+}
+.input-error,
+.has-error .input {
+  border-color: var(--color-danger);
+  box-shadow: 0 0 0 2px rgba(212, 109, 112, 0.18);
+}
+.input.has-icon-left {
+  padding-left: 2.4rem;
+}
+.input.has-icon-right {
+  padding-right: 2.6rem;
+}
+.input-icon-left {
   position: absolute;
-  top: 50%;
-  right: 0.6rem;
-  transform: translateY(-50%);
+  left: 0.75rem;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  pointer-events: none;
+}
+.input-icon-right {
+  position: absolute;
+  right: 0.5rem;
+  display: grid;
+  place-items: center;
+}
+
+/* ── Password visibility toggle (Auth pages) ─────────────────── */
+.password-field-wrap { display: flex; flex-direction: column; gap: var(--space-2); }
+.password-field { position: relative; }
+.password-toggle {
   display: grid;
   place-items: center;
   width: 2rem;
@@ -301,7 +367,7 @@
 .password-toggle:hover { color: var(--text); }
 
 /* ── Password strength meter ─────────────────────────────────── */
-.password-strength { margin-top: var(--space-2); }
+.password-strength { margin-top: var(--space-1); }
 .strength-bar {
   display: flex;
   gap: 3px;
@@ -326,12 +392,14 @@
   display: flex;
   align-items: center;
   gap: var(--space-1);
-  margin-top: calc(var(--space-2) * -1);
+  margin-top: 0;
+  margin-bottom: 0;
   color: var(--color-danger-text);
   font-size: var(--text-sm);
 }
 .field-hint {
-  margin-top: calc(var(--space-2) * -1);
+  margin-top: 0;
+  margin-bottom: 0;
   color: var(--muted);
   font-size: var(--text-xs);
 }
