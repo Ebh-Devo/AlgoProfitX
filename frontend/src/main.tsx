@@ -13,6 +13,7 @@ import "./styles/creator.css";
 import "./styles/investor.css";
 import "./styles/instruments.css";
 import "./styles/premium.css";
+import "./styles/dashboard.css";
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } } });
 
