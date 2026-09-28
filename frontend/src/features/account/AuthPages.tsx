@@ -1,7 +1,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { Eye, EyeOff } from "lucide-react";
 import { z } from "zod";
 
@@ -9,6 +9,7 @@ import { authApi } from "../../api/auth";
 import { ApiError } from "../../api/client";
 import { useAuth } from "../../auth/auth-context";
 import { ErrorAlert } from "../../components/PageState";
+import { Button } from "../../components/ui/Button";
 import { Input } from "../../components/ui";
 
 const loginSchema = z.object({
@@ -90,7 +91,7 @@ function PasswordInput({
 }
 
 export function LoginPage() {
-  const { login }    = useAuth();
+  const { login, isAuthenticated, isLoading } = useAuth();
   const navigate     = useNavigate();
   const location     = useLocation();
   const [error, setError] = useState<string | null>(null);
@@ -98,6 +99,11 @@ export function LoginPage() {
 
   /* Success flash passed from RegisterPage */
   const registered = (location.state as { registered?: boolean } | null)?.registered;
+
+  if (!isLoading && isAuthenticated) {
+    const from = (location.state as { from?: { pathname?: string } } | null)?.from?.pathname;
+    return <Navigate to={from || "/app"} replace />;
+  }
 
   const submit = form.handleSubmit(async (values) => {
     setError(null);
@@ -145,7 +151,9 @@ export function LoginPage() {
           <span style={{ color: "var(--faint)", cursor: "default" }}>Forgot password?</span>
         </p>
 
-        <button className="button" disabled={form.formState.isSubmitting}>Log in</button>
+        <Button type="submit" loading={form.formState.isSubmitting} style={{ width: "100%", marginTop: "var(--s2)" }}>
+          Log in
+        </Button>
       </form>
 
       <p>New to AlgoProfitX? <Link to="/register">Create an account</Link>.</p>
@@ -154,9 +162,14 @@ export function LoginPage() {
 }
 
 export function RegisterPage() {
+  const { isAuthenticated, isLoading } = useAuth();
   const navigate = useNavigate();
   const [error, setError] = useState<string | null>(null);
   const form = useForm<RegisterValues>({ resolver: zodResolver(registerSchema) });
+
+  if (!isLoading && isAuthenticated) {
+    return <Navigate to="/app" replace />;
+  }
   const password = form.watch("password") ?? "";
 
   const submit = form.handleSubmit(async (values) => {
@@ -205,7 +218,9 @@ export function RegisterPage() {
           {...form.register("password")}
         />
 
-        <button className="button" disabled={form.formState.isSubmitting}>Create account</button>
+        <Button type="submit" loading={form.formState.isSubmitting} style={{ width: "100%", marginTop: "var(--s2)" }}>
+          Create account
+        </Button>
       </form>
 
       <p>Already registered? <Link to="/login">Log in</Link>.</p>
