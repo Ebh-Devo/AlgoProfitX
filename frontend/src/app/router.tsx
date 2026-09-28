@@ -3,9 +3,11 @@ import { createBrowserRouter, Link } from "react-router-dom";
 
 import { RequireAuth, RequireCreator, RequireInvestor } from "../auth/guards";
 import { AppShell } from "../components/AppShell";
-import { AccountPage, AppPage, CreatorEnrollPage } from "../features/account/AccountPages";
+import { DashboardShell } from "../components/DashboardShell";
+import { AccountPage, CreatorEnrollPage } from "../features/account/AccountPages";
 import { LoginPage, RegisterPage } from "../features/account/AuthPages";
 import { HomePage } from "../features/home/HomePage";
+import { DashboardPage } from "../features/dashboard/DashboardPage";
 import { MarketplaceDetailPage, MarketplaceListPage } from "../features/marketplace/MarketplacePages";
 import { LoadingState } from "../components/PageState";
 
@@ -43,33 +45,52 @@ function NotFoundPage() {
 }
 
 export const router = createBrowserRouter([
-  { path: "/", element: <AppShell />, children: [
-    { index: true, element: <HomePage /> },
-    { path: "login", element: <LoginPage /> },
-    { path: "register", element: <RegisterPage /> },
-    { path: "marketplace", element: <MarketplaceListPage /> },
-    { path: "marketplace/:slug", element: <MarketplaceDetailPage /> },
-    { path: "instruments", element: deferred(<InstrumentListPage />) },
-    { path: "instruments/:instrumentId", element: deferred(<InstrumentDetailPage />) },
-    { element: <RequireAuth />, children: [
-      { path: "app", element: <AppPage /> },
-      { path: "account", element: <AccountPage /> },
-      { path: "creator/enroll", element: <CreatorEnrollPage /> },
-      { element: <RequireCreator />, children: [
-        { path: "creator/strategies", element: deferred(<StrategyListPage />) },
-        { path: "creator/strategies/new", element: deferred(<StrategyNewPage />) },
-        { path: "creator/strategies/:strategyId", element: deferred(<StrategyDetailPage />) },
-        { path: "creator/strategies/:strategyId/edit", element: deferred(<StrategyEditPage />) },
-        { path: "creator/strategies/:strategyId/versions/:versionId", element: deferred(<StrategyVersionPage />) },
-        { path: "creator/strategies/:strategyId/versions/:versionId/backtests/:backtestId", element: deferred(<BacktestDetailPage />) },
-      ] },
-      { element: <RequireInvestor />, children: [
-        { path: "investor/allocations", element: deferred(<AllocationListPage />) },
-        { path: "investor/allocations/:allocationId", element: deferred(<AllocationDetailPage />) },
-        { path: "investor/execution-intents", element: deferred(<ExecutionIntentListPage />) },
-        { path: "investor/execution-intents/:executionIntentId", element: deferred(<ExecutionIntentDetailPage />) },
-      ] },
-    ] },
-    { path: "*", element: <NotFoundPage /> },
-  ] },
+  {
+    path: "/",
+    element: <AppShell />,
+    children: [
+      { index: true, element: <HomePage /> },
+      { path: "login", element: <LoginPage /> },
+      { path: "register", element: <RegisterPage /> },
+      { path: "marketplace", element: <MarketplaceListPage /> },
+      { path: "marketplace/:slug", element: <MarketplaceDetailPage /> },
+      { path: "instruments", element: deferred(<InstrumentListPage />) },
+      { path: "instruments/:instrumentId", element: deferred(<InstrumentDetailPage />) },
+      { path: "*", element: <NotFoundPage /> },
+    ],
+  },
+  {
+    /* Authenticated application shell — separate layout with persistent sidebar */
+    element: <RequireAuth />,
+    children: [
+      {
+        element: <DashboardShell />,
+        children: [
+          { path: "app", element: <DashboardPage /> },
+          { path: "account", element: <AccountPage /> },
+          { path: "creator/enroll", element: <CreatorEnrollPage /> },
+          {
+            element: <RequireCreator />,
+            children: [
+              { path: "creator/strategies", element: deferred(<StrategyListPage />) },
+              { path: "creator/strategies/new", element: deferred(<StrategyNewPage />) },
+              { path: "creator/strategies/:strategyId", element: deferred(<StrategyDetailPage />) },
+              { path: "creator/strategies/:strategyId/edit", element: deferred(<StrategyEditPage />) },
+              { path: "creator/strategies/:strategyId/versions/:versionId", element: deferred(<StrategyVersionPage />) },
+              { path: "creator/strategies/:strategyId/versions/:versionId/backtests/:backtestId", element: deferred(<BacktestDetailPage />) },
+            ],
+          },
+          {
+            element: <RequireInvestor />,
+            children: [
+              { path: "investor/allocations", element: deferred(<AllocationListPage />) },
+              { path: "investor/allocations/:allocationId", element: deferred(<AllocationDetailPage />) },
+              { path: "investor/execution-intents", element: deferred(<ExecutionIntentListPage />) },
+              { path: "investor/execution-intents/:executionIntentId", element: deferred(<ExecutionIntentDetailPage />) },
+            ],
+          },
+        ],
+      },
+    ],
+  },
 ]);
