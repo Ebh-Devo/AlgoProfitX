@@ -50,7 +50,12 @@ jobs:
           docker run --rm --entrypoint sh algoprofitx-api:${GITHUB_SHA} -c 'test ! -e /app/.env && test ! -d /app/tests && test ! -d /app/.git'
           docker run --rm --entrypoint sh algoprofitx-web:${GITHUB_SHA} -c 'test ! -e /app/.env && test ! -d /app/node_modules && test ! -d /app/.git'
           sha256sum /tmp/algoprofitx-api.tar /tmp/algoprofitx-web.tar > /tmp/SHA256SUMS
+      # Upload only on main-branch pushes and manual triggers.
+      # PR builds verify the images but do not produce consumable release
+      # artifacts — uploading them on every PR exhausts GitHub artifact storage
+      # because no deployment workflow ever downloads PR-build artifacts.
       - uses: actions/upload-artifact@v4
+        if: github.event_name != 'pull_request'
         with:
           name: catalyst-release-${{ github.sha }}
           path: |
