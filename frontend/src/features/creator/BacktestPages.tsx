@@ -94,7 +94,20 @@ export function VersionBacktests({ strategyId, versionId }: { strategyId: string
 
 function Analytics({ data }: { data: BacktestAnalytics }) {
   const points = data.equity_curve.map((point) => ({ ...point, value: Number(point.equity) }));
-  const metrics = [["Initial capital", metric(data.initial_capital)], ["Final equity", metric(data.final_equity)], ["Total return", metric(data.total_return, "%")], ["Trade count", String(data.trade_count)], ["Win rate", ratioPercent(data.win_rate)], ["Profit factor", metric(data.profit_factor)], ["Average win", metric(data.average_win)], ["Average loss", metric(data.average_loss)], ["Max drawdown", metric(data.max_drawdown, "%")]];
+  const metrics: [string, string][] = [
+    ["Initial capital", metric(data.initial_capital)],
+    ["Final equity", metric(data.final_equity)],
+    // total_return is stored as a percentage value (e.g. 10.5 = 10.5%) by the backend engine
+    ["Total return", metric(data.total_return, "%")],
+    ["Trade count", data.trade_count.toLocaleString()],
+    // win_rate is a decimal ratio (0–1) stored by the analytics service; multiply × 100 to display
+    ["Win rate", ratioPercent(data.win_rate)],
+    ["Profit factor", metric(data.profit_factor)],
+    ["Average win", metric(data.average_win)],
+    ["Average loss", metric(data.average_loss)],
+    // max_drawdown is stored as a percentage value by the analytics service
+    ["Max drawdown", metric(data.max_drawdown, "%")],
+  ];
   return (
     <section aria-labelledby="analytics-heading">
       <div className="section-heading">
@@ -104,19 +117,29 @@ function Analytics({ data }: { data: BacktestAnalytics }) {
           <p>Historical synthetic/reference output only; it is not live or realized Investor performance.</p>
         </div>
       </div>
-      <div className="metric-grid">
-        {metrics.map(([label, value]) => <div className="metric-card" key={label}><span>{label}</span><strong>{value}</strong></div>)}
+      <div className="metric-grid" role="list" aria-label="Backtest metrics">
+        {metrics.map(([label, value]) => (
+          <div className="metric-card" key={label} role="listitem" aria-label={`${label}: ${value}`}>
+            <span>{label}</span>
+            <strong>{value}</strong>
+          </div>
+        ))}
       </div>
       <div className="card chart-card">
-        <h3>Equity curve</h3>
+        <h3 id="equity-curve-heading">Equity curve</h3>
         {points.length ? (
-          <div className="equity-chart" data-testid="equity-chart">
+          <div
+            className="equity-chart"
+            data-testid="equity-chart"
+            role="img"
+            aria-label="Equity curve chart showing portfolio value over time"
+          >
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={points} margin={{ top: 10, right: 16, bottom: 10, left: 8 }}>
+              <LineChart data={points} margin={{ top: 10, right: 16, bottom: 10, left: 16 }}>
                 <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" />
                 <XAxis dataKey="timestamp" hide />
-                <YAxis dataKey="value" stroke="var(--muted)" domain={["auto", "auto"]} />
-                <Tooltip contentStyle={{ background: "var(--surface)", border: "1px solid var(--border)", color: "var(--text)" }} />
+                <YAxis dataKey="value" stroke="var(--muted)" domain={["auto", "auto"]} width={70} tickFormatter={(v: number) => v.toLocaleString(undefined, { maximumFractionDigits: 0 })} />
+                <Tooltip contentStyle={{ background: "var(--surface)", border: "1px solid var(--border)", color: "var(--text)" }} formatter={(v) => [typeof v === "number" ? v.toLocaleString(undefined, { maximumFractionDigits: 4 }) : String(v), "Equity"]} />
                 <Line type="monotone" dataKey="value" name="Equity" stroke="var(--accent-hover)" strokeWidth={2} dot={false} />
               </LineChart>
             </ResponsiveContainer>
@@ -129,8 +152,8 @@ function Analytics({ data }: { data: BacktestAnalytics }) {
         <details className="card equity-details">
           <summary>Equity point detail</summary>
           <div className="strategy-table-wrap">
-            <table className="strategy-table">
-              <thead><tr><th>Timestamp</th><th>Equity</th></tr></thead>
+            <table className="strategy-table" aria-label="Equity curve data points">
+              <thead><tr><th scope="col">Timestamp</th><th scope="col">Equity</th></tr></thead>
               <tbody>{data.equity_curve.map((point) => <tr key={`${point.timestamp}-${point.equity}`}><td>{point.timestamp}</td><td>{metric(point.equity)}</td></tr>)}</tbody>
             </table>
           </div>
