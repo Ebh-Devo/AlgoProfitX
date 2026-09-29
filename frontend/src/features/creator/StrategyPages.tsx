@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -395,16 +395,26 @@ function parseObject(raw: string, label: string): Record<string, unknown> {
 
 function VersionCreator({ strategyId }: { strategyId: string }) {
   const client = useQueryClient();
+  const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [instrumentId, setInstrumentId] = useState("");
   const [configuration, setConfiguration] = useState("{}");
   const [backtest, setBacktest] = useState("{}");
   const [error, setError] = useState<string | null>(null);
+  const [configError, setConfigError] = useState<string | null>(null);
+  const [backtestError, setBacktestError] = useState<string | null>(null);
+
+  /* Debounce instrument search — ~300 ms */
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(search), 300);
+    return () => clearTimeout(timer);
+  }, [search]);
 
   const instruments = useQuery({
-    queryKey: queryKeys.instruments(search),
-    queryFn: () => instrumentsApi.list(search),
+    queryKey: queryKeys.instruments(debouncedSearch),
+    queryFn: () => instrumentsApi.list(debouncedSearch),
     enabled: open,
   });
 
@@ -412,16 +422,21 @@ function VersionCreator({ strategyId }: { strategyId: string }) {
     mutationFn: () =>
       strategiesApi.createVersion(strategyId, {
         instrument_id: instrumentId,
-        configuration: parseObject(configuration, "Configuration"),
+        configuration: parseObject(configuration, "Algorithm configuration"),
         backtest_configuration: parseObject(backtest, "Backtest configuration"),
       }),
-    onSuccess: async () => {
+    onSuccess: async (newVersion) => {
       setOpen(false);
       setSearch("");
+      setDebouncedSearch("");
       setInstrumentId("");
       setConfiguration("{}");
       setBacktest("{}");
+      setError(null);
+      setConfigError(null);
+      setBacktestError(null);
       await client.invalidateQueries({ queryKey: queryKeys.versions(strategyId) });
+      navigate(`/creator/strategies/${strategyId}/versions/${newVersion.id}`);
     },
     onError: (reason) => setError(errorMessage(reason, "Unable to create Version.")),
   });
@@ -429,14 +444,45 @@ function VersionCreator({ strategyId }: { strategyId: string }) {
   const submit = (event: React.FormEvent) => {
     event.preventDefault();
     setError(null);
-    try {
-      if (!instrumentId) throw new Error("Select an Instrument.");
-      parseObject(configuration, "Configuration");
-      parseObject(backtest, "Backtest configuration");
-      mutation.mutate();
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Invalid JSON.");
+    setConfigError(null);
+    setBacktestError(null);
+
+    let valid = true;
+
+    if (!instrumentId) {
+      setError("Select an Instrument before creating a Version.");
+      valid = false;
     }
+
+    try {
+      parseObject(configuration, "Algorithm configuration");
+    } catch (reason) {
+      setConfigError(reason instanceof Error ? reason.message : "Invalid JSON.");
+      valid = false;
+    }
+
+    try {
+      parseObject(backtest, "Backtest configuration");
+    } catch (reason) {
+      setBacktestError(reason instanceof Error ? reason.message : "Invalid JSON.");
+      valid = false;
+    }
+
+    if (valid) {
+      mutation.mutate();
+    }
+  };
+
+  const cancel = () => {
+    setOpen(false);
+    setSearch("");
+    setDebouncedSearch("");
+    setInstrumentId("");
+    setConfiguration("{}");
+    setBacktest("{}");
+    setError(null);
+    setConfigError(null);
+    setBacktestError(null);
   };
 
   if (!open) {
@@ -447,13 +493,25 @@ function VersionCreator({ strategyId }: { strategyId: string }) {
     );
   }
 
-  return (
-    <form className="card form-stack version-form" onSubmit={submit}>
-      <h3>Create immutable Version</h3>
+  const selectedInstrument = instruments.data?.find((i) => i.id === instrumentId);
 
+  return (
+    <form
+      className="card form-stack version-form"
+      onSubmit={submit}
+      aria-label="Create Version"
+      noValidate
+    >
+      <h3>Create immutable Version</h3>
+      <p className="field-hint">
+        Versions are permanent once saved. Choose the Instrument and supply JSON configuration
+        objects — both fields accept only JSON objects.
+      </p>
+
+      {/* Instrument search */}
       <div className="form-field">
         <label className="form-label" htmlFor="version-instrument-search">
-          Find Instrument
+          Search Instrument
         </label>
         <input
           id="version-instrument-search"
@@ -461,24 +519,34 @@ function VersionCreator({ strategyId }: { strategyId: string }) {
           type="search"
           placeholder="Search name or symbol"
           value={search}
+          autoComplete="off"
+          aria-describedby="version-instrument-search-hint"
           onChange={(e) => setSearch(e.target.value)}
         />
+        <p className="field-hint" id="version-instrument-search-hint">
+          Results update after a short pause. Select from the list below.
+        </p>
       </div>
 
+      {/* Instrument selector */}
       {instruments.isLoading ? (
         <LoadingState label="Loading Instruments…" />
       ) : instruments.isError ? (
-        <ErrorAlert>{errorMessage(instruments.error, "Unable to load Instruments.")}</ErrorAlert>
+        <div role="alert">
+          <ErrorAlert>{errorMessage(instruments.error, "Unable to load Instruments.")}</ErrorAlert>
+        </div>
       ) : (
-        <div className="form-field">
+        <div className={`form-field ${error && !instrumentId ? "has-error" : ""}`}>
           <label className="form-label" htmlFor="version-instrument-select">
             Instrument
           </label>
           <select
             id="version-instrument-select"
             className="input"
-            required
             aria-label="Instrument"
+            aria-required="true"
+            aria-invalid={!instrumentId && !!error ? true : undefined}
+            aria-describedby={!instrumentId && error ? "version-instrument-error" : undefined}
             value={instrumentId}
             onChange={(e) => setInstrumentId(e.target.value)}
           >
@@ -491,6 +559,22 @@ function VersionCreator({ strategyId }: { strategyId: string }) {
               </option>
             ))}
           </select>
+          {!instrumentId && error && (
+            <p className="field-error" role="alert" id="version-instrument-error">
+              {error}
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Selected instrument preview */}
+      {selectedInstrument && (
+        <div className="instrument-preview field-hint">
+          <strong>Selected:</strong>{" "}
+          {selectedInstrument.name} · {selectedInstrument.canonical_symbol} ·{" "}
+          {selectedInstrument.exchange.code} · {selectedInstrument.instrument_type} ·{" "}
+          {selectedInstrument.quote_currency}
+          {selectedInstrument.is_tradeable ? "" : " · non-tradeable"}
         </div>
       )}
 
@@ -498,31 +582,56 @@ function VersionCreator({ strategyId }: { strategyId: string }) {
         Instrument identity is stored canonically. Algorithm parameters remain separate below.
       </p>
 
-      <div className="form-field">
+      {/* Algorithm configuration */}
+      <div className={`form-field ${configError ? "has-error" : ""}`}>
         <label className="form-label" htmlFor="version-configuration">
           Algorithm configuration
         </label>
         <textarea
           id="version-configuration"
           className="input json-input"
+          rows={5}
+          aria-invalid={configError ? true : undefined}
+          aria-describedby={configError ? "version-config-error" : "version-config-hint"}
           value={configuration}
           onChange={(e) => setConfiguration(e.target.value)}
         />
+        <p className="field-hint" id="version-config-hint">
+          Must be a JSON object, e.g. <code>{"{ \"period\": 14 }"}</code>
+        </p>
+        {configError && (
+          <p className="field-error" role="alert" id="version-config-error">
+            {configError}
+          </p>
+        )}
       </div>
 
-      <div className="form-field">
+      {/* Backtest configuration */}
+      <div className={`form-field ${backtestError ? "has-error" : ""}`}>
         <label className="form-label" htmlFor="version-backtest-configuration">
           Backtest configuration
         </label>
         <textarea
           id="version-backtest-configuration"
           className="input json-input"
+          rows={5}
+          aria-invalid={backtestError ? true : undefined}
+          aria-describedby={backtestError ? "version-backtest-error" : "version-backtest-hint"}
           value={backtest}
           onChange={(e) => setBacktest(e.target.value)}
         />
+        <p className="field-hint" id="version-backtest-hint">
+          Must be a JSON object, e.g. <code>{"{ \"capital\": 100000 }"}</code>
+        </p>
+        {backtestError && (
+          <p className="field-error" role="alert" id="version-backtest-error">
+            {backtestError}
+          </p>
+        )}
       </div>
 
-      {error && (
+      {/* API-level error (not field-specific) */}
+      {error && instrumentId && (
         <div role="alert">
           <ErrorAlert>{error}</ErrorAlert>
         </div>
@@ -533,14 +642,15 @@ function VersionCreator({ strategyId }: { strategyId: string }) {
           className="btn btn-primary"
           type="submit"
           disabled={mutation.isPending || instruments.isLoading}
+          aria-disabled={mutation.isPending || instruments.isLoading}
         >
-          Create Version
+          {mutation.isPending ? "Creating…" : "Create Version"}
         </button>
         <button
           className="btn btn-ghost"
           type="button"
           disabled={mutation.isPending}
-          onClick={() => setOpen(false)}
+          onClick={cancel}
         >
           Cancel
         </button>
@@ -689,7 +799,7 @@ export function StrategyDetailPage() {
     );
 
   const strategy = query.data;
-  const current = versions.data?.find((item) => item.id === strategy.current_version_id);
+  const versionCount = versions.data?.length ?? 0;
 
   return (
     <section>
@@ -721,7 +831,14 @@ export function StrategyDetailPage() {
             <dt>Slug</dt>
             <dd>{strategy.slug}</dd>
             <dt>Current Version</dt>
-            <dd>{current ? `Version ${current.version_number}` : "None"}</dd>
+            <dd>
+              {strategy.current_version_id
+                ? (() => {
+                    const cur = versions.data?.find((v) => v.id === strategy.current_version_id);
+                    return cur ? `Version ${cur.version_number}` : "Selected";
+                  })()
+                : "None"}
+            </dd>
             <dt>Created</dt>
             <dd>{date(strategy.created_at)}</dd>
             <dt>Updated</dt>
@@ -736,9 +853,17 @@ export function StrategyDetailPage() {
         <Lifecycle strategy={strategy} />
       </div>
 
+      {/* Versions section */}
       <div className="section-heading">
         <div>
-          <h2>Strategy Versions</h2>
+          <h2>
+            Strategy Versions{" "}
+            {versionCount > 0 && (
+              <span className="version-count badge">
+                {versionCount}
+              </span>
+            )}
+          </h2>
           <p>Versions are immutable once created. At least one Version is required to publish.</p>
         </div>
         <VersionCreator strategyId={strategy.id} />
@@ -757,13 +882,23 @@ export function StrategyDetailPage() {
           {versions.data.map((version) => (
             <Link
               key={version.id}
+              className="version-list-item"
               to={`/creator/strategies/${strategy.id}/versions/${version.id}`}
             >
-              <strong>Version {version.version_number}</strong>
-              <span>{date(version.created_at)}</span>
-              {version.id === strategy.current_version_id && (
-                <span className="badge badge-published">current</span>
-              )}
+              <div className="version-list-item-main">
+                <strong>Version {version.version_number}</strong>
+                {version.instrument && (
+                  <span className="version-instrument">
+                    {version.instrument.name} · {version.instrument.exchange.code}
+                  </span>
+                )}
+              </div>
+              <div className="version-list-item-meta">
+                <span className="version-date">{date(version.created_at)}</span>
+                {version.id === strategy.current_version_id && (
+                  <span className="badge badge-published">Current</span>
+                )}
+              </div>
             </Link>
           ))}
         </div>
@@ -816,6 +951,12 @@ export function StrategyDetailPage() {
 /* ── Strategy version page ────────────────────────────────────── */
 export function StrategyVersionPage() {
   const { strategyId = "", versionId = "" } = useParams();
+
+  const strategyQuery = useQuery({
+    queryKey: queryKeys.strategy(strategyId),
+    queryFn: () => strategiesApi.get(strategyId),
+  });
+
   const query = useQuery({
     queryKey: queryKeys.version(strategyId, versionId),
     queryFn: () => strategiesApi.getVersion(strategyId, versionId),
@@ -832,15 +973,25 @@ export function StrategyVersionPage() {
     );
 
   const instrument = query.data.instrument;
+  const strategyName = strategyQuery.data?.name;
 
   return (
     <section>
       <Link className="sb-back-link" to={`/creator/strategies/${strategyId}`}>
-        ← Strategy
+        ← {strategyName ?? "Strategy"}
       </Link>
-      <p className="eyebrow">Immutable strategy configuration</p>
-      <h1>Version {query.data.version_number}</h1>
-      <p>Created {date(query.data.created_at)}</p>
+
+      <div className="sb-page-header">
+        <p className="eyebrow">
+          {strategyName ? `${strategyName} · ` : ""}Immutable version
+        </p>
+        <h1>Version {query.data.version_number}</h1>
+        <p>Created {date(query.data.created_at)}</p>
+      </div>
+
+      <div className="alert alert-info sb-status-notice" role="note">
+        Versions are immutable once created. There are no edit or delete actions.
+      </div>
 
       <div className="card instrument-summary">
         <h2>Instrument</h2>
@@ -861,10 +1012,10 @@ export function StrategyVersionPage() {
             </dd>
             <dt>Currency</dt>
             <dd>{instrument.quote_currency}</dd>
-            <dt>Tick / lot</dt>
-            <dd>
-              {instrument.tick_size ?? "—"} / {instrument.lot_size ?? "—"}
-            </dd>
+            <dt>Tick size</dt>
+            <dd>{instrument.tick_size ?? "—"}</dd>
+            <dt>Lot size</dt>
+            <dd>{instrument.lot_size ?? "—"}</dd>
           </dl>
         ) : (
           <div>
