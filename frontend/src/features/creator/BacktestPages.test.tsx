@@ -318,6 +318,178 @@ describe("Backtest detail", () => {
     vi.useRealTimers();
   });
 
+  // ── Analytics metric formatting ───────────────────────────────────────────
+
+  it("formats trade_count with toLocaleString, not as a raw string", async () => {
+    api.getBacktest.mockResolvedValue(completed);
+    api.getBacktestAnalytics.mockResolvedValue({ ...analytics, trade_count: 1234 });
+    view(<BacktestDetailPage />, "/creator/strategies/s1/versions/v1/backtests/b1");
+    await screen.findByRole("heading", { name: "Backtest analytics" });
+    expect(screen.getByText((1234).toLocaleString())).toBeInTheDocument();
+  });
+
+  it("displays zero trade_count as 0, not Unavailable", async () => {
+    api.getBacktest.mockResolvedValue(completed);
+    api.getBacktestAnalytics.mockResolvedValue({ ...analytics, trade_count: 0 });
+    view(<BacktestDetailPage />, "/creator/strategies/s1/versions/v1/backtests/b1");
+    await screen.findByRole("heading", { name: "Backtest analytics" });
+    expect(screen.getByText("0")).toBeInTheDocument();
+  });
+
+  it("displays zero-value non-null metrics as formatted 0, not Unavailable", async () => {
+    api.getBacktest.mockResolvedValue(completed);
+    api.getBacktestAnalytics.mockResolvedValue({
+      ...analytics,
+      initial_capital: "0.00000000",
+      final_equity: "0.00000000",
+      total_return: "0.00000000",
+      max_drawdown: "0.00000000",
+    });
+    view(<BacktestDetailPage />, "/creator/strategies/s1/versions/v1/backtests/b1");
+    await screen.findByRole("heading", { name: "Backtest analytics" });
+    // Zero-value non-null metrics should format as "0" variants, never "Unavailable"
+    expect(screen.queryAllByText("Unavailable").length).toBeLessThan(4);
+  });
+
+  it("does not convert null metrics to 0 — they remain Unavailable", async () => {
+    api.getBacktest.mockResolvedValue(completed);
+    api.getBacktestAnalytics.mockResolvedValue({
+      ...analytics,
+      win_rate: null,
+      profit_factor: null,
+      average_win: null,
+      average_loss: null,
+    });
+    view(<BacktestDetailPage />, "/creator/strategies/s1/versions/v1/backtests/b1");
+    await screen.findByRole("heading", { name: "Backtest analytics" });
+    expect(screen.getAllByText("Unavailable")).toHaveLength(4);
+  });
+
+  it("renders large financial values without truncation", async () => {
+    api.getBacktest.mockResolvedValue(completed);
+    api.getBacktestAnalytics.mockResolvedValue({
+      ...analytics,
+      initial_capital: "99999999.00000000",
+      final_equity: "100000000.00000000",
+      average_win: "50000000.00000000",
+    });
+    view(<BacktestDetailPage />, "/creator/strategies/s1/versions/v1/backtests/b1");
+    await screen.findByRole("heading", { name: "Backtest analytics" });
+    // Values should be rendered with numeric formatting (toLocaleString), not truncated
+    // Use toLocaleString to match whatever the current locale produces (e.g. 9,99,99,999 in Indian locale)
+    const formatted = (99999999).toLocaleString(undefined, { maximumFractionDigits: 4 });
+    expect(screen.getByText(formatted)).toBeInTheDocument();
+  });
+
+  it("renders total_return as a percentage value (backend stores as %, not ratio)", async () => {
+    api.getBacktest.mockResolvedValue(completed);
+    api.getBacktestAnalytics.mockResolvedValue({ ...analytics, total_return: "10.50000000" });
+    view(<BacktestDetailPage />, "/creator/strategies/s1/versions/v1/backtests/b1");
+    await screen.findByRole("heading", { name: "Backtest analytics" });
+    // 10.5 stored as pct → displayed as "10.5%", not "1050%"
+    expect(screen.getByText(/10\.5%/)).toBeInTheDocument();
+    expect(screen.queryByText(/1,050%/)).not.toBeInTheDocument();
+  });
+
+  it("renders win_rate as a ratio multiplied by 100 to get percent", async () => {
+    api.getBacktest.mockResolvedValue(completed);
+    api.getBacktestAnalytics.mockResolvedValue({ ...analytics, win_rate: "0.75000000" });
+    view(<BacktestDetailPage />, "/creator/strategies/s1/versions/v1/backtests/b1");
+    await screen.findByRole("heading", { name: "Backtest analytics" });
+    // 0.75 ratio → 75%
+    expect(screen.getByText("75%")).toBeInTheDocument();
+  });
+
+  it("renders max_drawdown as a percentage value (backend stores as %, not ratio)", async () => {
+    api.getBacktest.mockResolvedValue(completed);
+    api.getBacktestAnalytics.mockResolvedValue({ ...analytics, max_drawdown: "3.50000000" });
+    view(<BacktestDetailPage />, "/creator/strategies/s1/versions/v1/backtests/b1");
+    await screen.findByRole("heading", { name: "Backtest analytics" });
+    // 3.5 stored as pct → displayed as "3.5%"
+    expect(screen.getByText(/3\.5%/)).toBeInTheDocument();
+  });
+
+  // ── Equity curve edge cases ───────────────────────────────────────────────
+
+  it("renders empty equity curve with an empty state, not a chart", async () => {
+    api.getBacktest.mockResolvedValue(completed);
+    api.getBacktestAnalytics.mockResolvedValue({ ...analytics, equity_curve: [] });
+    view(<BacktestDetailPage />, "/creator/strategies/s1/versions/v1/backtests/b1");
+    await screen.findByRole("heading", { name: "Backtest analytics" });
+    expect(screen.getByText("No equity points are available.")).toBeInTheDocument();
+    expect(screen.queryByTestId("equity-chart")).not.toBeInTheDocument();
+  });
+
+  it("renders single-point equity curve without crashing", async () => {
+    api.getBacktest.mockResolvedValue(completed);
+    api.getBacktestAnalytics.mockResolvedValue({
+      ...analytics,
+      equity_curve: [{ timestamp: "2026-01-01T00:00:00Z", equity: "100000.00000000" }],
+    });
+    view(<BacktestDetailPage />, "/creator/strategies/s1/versions/v1/backtests/b1");
+    await screen.findByRole("heading", { name: "Backtest analytics" });
+    expect(screen.getByTestId("equity-chart")).toBeInTheDocument();
+    expect(screen.getByText("2026-01-01T00:00:00Z")).toBeInTheDocument();
+  });
+
+  it("renders equity detail table with scoped headers", async () => {
+    api.getBacktest.mockResolvedValue(completed);
+    api.getBacktestAnalytics.mockResolvedValue(analytics);
+    view(<BacktestDetailPage />, "/creator/strategies/s1/versions/v1/backtests/b1");
+    await screen.findByRole("heading", { name: "Backtest analytics" });
+    const table = screen.getByRole("table", { name: "Equity curve data points" });
+    expect(table).toBeInTheDocument();
+    const headers = table.querySelectorAll("th[scope='col']");
+    expect(headers).toHaveLength(2);
+  });
+
+  it("does not render equity detail table when curve is empty", async () => {
+    api.getBacktest.mockResolvedValue(completed);
+    api.getBacktestAnalytics.mockResolvedValue({ ...analytics, equity_curve: [] });
+    view(<BacktestDetailPage />, "/creator/strategies/s1/versions/v1/backtests/b1");
+    await screen.findByRole("heading", { name: "Backtest analytics" });
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+  });
+
+  // ── Accessibility ─────────────────────────────────────────────────────────
+
+  it("analytics section is labelled by the analytics heading", async () => {
+    api.getBacktest.mockResolvedValue(completed);
+    api.getBacktestAnalytics.mockResolvedValue(analytics);
+    view(<BacktestDetailPage />, "/creator/strategies/s1/versions/v1/backtests/b1");
+    const heading = await screen.findByRole("heading", { name: "Backtest analytics" });
+    expect(heading.id).toBe("analytics-heading");
+    const section = heading.closest("section");
+    expect(section?.getAttribute("aria-labelledby")).toBe("analytics-heading");
+  });
+
+  it("metric cards expose labels for assistive technology", async () => {
+    api.getBacktest.mockResolvedValue(completed);
+    api.getBacktestAnalytics.mockResolvedValue(analytics);
+    view(<BacktestDetailPage />, "/creator/strategies/s1/versions/v1/backtests/b1");
+    await screen.findByRole("heading", { name: "Backtest analytics" });
+    expect(screen.getByText("Initial capital")).toBeInTheDocument();
+    expect(screen.getByText("Win rate")).toBeInTheDocument();
+    expect(screen.getByText("Max drawdown")).toBeInTheDocument();
+  });
+
+  it("equity chart div has an accessible image role and label", async () => {
+    api.getBacktest.mockResolvedValue(completed);
+    api.getBacktestAnalytics.mockResolvedValue(analytics);
+    view(<BacktestDetailPage />, "/creator/strategies/s1/versions/v1/backtests/b1");
+    await screen.findByRole("heading", { name: "Backtest analytics" });
+    const chart = screen.getByRole("img", { name: /equity curve chart/i });
+    expect(chart).toBeInTheDocument();
+  });
+
+  it("metric grid is labelled for assistive technology", async () => {
+    api.getBacktest.mockResolvedValue(completed);
+    api.getBacktestAnalytics.mockResolvedValue(analytics);
+    view(<BacktestDetailPage />, "/creator/strategies/s1/versions/v1/backtests/b1");
+    await screen.findByRole("heading", { name: "Backtest analytics" });
+    expect(screen.getByRole("list", { name: "Backtest metrics" })).toBeInTheDocument();
+  });
+
   // ── Lifecycle transition tests ─────────────────────────────────────────────
 
   it("transitions queued → running → completed as polling updates data", async () => {
