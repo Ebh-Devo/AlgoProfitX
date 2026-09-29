@@ -119,9 +119,9 @@ function Analytics({ data }: { data: BacktestAnalytics }) {
       </div>
       <div className="metric-grid" role="list" aria-label="Backtest metrics">
         {metrics.map(([label, value]) => (
-          <div className="metric-card" key={label} role="listitem">
-            <span id={`metric-label-${label.toLowerCase().replace(/\s+/g, "-")}`}>{label}</span>
-            <strong aria-labelledby={`metric-label-${label.toLowerCase().replace(/\s+/g, "-")}`}>{value}</strong>
+          <div className="metric-card" key={label} role="listitem" aria-label={`${label}: ${value}`}>
+            <span>{label}</span>
+            <strong>{value}</strong>
           </div>
         ))}
       </div>

@@ -336,7 +336,7 @@ describe("Backtest detail", () => {
     expect(screen.getByText("0")).toBeInTheDocument();
   });
 
-  it("displays zero-value non-null metrics as formatted 0, not Unavailable", async () => {
+  it("displays zero-value non-null metrics as formatted 0/0%, not Unavailable", async () => {
     api.getBacktest.mockResolvedValue(completed);
     api.getBacktestAnalytics.mockResolvedValue({
       ...analytics,
@@ -344,11 +344,35 @@ describe("Backtest detail", () => {
       final_equity: "0.00000000",
       total_return: "0.00000000",
       max_drawdown: "0.00000000",
+      // keep win_rate/profit_factor/average_win/average_loss null so Unavailable count is known
+      win_rate: null,
+      profit_factor: null,
+      average_win: null,
+      average_loss: null,
     });
     view(<BacktestDetailPage />, "/creator/strategies/s1/versions/v1/backtests/b1");
     await screen.findByRole("heading", { name: "Backtest analytics" });
-    // Zero-value non-null metrics should format as "0" variants, never "Unavailable"
-    expect(screen.queryAllByText("Unavailable").length).toBeLessThan(4);
+    // Zero (non-null) metrics must render as a formatted value, never as "Unavailable"
+    // Initial capital: 0 → "0"
+    const cards = screen.getAllByRole("listitem");
+    const initialCard = cards.find((c) => c.getAttribute("aria-label")?.startsWith("Initial capital:"));
+    expect(initialCard).toBeDefined();
+    expect(initialCard?.getAttribute("aria-label")).not.toContain("Unavailable");
+    expect(initialCard?.getAttribute("aria-label")).toContain("0");
+    // Final equity: 0 → "0"
+    const finalCard = cards.find((c) => c.getAttribute("aria-label")?.startsWith("Final equity:"));
+    expect(finalCard?.getAttribute("aria-label")).toContain("0");
+    expect(finalCard?.getAttribute("aria-label")).not.toContain("Unavailable");
+    // Total return: 0 → "0%"
+    const returnCard = cards.find((c) => c.getAttribute("aria-label")?.startsWith("Total return:"));
+    expect(returnCard?.getAttribute("aria-label")).toMatch(/0%/);
+    expect(returnCard?.getAttribute("aria-label")).not.toContain("Unavailable");
+    // Max drawdown: 0 → "0%"
+    const drawdownCard = cards.find((c) => c.getAttribute("aria-label")?.startsWith("Max drawdown:"));
+    expect(drawdownCard?.getAttribute("aria-label")).toMatch(/0%/);
+    expect(drawdownCard?.getAttribute("aria-label")).not.toContain("Unavailable");
+    // Genuinely null metrics still render as Unavailable
+    expect(screen.getAllByText("Unavailable")).toHaveLength(4);
   });
 
   it("does not convert null metrics to 0 — they remain Unavailable", async () => {
@@ -463,7 +487,7 @@ describe("Backtest detail", () => {
     expect(section?.getAttribute("aria-labelledby")).toBe("analytics-heading");
   });
 
-  it("metric cards expose labels for assistive technology", async () => {
+  it("metric cards expose labels for assistive technology via aria-label on listitem", async () => {
     api.getBacktest.mockResolvedValue(completed);
     api.getBacktestAnalytics.mockResolvedValue(analytics);
     view(<BacktestDetailPage />, "/creator/strategies/s1/versions/v1/backtests/b1");
@@ -471,6 +495,12 @@ describe("Backtest detail", () => {
     expect(screen.getByText("Initial capital")).toBeInTheDocument();
     expect(screen.getByText("Win rate")).toBeInTheDocument();
     expect(screen.getByText("Max drawdown")).toBeInTheDocument();
+    // Each listitem must carry an aria-label combining label and value
+    const cards = screen.getAllByRole("listitem");
+    const initialCard = cards.find((c) => c.getAttribute("aria-label")?.startsWith("Initial capital:"));
+    expect(initialCard).toBeDefined();
+    const winRateCard = cards.find((c) => c.getAttribute("aria-label")?.startsWith("Win rate:"));
+    expect(winRateCard).toBeDefined();
   });
 
   it("equity chart div has an accessible image role and label", async () => {
