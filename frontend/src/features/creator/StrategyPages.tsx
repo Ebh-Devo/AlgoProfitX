@@ -107,6 +107,8 @@ function StrategyForm({ initial, submitLabel, onSave }: StrategyFormProps) {
           className="input"
           type="text"
           autoComplete="off"
+          aria-describedby={errors.name ? "strategy-name-error" : undefined}
+          aria-invalid={errors.name ? true : undefined}
           {...register("name")}
         />
         {errors.name && (
@@ -125,9 +127,13 @@ function StrategyForm({ initial, submitLabel, onSave }: StrategyFormProps) {
           type="text"
           autoComplete="off"
           spellCheck={false}
+          aria-describedby={
+            errors.slug ? "strategy-slug-error" : "strategy-slug-hint"
+          }
+          aria-invalid={errors.slug ? true : undefined}
           {...register("slug")}
         />
-        <p className="field-hint">
+        <p className="field-hint" id="strategy-slug-hint">
           Lowercase letters, numbers, and single hyphens — e.g.{" "}
           <code>india-trend-v2</code>
         </p>
@@ -147,10 +153,12 @@ function StrategyForm({ initial, submitLabel, onSave }: StrategyFormProps) {
           id="strategy-description"
           className="input sb-textarea"
           rows={4}
+          aria-describedby={errors.description ? "strategy-description-error" : undefined}
+          aria-invalid={errors.description ? true : undefined}
           {...register("description")}
         />
         {errors.description && (
-          <p className="field-error" role="alert">
+          <p className="field-error" role="alert" id="strategy-description-error">
             {errors.description.message}
           </p>
         )}
