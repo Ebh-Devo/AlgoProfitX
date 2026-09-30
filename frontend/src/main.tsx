@@ -6,11 +6,14 @@ import { RouterProvider } from "react-router-dom";
 import { AuthProvider } from "./auth/auth-context";
 import { router } from "./app/router";
 import { AppErrorBoundary } from "./components/AppErrorBoundary";
+import "./styles/tokens.css";
 import "./styles/global.css";
+import "./styles/components.css";
 import "./styles/creator.css";
 import "./styles/investor.css";
 import "./styles/instruments.css";
 import "./styles/premium.css";
+import "./styles/dashboard.css";
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } } });
 
