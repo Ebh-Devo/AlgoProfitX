@@ -18,7 +18,7 @@ jobs:
         run: >-
           docker build --platform linux/amd64
           --build-arg VCS_REF=${{ github.sha }}
-          --build-arg SOURCE_URL=https://github.com/Ebhadmin/AlgoProfitX
+          --build-arg SOURCE_URL=https://github.com/Ebh-Devo/AlgoProfitX
           --tag algoprofitx-api:${{ github.sha }} backend
       - name: Reproduce startup failure and verify corrected runtime
         run: python3 scripts/verify-api-runtime.py
