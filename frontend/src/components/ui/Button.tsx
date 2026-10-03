@@ -32,6 +32,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
       className={[VARIANT_CLASS[variant], SIZE_CLASS[size], className].filter(Boolean).join(" ")}
       disabled={disabled || loading}
       aria-busy={loading}
+      aria-disabled={disabled || loading || undefined}
       {...rest}
     >
       {loading ? <Loader2 size={14} className="btn-spinner" aria-hidden="true" /> : iconLeft}

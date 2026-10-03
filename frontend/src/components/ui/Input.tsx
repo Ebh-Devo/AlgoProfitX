@@ -15,10 +15,8 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
     const errorId = `${inputId}-error`;
     const hintId = `${inputId}-hint`;
 
-    const describedBy = [
-      error ? errorId : null,
-      hint ? hintId : null,
-    ].filter(Boolean).join(" ") || undefined;
+    // The hint is not rendered while an error is shown, so only reference what exists.
+    const describedBy = error ? errorId : hint ? hintId : undefined;
 
     return (
       <div className={`form-field ${error ? "has-error" : ""} ${disabled ? "is-disabled" : ""}`}>
