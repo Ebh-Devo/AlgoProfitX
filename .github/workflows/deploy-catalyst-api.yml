@@ -33,7 +33,7 @@ jobs:
           set -euo pipefail
           [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
           [[ "$RUN_ID" =~ ^[0-9]+$ ]]
-          gh api "repos/Ebhadmin/AlgoProfitX/actions/runs/$RUN_ID" > "$RUNNER_TEMP/gate.json"
+          gh api "repos/Ebh-Devo/AlgoProfitX/actions/runs/$RUN_ID" > "$RUNNER_TEMP/gate.json"
           python3 - <<'PY'
           import json, os
           with open(os.environ['RUNNER_TEMP'] + '/gate.json') as stream:
@@ -46,7 +46,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           github-token: ${{ github.token }}
-          repository: Ebhadmin/AlgoProfitX
+          repository: Ebh-Devo/AlgoProfitX
           run-id: ${{ inputs.runtime_run_id }}
           name: algoprofitx-api-${{ inputs.source_sha }}
           path: release
@@ -61,7 +61,7 @@ jobs:
           with open('api-runtime.json') as stream:
               metadata = json.load(stream)
           assert metadata['APP_SOURCE_SHA'] == os.environ['SOURCE_SHA']
-          assert metadata['APP_SOURCE_REPO'] == 'Ebhadmin/AlgoProfitX'
+          assert metadata['APP_SOURCE_REPO'] == 'Ebh-Devo/AlgoProfitX'
           assert metadata['architecture'] == 'amd64' and metadata['os'] == 'linux'
           assert all(c['live'] == 200 and c['stays_running'] for c in metadata['checks'])
           PY

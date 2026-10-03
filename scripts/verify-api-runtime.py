@@ -94,9 +94,7 @@ docker("save", "--output", str(archive), image)
 digest = hashlib.file_digest(archive.open("rb"), "sha256").hexdigest()
 archive.with_suffix(".tar.sha256").write_text(digest + "  algoprofitx-api.tar\n")
 metadata = {
-    "APP_SOURCE_REPO": "Ebhadmin/AlgoProfitX", "APP_SOURCE_SHA": sha,
-    "DEPLOYMENT_REPO": "Ebh-Devo/algoprofitx-catalyst-connectivity-poc",
-    "DEPLOYMENT_SHA": "c6e025501fc75f82bb31d80e01270480b8a052cc",
+    "APP_SOURCE_REPO": "Ebh-Devo/AlgoProfitX", "APP_SOURCE_SHA": sha,
     "os": config["Os"], "architecture": config["Architecture"],
     "user": config["Config"]["User"], "workdir": config["Config"]["WorkingDir"],
     "entrypoint": config["Config"].get("Entrypoint"), "cmd": config["Config"]["Cmd"],
