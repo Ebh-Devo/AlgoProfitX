@@ -2,7 +2,7 @@
 
 **Audit date:** 2026-10-01  
 **Scope:** Read-only inspection of `AlgoProfitX` and the public snapshot of `algoprofitx-catalyst-connectivity-poc`.  
-**Primary AlgoProfitX snapshot:** local branch `dev`; remote configured as `https://github.com/Ebhadmin/AlgoProfitX.git`.  
+**Primary AlgoProfitX snapshot:** local branch `dev`; canonical repository `Ebh-Devo/AlgoProfitX`.  
 **POC snapshot:** `c6e025501fc75f82bb31d80e01270480b8a052cc` (`ci: deploy configuration diagnostics`, 2026-09-04).
 
 No deployment, Catalyst operation, secret change, environment-variable change, repository change, or application/configuration change was performed.
@@ -55,7 +55,7 @@ algoprofitx-catalyst-connectivity-poc
 ### What is and is not deployed today
 
 - The primary repository has CI, Docker packaging, Catalyst Development deployment workflows, and an API runtime verification workflow.
-- The primary repository has no production deployment workflow. `docs/production-runtime.md` explicitly says production deployment does not yet exist and that the packaging is provider-neutral.
+- The primary repository has no production deployment workflow. `docs/production-runtime.md` states that no Production deployment is defined or evidenced in this repository and that the packaging is provider-neutral. Separately, `https://api.algoprofitx.com/health/live` returned HTTP 200 (`{"status":"ok"}`) and `https://www.algoprofitx.com/` rendered successfully on 2026-10-01, confirming that Production endpoints are publicly live; however, the authoritative Production deployment process and deployment-to-Git-SHA evidence cannot currently be reconstructed from this repository.
 - The primary repository's Catalyst deployment workflows target Development. No checked-in workflow targets a Catalyst Production environment or a production AppSail.
 - The POC deploys only a separate `connectivity-poc` AppSail in Catalyst Development. It is not the `algoprofitx-api` or `algoprofitx-web` image.
 - The user-supplied current production AppSail names (`algoprofitx-web`, `algoprofitx-api`) and `connectivity-poc` were not queried or changed during this audit. Repository evidence does not establish their current live versions or deployment history.
@@ -94,7 +94,7 @@ algoprofitx-catalyst-connectivity-poc
 |---|---|---:|---:|---|
 | `AlgoProfitX` API/web source | Primary Catalyst Development workflows | No current production evidence; critical to Development | No repository move; consolidate/standardize later | `build-catalyst.yml` and `deploy-catalyst-development.yml` build and deploy directly from primary source |
 | POC repository | Catalyst `connectivity-poc` Development AppSail | No for API/web production; operationally relevant to the separate connectivity probe | Yes, if the probe is still required | POC `build.yml` and `deploy-catalyst-poc.yml` build/deploy its own image and use a separate AppSail |
-| POC commit metadata | Primary API runtime artifact metadata | Potentially critical to release traceability, not runtime execution | Yes | `scripts/verify-api-runtime.py` writes `DEPLOYMENT_REPO=Ebh-Devo/algoprofitx-catalyst-connectivity-poc` and a fixed `DEPLOYMENT_SHA`; this describes provenance but does not fetch or execute POC code |
+| POC commit metadata | Primary API runtime artifact metadata (historical) | No longer present in current tracked code | Already removed | `scripts/verify-api-runtime.py` previously wrote `DEPLOYMENT_REPO` and `DEPLOYMENT_SHA` fields referencing the POC; these fields were removed in PR #22 (`chore: remove obsolete POC deployment provenance`). The script now records only `APP_SOURCE_REPO=Ebh-Devo/AlgoProfitX` and `APP_SOURCE_SHA`. No POC provenance is written by current tracked code. |
 | POC repository GitHub artifact | POC Catalyst Development deployment | No for primary API/web; critical for `connectivity-poc` | Yes, if POC is retired | POC deploy workflow downloads a fixed run `33869556076` and artifact `connectivity-poc-linux-amd64-cb99...` from a differently spelled owner/repository reference |
 | Catalyst project/org/DC IDs | Both repositories' Catalyst workflows | Yes for any corresponding Development deployment | Move to one controlled configuration surface | Both use project `36851000000392052`, org `60069781151`, DC `in` |
 | `CATALYST_TOKEN` GitHub secret | Primary and POC Catalyst deploy workflows | Yes for their respective manual deployments | Centralize/standardize ownership and environment scope | Both reference `secrets.CATALYST_TOKEN`; no secret values were accessed |
@@ -105,9 +105,9 @@ algoprofitx-catalyst-connectivity-poc
 
 ### Cross-repository references found
 
-1. **Primary repository, `scripts/verify-api-runtime.py`:** runtime metadata names `Ebh-Devo/algoprofitx-catalyst-connectivity-poc` and fixed POC commit `c6e025501fc75f82bb31d80e01270480b8a052cc`. This is an artifact metadata dependency only in the checked-in code; the script does not clone, download, import, or execute the POC.
+1. **Primary repository, `scripts/verify-api-runtime.py` (historical):** at audit time the script recorded `DEPLOYMENT_REPO=Ebh-Devo/algoprofitx-catalyst-connectivity-poc` and `DEPLOYMENT_SHA=c6e025501fc75f82bb31d80e01270480b8a052cc` as artifact metadata. These fields were removed by PR #22; current code records only `APP_SOURCE_REPO=Ebh-Devo/AlgoProfitX` and `APP_SOURCE_SHA`. The script never cloned, downloaded, imported, or executed the POC.
 2. **POC repository, `.github/workflows/deploy-catalyst-poc.yml`:** downloads an artifact from `Ebh-Digtal/algoprofitx-catalyst-connectivity-poc`, run `33869556076`, with a fixed artifact SHA/name, then deploys AppSail `connectivity-poc`.
-3. **Repository identity mismatch:** the user supplied `Ebh-Devo` for the POC and `Ebh-Devo/AlgoProfitX` for the primary repository, while the checked-out primary remote is `Ebhadmin/AlgoProfitX`, the primary workflows use `Ebhadmin/AlgoProfitX`, and the POC workflow uses `Ebh-Digtal/...`. These must be resolved before relying on automated artifact downloads or provenance checks.
+3. **Repository identity:** the canonical primary repository is `Ebh-Devo/AlgoProfitX` following PR #21 (`chore: canonicalize repository identity`). Earlier tracked material referenced `Ebhadmin/AlgoProfitX`; that reference is now historical only. The POC deploy workflow references `Ebh-Digtal/...` for its artifact download, which remains an unresolved mismatch within the POC repository.
 4. **No primary workflow reference to the POC repository was found** in the build, CI, Catalyst Development deployment, or API verification workflows. The only primary tracked reference is the metadata field described above.
 5. **No POC reference in application runtime behavior was found.** The POC is not imported by the API/web source, is not a Docker build context for either primary image, and is not called by primary CI.
 
@@ -135,15 +135,28 @@ The API-only `deploy-catalyst-api.yml` is a separate manual path: an operator su
 
 ## D. Current Production Deployment
 
-No current production deployment process is defined in the inspected primary repository.
+No Production deployment is defined or evidenced in this repository.
 
-- `docs/production-runtime.md` states: "No production deployment exists yet." It defines provider-neutral packaging and runtime contracts but explicitly does not publish images, create cloud resources, configure DNS, or run migrations automatically.
+**Externally observed production endpoints (2026-10-01):**
+- `https://api.algoprofitx.com/health/live` returned HTTP 200 with `{"status":"ok"}`.
+- `https://www.algoprofitx.com/` rendered successfully.
+
+These observations confirm that Production endpoints are publicly live. However, the repository does not contain authoritative evidence mapping those endpoints to:
+- a Catalyst Production AppSail deployment ID
+- a production deployment timestamp
+- a deployed Git SHA
+- an image digest or archive checksum
+- a Catalyst deployment artifact or production release record
+
+Therefore: **Production endpoints are publicly live, but the authoritative Production deployment process and deployment-to-Git-SHA evidence cannot currently be reconstructed from this repository.**
+
+- `docs/production-runtime.md` states that no Production deployment is defined or evidenced in this repository. It defines provider-neutral packaging and runtime contracts but explicitly does not publish images, create cloud resources, configure DNS, or run migrations automatically.
 - No tracked primary workflow has a production trigger, Catalyst `Production` target, production AppSail command, production smoke test, rollback command, or production deployment ID capture.
 - The Catalyst workflows guard `CATALYST_TARGET_ENVIRONMENT=Development` or are clearly named/implemented as Development deployment workflows.
 - The POC workflow comments and commands explicitly exclude source build, registry, database configuration, and production deployment.
-- The supplied production AppSail names and project context may reflect live infrastructure outside this repository, but this audit did not query live Catalyst state and cannot map that state to a checked-in workflow or artifact.
+- The production AppSail names and project context may reflect live infrastructure outside this repository, but this audit did not query live Catalyst state and cannot map that state to a checked-in workflow or artifact.
 
-Therefore the current production path is **not reconstructable from repository evidence**. Any real production process is external/manual or in another system not inspected here.
+The current production path is **not reconstructable from repository evidence**. Any real production process is external/manual or in another system not inspected here.
 
 ## E. Git SHA Traceability
 
@@ -169,11 +182,11 @@ The audit cannot answer "which exact Git commit is running in production?" from 
 1. There is no checked-in production deployment workflow or production deployment record.
 2. The normal combined API/web Development workflow uses fixed release run IDs and archive checksums but does not emit or capture a Catalyst deployment ID or query Catalyst deployment metadata.
 3. The frontend image receives no Git SHA build argument/OCI revision label; its SHA is present in the tag and artifact name only.
-4. The API runtime metadata includes a `DEPLOYMENT_REPO` and fixed `DEPLOYMENT_SHA` referring to the POC, which can be mistaken for the application source/deployment commit. It is not a Catalyst deployment ID and does not prove that the POC participated in the API deployment.
+4. The API runtime metadata previously included `DEPLOYMENT_REPO` and `DEPLOYMENT_SHA` fields referring to the POC, which could be mistaken for the application source/deployment commit. These fields were removed by PR #22 (`chore: remove obsolete POC deployment provenance`). Current code records only `APP_SOURCE_REPO=Ebh-Devo/AlgoProfitX` and `APP_SOURCE_SHA`; neither is a Catalyst deployment ID.
 5. Artifact retention is one day for the combined release and three days for the API verification artifact, so durable historical release evidence is not defined.
 6. No runtime version endpoint exposes source SHA, image digest, or release identity. The API version is statically `0.1.0`; `/health/live` and `/health/ready` expose only status.
 7. No immutable registry digest or Catalyst AppSail deployment export is recorded in the repository.
-8. The repository-owner spelling mismatch (`Ebhadmin`, `Ebh-Devo`, `Ebh-Digtal`) undermines automated provenance retrieval until resolved.
+8. The canonical primary repository is `Ebh-Devo/AlgoProfitX` following PR #21. The POC deploy workflow still references `Ebh-Digtal/...` for its artifact download, which remains an unresolved mismatch within the POC repository and may undermine automated POC artifact retrieval.
 
 **Conclusion:** exact SHA traceability exists for a verified API build artifact and a manual Development API gate, but not for a live production AppSail. The complete `Git SHA -> artifact -> Catalyst deployment -> production AppSail` chain is missing.
 
@@ -280,9 +293,9 @@ Secrets modified: NO
 Critical dependencies found:
 - Primary Development deployment and POC Development deployment share Catalyst project/org/DC identifiers.
 - Both deployment paths depend on a GitHub Actions CATALYST_TOKEN secret.
-- The primary API runtime metadata records the POC repository and a fixed POC commit as deployment metadata, although primary deployment does not execute or download POC code.
-- The POC deployment workflow depends on a fixed external repository owner/name, run ID, artifact name, and checksum.
-- Repository identity strings are inconsistent: Ebhadmin, Ebh-Devo, and Ebh-Digtal appear in the inspected evidence.
+- The primary API runtime metadata previously recorded the POC repository and a fixed POC commit as deployment metadata (DEPLOYMENT_REPO/DEPLOYMENT_SHA); these fields were removed by PR #22. Current code records only APP_SOURCE_REPO=Ebh-Devo/AlgoProfitX and APP_SOURCE_SHA.
+- The POC deployment workflow depends on a fixed external repository owner/name (Ebh-Digtal/...), run ID, artifact name, and checksum.
+- The canonical primary repository is Ebh-Devo/AlgoProfitX (PR #21); historical references to Ebhadmin/AlgoProfitX are superseded. The POC workflow's Ebh-Digtal/... reference remains unresolved within the POC repository.
 
 Migration blockers:
 - No repository-backed production deployment workflow or production deployment record was found.
