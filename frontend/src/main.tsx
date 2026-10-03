@@ -13,6 +13,7 @@ import "./styles/creator.css";
 import "./styles/investor.css";
 import "./styles/instruments.css";
 import "./styles/shell.css";
+import "./styles/landing.css";
 import "./styles/premium.css";
 import "./styles/dashboard.css";
 
