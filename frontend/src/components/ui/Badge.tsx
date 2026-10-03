@@ -1,4 +1,5 @@
-import type { HTMLAttributes } from "react";
+import type { HTMLAttributes, ReactNode } from "react";
+import { Archive, CheckCircle2, CircleDashed, Clock, Globe, Loader2, PenLine, XCircle } from "lucide-react";
 
 type BadgeVariant = "default" | "success" | "warning" | "danger" | "info" | "accent" | "muted";
 
@@ -35,12 +36,30 @@ const STATUS_MAP: Record<string, BadgeVariant> = {
   failed:     "danger",
   pending:    "warning",
   cancelled:  "muted",
+  queued:     "warning",
+  running:    "info",
+};
+
+/** Icons make status legible without colour. Decorative: the text label is always rendered. */
+const STATUS_ICON: Record<string, ReactNode> = {
+  draft:     <PenLine size={12} aria-hidden="true" />,
+  published: <Globe size={12} aria-hidden="true" />,
+  deployed:  <CheckCircle2 size={12} aria-hidden="true" />,
+  archived:  <Archive size={12} aria-hidden="true" />,
+  active:    <CheckCircle2 size={12} aria-hidden="true" />,
+  completed: <CheckCircle2 size={12} aria-hidden="true" />,
+  failed:    <XCircle size={12} aria-hidden="true" />,
+  pending:   <Clock size={12} aria-hidden="true" />,
+  queued:    <Clock size={12} aria-hidden="true" />,
+  running:   <Loader2 size={12} aria-hidden="true" className="status-spin" />,
+  cancelled: <CircleDashed size={12} aria-hidden="true" />,
 };
 
 export function StatusBadge({ status, className = "" }: { status: string; className?: string }) {
   const variant = STATUS_MAP[status.toLowerCase()] ?? "default";
   return (
     <Badge variant={variant} className={`badge-status ${className}`}>
+      {STATUS_ICON[status.toLowerCase()]}
       {status}
     </Badge>
   );

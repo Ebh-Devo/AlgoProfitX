@@ -537,7 +537,7 @@ describe("Version detail page", () => {
   it("handles a generic API failure gracefully", async () => {
     api.getVersion.mockRejectedValue(new ApiError(500, "Service unavailable"));
     view(<StrategyVersionPage />, "/creator/strategies/s1/versions/v1");
-    expect(await screen.findByText("Unable to load this Version.")).toBeInTheDocument();
+    expect(await screen.findByText(/couldn.t load this/i)).toBeInTheDocument();
   });
 
   it("communicates immutability with a note", async () => {
