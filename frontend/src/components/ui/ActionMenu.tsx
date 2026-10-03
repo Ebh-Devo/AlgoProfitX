@@ -86,7 +86,7 @@ export function ActionMenu({ label, items, triggerText }: ActionMenuProps) {
                 type="button"
                 className={cls}
                 aria-disabled={item.disabled || undefined}
-                onClick={() => { if (item.disabled) return; close(); item.onSelect?.(); }}
+                onClick={() => { if (item.disabled) return; close(); buttonRef.current?.focus(); item.onSelect?.(); }}
               >
                 {item.icon}{item.label}
               </button>

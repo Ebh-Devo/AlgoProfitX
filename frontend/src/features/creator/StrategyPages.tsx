@@ -170,7 +170,7 @@ function StrategyForm({ mode, initial, submitLabel, cancelTo, onSave, aside }: S
                 {...nameField}
                 onChange={(e) => {
                   void nameField.onChange(e);
-                  if (!slugTouched.current) setValue("slug", slugify(e.target.value));
+                  if (!slugTouched.current) setValue("slug", slugify(e.target.value), { shouldValidate: !!errors.slug });
                 }}
               />
 
@@ -939,7 +939,7 @@ export function StrategyDetailPage() {
       </header>
 
       {actionError && (
-        <div style={{ marginBottom: "var(--space-5)" }} role="alert">
+        <div style={{ marginBottom: "var(--space-5)" }}>
           <Alert variant="error">{actionError}</Alert>
         </div>
       )}

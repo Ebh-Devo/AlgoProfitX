@@ -67,4 +67,22 @@ describe("Creator strategy pages", () => {
     expect(screen.getByRole("menuitem", { name: "Archive" })).toBeInTheDocument(); expect(screen.getByRole("menuitem", { name: "Delete strategy" })).toBeInTheDocument();
   });
   it("cancelling the delete dialog does not delete", async () => { api.get.mockResolvedValue(strategy); view(<StrategyDetailPage />, "/creator/strategies/s1"); await userEvent.click(await screen.findByRole("button", { name: "More" })); await userEvent.click(screen.getByRole("menuitem", { name: "Delete strategy" })); await userEvent.click(screen.getByRole("button", { name: "Cancel" })); expect(api.delete).not.toHaveBeenCalled(); });
+  it("clears a stale slug error when the slug is auto-derived after a failed submit", async () => {
+    view(<StrategyNewPage />, "/creator/strategies/new");
+    await userEvent.click(screen.getByRole("button", { name: "Create strategy" }));
+    expect(await screen.findByText("Slug must be at least 3 characters")).toBeInTheDocument();
+    await userEvent.type(screen.getByLabelText("Name"), "Gap Fade");
+    await waitFor(() => expect(screen.queryByText("Slug must be at least 3 characters")).not.toBeInTheDocument());
+  });
+  it("returns focus to the More trigger after a menu action opens and closes a dialog", async () => {
+    api.get.mockResolvedValue(strategy); view(<StrategyDetailPage />, "/creator/strategies/s1");
+    const more = await screen.findByRole("button", { name: "More" }); await userEvent.click(more);
+    await userEvent.click(screen.getByRole("menuitem", { name: "Delete strategy" }));
+    expect(more).toHaveFocus();
+  });
+  it("does not nest alert roles for lifecycle errors", async () => {
+    api.get.mockResolvedValue(strategy); api.lifecycle.mockRejectedValue(new ApiError(409, "Needs a Version"));
+    view(<StrategyDetailPage />, "/creator/strategies/s1"); await userEvent.click(await screen.findByRole("button", { name: "Publish" }));
+    const alert = await screen.findByRole("alert"); expect(alert).toHaveTextContent("Needs a Version"); expect(alert.parentElement?.closest("[role=alert]")).toBeNull();
+  });
 });
