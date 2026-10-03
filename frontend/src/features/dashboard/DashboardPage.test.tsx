@@ -1,4 +1,4 @@
-import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
@@ -147,200 +147,134 @@ describe("DashboardPage", () => {
     listExecutionIntents.mockResolvedValue([]);
   });
 
-  it("shows loading state while auth is resolving", () => {
+  const asUser = (roles: string[], email = "c@example.com") => {
+    auth.value = { user: { email, roles }, isAuthenticated: true, isLoading: false, logout: vi.fn() };
+  };
+  const strategy = (over: Record<string, unknown> = {}) => ({
+    id: "s1", name: "Momentum Alpha", slug: "momentum-alpha", status: "published", creator_id: "u1", description: null,
+    is_public: true, current_version_id: null, created_at: "2026-01-01T00:00:00Z", updated_at: new Date().toISOString(),
+    published_at: "2026-01-02T00:00:00Z", deployed_at: null, ...over,
+  });
+  const intent = (over: Record<string, unknown> = {}) => ({
+    id: "e1", strategy_name: "Momentum Alpha", strategy_version_number: 2, notional_amount_snapshot: "50000", currency_snapshot: "INR",
+    status: "completed", created_at: "2026-02-01T00:00:00Z", started_at: "2026-02-01T00:01:00Z", completed_at: "2026-02-01T00:02:00Z", ...over,
+  });
+
+  it("shows a skeleton status while auth is resolving", () => {
     auth.value = { user: null, isAuthenticated: false, isLoading: true, logout: vi.fn() };
     renderWithProviders(<DashboardPage />);
-    expect(screen.getByRole("status")).toBeInTheDocument();
+    expect(screen.getAllByRole("status").length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText(/loading your dashboard/i)).toBeInTheDocument();
   });
 
-  it("renders welcome heading with user name for creator+investor", async () => {
-    auth.value = {
-      user: { email: "alice@example.com", roles: ["CREATOR", "INVESTOR"] },
-      isAuthenticated: true,
-      isLoading: false,
-      logout: vi.fn(),
-    };
+  it("renders the page header with a primary New strategy action for creators", async () => {
+    asUser(["CREATOR"]);
     renderWithProviders(<DashboardPage />);
-    await waitFor(() => {
-      expect(screen.getByRole("heading", { name: /welcome back/i })).toBeInTheDocument();
-    });
-    expect(screen.getByText("alice")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: "Dashboard" })).toBeInTheDocument();
+    expect(screen.getAllByRole("link", { name: /new strategy/i })[0]).toHaveAttribute("href", "/creator/strategies/new");
   });
 
-  it("renders capability strip with Creator active state", async () => {
-    auth.value = {
-      user: { email: "c@example.com", roles: ["CREATOR"] },
-      isAuthenticated: true,
-      isLoading: false,
-      logout: vi.fn(),
-    };
-    renderWithProviders(<DashboardPage />);
-    await waitFor(() => {
-      expect(screen.getByText("Active", { selector: ".dash-capability-value--active" })).toBeInTheDocument();
-    });
-  });
-
-  it("shows empty state when creator has no strategies", async () => {
-    auth.value = {
-      user: { email: "c@example.com", roles: ["CREATOR"] },
-      isAuthenticated: true,
-      isLoading: false,
-      logout: vi.fn(),
-    };
-    listStrategies.mockResolvedValue([]);
-    renderWithProviders(<DashboardPage />);
-    await waitFor(() => {
-      expect(screen.getByText(/no strategies yet/i)).toBeInTheDocument();
-    });
-  });
-
-  it("renders strategy list when creator has strategies", async () => {
-    auth.value = {
-      user: { email: "c@example.com", roles: ["CREATOR"] },
-      isAuthenticated: true,
-      isLoading: false,
-      logout: vi.fn(),
-    };
+  it("summarises strategies by status using real counts", async () => {
+    asUser(["CREATOR"]);
     listStrategies.mockResolvedValue([
-      {
-        id: "s1",
-        name: "Momentum Alpha",
-        slug: "momentum-alpha",
-        status: "published",
-        updated_at: new Date().toISOString(),
-        created_at: new Date().toISOString(),
-        creator_id: "u1",
-        description: null,
-        is_public: true,
-        current_version_id: null,
-        published_at: null,
-        deployed_at: null,
-      },
+      strategy({ id: "a", status: "deployed" }),
+      strategy({ id: "b", status: "published" }),
+      strategy({ id: "c", name: "Draft One", status: "draft" }),
+      strategy({ id: "d", name: "Old", status: "archived" }),
     ]);
     renderWithProviders(<DashboardPage />);
-    await waitFor(() => {
-      expect(screen.getByText("Momentum Alpha")).toBeInTheDocument();
-    });
-    expect(screen.getByText("published")).toBeInTheDocument();
+    const group = await screen.findByRole("group", { name: "Strategy summary" });
+    expect(group).toHaveTextContent(/Total\s*4/);
+    expect(group).toHaveTextContent(/Deployed\s*1/);
+    expect(group).toHaveTextContent(/Published\s*1/);
+    expect(group).toHaveTextContent(/Drafts\s*1/);
+    expect(group).toHaveTextContent("1 archived");
   });
 
-  it("shows error state when strategy API fails", async () => {
-    auth.value = {
-      user: { email: "c@example.com", roles: ["CREATOR"] },
-      isAuthenticated: true,
-      isLoading: false,
-      logout: vi.fn(),
-    };
-    listStrategies.mockRejectedValue(new Error("Server error"));
+  it("shows a first-use empty state with a create CTA when there are no strategies", async () => {
+    asUser(["CREATOR"]);
     renderWithProviders(<DashboardPage />);
-    await waitFor(() => {
-      expect(screen.getByText(/server error/i)).toBeInTheDocument();
-    });
+    expect(await screen.findByText("No strategies yet")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /create your first strategy/i })).toHaveAttribute("href", "/creator/strategies/new");
+    expect(screen.getByText("No activity yet")).toBeInTheDocument();
   });
 
-  it("shows investor stats when user has INVESTOR role", async () => {
-    auth.value = {
-      user: { email: "inv@example.com", roles: ["INVESTOR"] },
-      isAuthenticated: true,
-      isLoading: false,
-      logout: vi.fn(),
-    };
-    listAllocations.mockResolvedValue([{ id: "a1", status: "active", strategy_name: "Test", strategy_version_number: 1, notional_amount: "10000", currency: "INR", created_at: new Date().toISOString(), updated_at: new Date().toISOString(), strategy_id: "s1", strategy_version_id: "v1", investor_user_id: "u1" }]);
-    listExecutionIntents.mockResolvedValue([]);
+  it("lists recent strategies with a text status badge", async () => {
+    asUser(["CREATOR"]);
+    listStrategies.mockResolvedValue([strategy()]);
     renderWithProviders(<DashboardPage />);
-    await waitFor(() => {
-      expect(screen.getByText("Active allocations")).toBeInTheDocument();
-      // "Execution intents" appears in the stat label and the footer link — both are correct
-      expect(screen.getAllByText("Execution intents").length).toBeGreaterThanOrEqual(1);
-    });
+    const section = (await screen.findByRole("heading", { name: "Strategies", level: 2 })).closest("section")!;
+    expect(await within(section).findByText("Momentum Alpha")).toBeInTheDocument();
+    expect(section).toHaveTextContent("published");
   });
 
-  it("shows empty execution state for investor with no intents", async () => {
-    auth.value = {
-      user: { email: "inv@example.com", roles: ["INVESTOR"] },
-      isAuthenticated: true,
-      isLoading: false,
-      logout: vi.fn(),
-    };
-    listAllocations.mockResolvedValue([]);
-    listExecutionIntents.mockResolvedValue([]);
+  it("derives recent activity from real timestamps, newest first", async () => {
+    asUser(["CREATOR"]);
+    listStrategies.mockResolvedValue([
+      strategy({ id: "x", name: "Old Idea", created_at: "2026-01-01T00:00:00Z", published_at: null, status: "draft", updated_at: "2026-01-01T00:00:00Z" }),
+      strategy({ id: "y", name: "Fresh Idea", created_at: "2026-03-01T00:00:00Z", published_at: "2026-03-02T00:00:00Z", deployed_at: "2026-03-03T00:00:00Z", status: "deployed" }),
+    ]);
     renderWithProviders(<DashboardPage />);
-    await waitFor(() => {
-      expect(screen.getByText(/no execution intents/i)).toBeInTheDocument();
-    });
+    const feed = await screen.findByRole("list", { name: "Recent activity" });
+    const items = feed.querySelectorAll("li");
+    expect(items[0]).toHaveTextContent("Deployed Fresh Idea");
+    expect(items[1]).toHaveTextContent("Published Fresh Idea");
+    expect(items[items.length - 1]).toHaveTextContent("Created draft Old Idea");
   });
 
-  it("shows workspace setup card for user with no roles", async () => {
-    auth.value = {
-      user: { email: "new@example.com", roles: [] },
-      isAuthenticated: true,
-      isLoading: false,
-      logout: vi.fn(),
-    };
+  it("shows a friendly, recoverable error instead of the raw backend message", async () => {
+    asUser(["CREATOR"]);
+    listStrategies.mockRejectedValueOnce(new Error("pg: connection refused 10.0.0.4"));
     renderWithProviders(<DashboardPage />);
-    await waitFor(() => {
-      expect(screen.getByText(/set up your workspace/i)).toBeInTheDocument();
-    });
+    expect(await screen.findByText(/couldn.t load your strategies/i)).toBeInTheDocument();
+    expect(screen.queryByText(/connection refused/i)).not.toBeInTheDocument();
+    listStrategies.mockResolvedValue([strategy()]);
+    fireEvent.click(screen.getByRole("button", { name: /try again/i }));
+    await waitFor(() => expect(screen.getAllByText("Momentum Alpha").length).toBeGreaterThan(0));
+  });
+
+  it("shows paper-execution counts and recent intents for investors", async () => {
+    asUser(["INVESTOR"], "inv@example.com");
+    listAllocations.mockResolvedValue([{ id: "a1", status: "active", strategy_name: "Momentum Alpha", strategy_version_number: 2, notional_amount: "50000", currency: "INR", created_at: "2026-01-15T00:00:00Z" }]);
+    listExecutionIntents.mockResolvedValue([intent(), intent({ id: "e2", status: "failed" })]);
+    renderWithProviders(<DashboardPage />);
+    const group = await screen.findByRole("group", { name: "Execution summary" });
+    expect(group).toHaveTextContent(/Active allocations\s*1/);
+    expect(group).toHaveTextContent(/Execution intents\s*2/);
+    expect(group).toHaveTextContent(/Completed\s*1/);
+    expect(group).toHaveTextContent(/Failed\s*1/);
+    const feed = await screen.findByRole("list", { name: "Recent activity" });
+    expect(feed).toHaveTextContent(/Paper execution failed for Momentum Alpha/);
+  });
+
+  it("shows an empty execution state for an investor with no intents", async () => {
+    asUser(["INVESTOR"], "inv@example.com");
+    renderWithProviders(<DashboardPage />);
+    expect(await screen.findByText(/no execution intents/i)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /go to allocations/i })).toBeInTheDocument();
+  });
+
+  it("shows the workspace setup state for a user with no roles", async () => {
+    asUser([], "new@example.com");
+    renderWithProviders(<DashboardPage />);
+    expect(await screen.findByText(/set up your workspace/i)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /enroll as creator/i })).toBeInTheDocument();
   });
 
-  it("renders research disclosure note", async () => {
-    auth.value = {
-      user: { email: "c@example.com", roles: ["CREATOR"] },
-      isAuthenticated: true,
-      isLoading: false,
-      logout: vi.fn(),
-    };
-    listStrategies.mockResolvedValue([]);
+  it("states that execution is simulated and never implies live trading", async () => {
+    asUser(["CREATOR"]);
     renderWithProviders(<DashboardPage />);
-    await waitFor(() => {
-      expect(screen.getByText(/designed for transparent research/i)).toBeInTheDocument();
-    });
+    const note = await screen.findByRole("note");
+    expect(note).toHaveTextContent(/simulation only/i);
+    expect(note).toHaveTextContent(/no orders are placed with a broker/i);
   });
 
-  it("renders Explore section tiles always visible", async () => {
-    auth.value = {
-      user: { email: "c@example.com", roles: ["CREATOR"] },
-      isAuthenticated: true,
-      isLoading: false,
-      logout: vi.fn(),
-    };
-    listStrategies.mockResolvedValue([]);
+  it("offers quick actions for the user's roles plus marketplace and instruments", async () => {
+    asUser(["CREATOR", "INVESTOR"]);
     renderWithProviders(<DashboardPage />);
-    await waitFor(() => {
-      expect(screen.getByRole("link", { name: /browse the strategy marketplace/i })).toBeInTheDocument();
-      expect(screen.getByRole("link", { name: /browse instruments/i })).toBeInTheDocument();
-    });
-  });
-
-  it("shows New Strategy header action for creator", async () => {
-    auth.value = {
-      user: { email: "c@example.com", roles: ["CREATOR"] },
-      isAuthenticated: true,
-      isLoading: false,
-      logout: vi.fn(),
-    };
-    listStrategies.mockResolvedValue([]);
-    renderWithProviders(<DashboardPage />);
-    await waitFor(() => {
-      // "Create a new strategy" appears in both the page header CTA and the Explore tile — both are correct
-      expect(screen.getAllByRole("link", { name: /create a new strategy/i }).length).toBeGreaterThanOrEqual(1);
-    });
-  });
-
-  it("renders platform status strip with paper-only badge", async () => {
-    auth.value = {
-      user: { email: "c@example.com", roles: ["CREATOR"] },
-      isAuthenticated: true,
-      isLoading: false,
-      logout: vi.fn(),
-    };
-    listStrategies.mockResolvedValue([]);
-    renderWithProviders(<DashboardPage />);
-    await waitFor(() => {
-      // "Paper only" appears in the capability strip and the platform status strip — both are correct
-      expect(screen.getAllByText(/paper only/i).length).toBeGreaterThanOrEqual(1);
-    });
+    const quick = (await screen.findByRole("heading", { name: "Quick actions" })).closest("section")!;
+    for (const name of [/create strategy/i, /view strategies/i, /allocations/i, /view executions/i, /browse marketplace/i, /instruments/i]) {
+      expect(within(quick).getByRole("link", { name })).toBeInTheDocument();
+    }
   });
 });
