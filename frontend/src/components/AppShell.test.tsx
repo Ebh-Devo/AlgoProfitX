@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 
 import { AppShell } from "./AppShell";
@@ -12,17 +12,19 @@ const auth = vi.hoisted(() => ({
 }));
 vi.mock("../auth/auth-context", () => ({ useAuth: () => auth.value }));
 
+const primaryNav = () => screen.getByRole("navigation", { name: "Primary navigation" });
+
 describe("AppShell", () => {
   it("represents both Creator and Investor navigation for dual-role users", () => {
     auth.value = { user: { roles: ["INVESTOR", "CREATOR"] }, isAuthenticated: true, logout: vi.fn() };
     render(<MemoryRouter><AppShell /></MemoryRouter>);
     expect(screen.getByText("Creator")).toBeInTheDocument();
     expect(screen.getByText("Investor")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Dashboard" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Instruments" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Strategies" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Allocations" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Executions" })).toBeInTheDocument();
+    expect(within(primaryNav()).getByRole("link", { name: "Dashboard" })).toBeInTheDocument();
+    expect(within(primaryNav()).getByRole("link", { name: "Instruments" })).toBeInTheDocument();
+    expect(within(primaryNav()).getByRole("link", { name: "Strategies" })).toBeInTheDocument();
+    expect(within(primaryNav()).getByRole("link", { name: "Allocations" })).toBeInTheDocument();
+    expect(within(primaryNav()).getByRole("link", { name: "Executions" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "AlgoProfitX home" })).toHaveTextContent("AlgoProfitX");
   });
 

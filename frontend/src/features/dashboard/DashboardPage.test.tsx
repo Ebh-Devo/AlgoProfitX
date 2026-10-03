@@ -70,10 +70,10 @@ describe("DashboardShell", () => {
     expect(screen.getByRole("link", { name: /allocations/i })).toBeInTheDocument();
   });
 
-  it("shows Creator and Investor role pills in header", () => {
+  it("shows the Creator and Investor roles in the account menu", () => {
     renderWithProviders(<DashboardShell />);
-    expect(screen.getByText("Creator")).toBeInTheDocument();
-    expect(screen.getByText("Investor")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /account menu/i }));
+    expect(screen.getByRole("menu", { name: /account/i })).toHaveTextContent("Creator · Investor");
   });
 
   it("omits Strategies nav item when user lacks Creator role", () => {
@@ -87,11 +87,9 @@ describe("DashboardShell", () => {
 
   it("shows Account link and logout button", () => {
     renderWithProviders(<DashboardShell />);
-    // Both desktop header and mobile drawer render account link — use getAllByRole
-    const accountLinks = screen.getAllByRole("link", { name: /account settings/i });
-    expect(accountLinks.length).toBeGreaterThanOrEqual(1);
-    const logoutBtns = screen.getAllByRole("button", { name: /log out/i });
-    expect(logoutBtns.length).toBeGreaterThanOrEqual(1);
+    fireEvent.click(screen.getByRole("button", { name: /account menu/i }));
+    expect(screen.getByRole("menuitem", { name: /account settings/i })).toHaveAttribute("href", "/account");
+    expect(screen.getByRole("menuitem", { name: /log out/i })).toBeInTheDocument();
   });
 
   it("shows coming-soon Analytics item in sidebar", () => {
@@ -105,7 +103,8 @@ describe("DashboardShell", () => {
     const logout = vi.fn().mockResolvedValue(undefined);
     auth.value = { ...auth.value, logout };
     renderWithProviders(<DashboardShell />);
-    fireEvent.click(screen.getByRole("button", { name: /log out of algoprofitx/i }));
+    fireEvent.click(screen.getByRole("button", { name: /account menu/i }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /log out/i }));
     await waitFor(() => expect(logout).toHaveBeenCalledOnce());
   });
 
@@ -129,7 +128,8 @@ describe("DashboardShell", () => {
 
     it("mobile drawer has dialog role and aria-label", () => {
       renderWithProviders(<DashboardShell />);
-      const drawer = document.getElementById("dash-mobile-nav");
+      fireEvent.click(screen.getByRole("button", { name: /open navigation/i }));
+      const drawer = document.getElementById("ws-drawer");
       expect(drawer).toHaveAttribute("role", "dialog");
       expect(drawer).toHaveAttribute("aria-label", "Mobile application navigation");
     });
