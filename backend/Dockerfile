@@ -9,7 +9,9 @@ LABEL org.opencontainers.image.title="AlgoProfitX backend" \
       org.opencontainers.image.source="${SOURCE_URL}" \
       org.opencontainers.image.revision="${VCS_REF}"
 
-ENV PYTHONDONTWRITEBYTECODE=1 \
+ENV APP_SOURCE_SHA=${VCS_REF} \
+    APP_SOURCE_REPO="Ebh-Devo/AlgoProfitX" \
+    PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PIP_NO_CACHE_DIR=1
