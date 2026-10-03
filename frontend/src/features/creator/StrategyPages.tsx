@@ -1,15 +1,43 @@
-import { lazy, Suspense, useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "react-router-dom";
+import {
+  Archive,
+  ArrowLeft,
+  CheckCircle2,
+  CircleDashed,
+  Globe,
+  PenLine,
+  PlusCircle,
+  Rocket,
+  Search,
+  Store,
+  Trash2,
+} from "lucide-react";
 import { ApiError } from "../../api/client";
 import { strategiesApi } from "../../api/strategies";
 import { instrumentsApi } from "../../api/instruments";
 import { queryKeys } from "../../api/queryKeys";
 import type { Strategy, StrategyCreateRequest, StrategyUpdateRequest } from "../../api/types";
-import { EmptyState, ErrorAlert, LoadingState } from "../../components/PageState";
+import { EmptyState, ErrorPanel } from "../../components/PageState";
+import {
+  ActionMenu,
+  Alert,
+  Button,
+  ConfirmDialog,
+  FilterChips,
+  Input,
+  PageHeader,
+  SectionHeader,
+  SkeletonGroup,
+  SkeletonRows,
+  Skeleton,
+  StatusBadge,
+  type ActionMenuItem,
+} from "../../components/ui";
 
 const VersionBacktests = lazy(async () => ({
   default: (await import("./BacktestPages")).VersionBacktests,
@@ -21,18 +49,28 @@ const date = (value?: string | null) =>
     ? new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value))
     : "—";
 
+const shortDate = (value?: string | null) =>
+  value ? new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(new Date(value)) : "—";
+
 const errorMessage = (error: unknown, fallback: string) =>
   error instanceof ApiError ? error.message : fallback;
 
-function Status({ value }: { value: string }) {
-  const map: Record<string, string> = {
-    draft: "badge badge-draft",
-    published: "badge badge-published",
-    deployed: "badge badge-deployed",
-    archived: "badge badge-archived",
-  };
-  return <span className={map[value] ?? "badge"}>{value}</span>;
-}
+const slugify = (value: string) =>
+  value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 180);
+
+type LifecycleAction = "publish" | "deploy" | "archive";
+
+/** Which lifecycle transitions the backend allows from each status. */
+const NEXT_ACTIONS: Record<Strategy["status"], LifecycleAction[]> = {
+  draft: ["publish", "archive"],
+  published: ["deploy", "archive"],
+  deployed: ["archive"],
+  archived: [],
+};
 
 /* ── Zod schema for strategy create/edit ─────────────────────── */
 const strategySchema = z.object({
@@ -52,18 +90,25 @@ type StrategyFormValues = z.infer<typeof strategySchema>;
 
 /* ── Shared strategy form ─────────────────────────────────────── */
 interface StrategyFormProps {
+  mode: "create" | "edit";
   initial?: Partial<StrategyFormValues>;
   submitLabel: string;
+  cancelTo: string;
   onSave: (values: StrategyFormValues) => Promise<void>;
+  aside: React.ReactNode;
 }
 
-function StrategyForm({ initial, submitLabel, onSave }: StrategyFormProps) {
+function StrategyForm({ mode, initial, submitLabel, cancelTo, onSave, aside }: StrategyFormProps) {
   const [apiError, setApiError] = useState<string | null>(null);
+  // In create mode the slug follows the name until the user edits it themselves.
+  const slugTouched = useRef(mode === "edit");
 
   const {
     register,
     handleSubmit,
     setError,
+    setValue,
+    watch,
     formState: { errors, isSubmitting },
   } = useForm<StrategyFormValues>({
     resolver: zodResolver(strategySchema),
@@ -73,6 +118,10 @@ function StrategyForm({ initial, submitLabel, onSave }: StrategyFormProps) {
       description: initial?.description ?? "",
     },
   });
+
+  const nameField = register("name");
+  const slugField = register("slug");
+  const descriptionLength = watch("description")?.length ?? 0;
 
   const submit = handleSubmit(async (values) => {
     setApiError(null);
@@ -98,217 +147,379 @@ function StrategyForm({ initial, submitLabel, onSave }: StrategyFormProps) {
   });
 
   return (
-    <form className="form-stack" onSubmit={submit} noValidate>
-      {/* Name */}
-      <div className={`form-field ${errors.name ? "has-error" : ""}`}>
-        <label className="form-label" htmlFor="strategy-name">Name</label>
-        <input
-          id="strategy-name"
-          className="input"
-          type="text"
-          autoComplete="off"
-          aria-describedby={errors.name ? "strategy-name-error" : undefined}
-          aria-invalid={errors.name ? true : undefined}
-          {...register("name")}
-        />
-        {errors.name && (
-          <p className="field-error" role="alert" id="strategy-name-error">
-            {errors.name.message}
-          </p>
-        )}
-      </div>
+    <form onSubmit={submit} noValidate aria-label={mode === "create" ? "Create strategy" : "Edit strategy"}>
+      <div className="form-layout">
+        <div className="form-sections">
+          <fieldset className="panel form-section">
+            <legend className="visually-hidden">Strategy identity</legend>
+            <div className="form-section-head">
+              <span className="form-section-num" aria-hidden="true">1</span>
+              <div>
+                <h2>Strategy identity</h2>
+                <p>How this strategy is named and referenced.</p>
+              </div>
+            </div>
+            <div className="form-section-body">
+              <Input
+                id="strategy-name"
+                label="Name"
+                type="text"
+                autoComplete="off"
+                hint="The display name. Shown in your workspace and, once published, in the Marketplace."
+                error={errors.name?.message}
+                {...nameField}
+                onChange={(e) => {
+                  void nameField.onChange(e);
+                  if (!slugTouched.current) setValue("slug", slugify(e.target.value));
+                }}
+              />
 
-      {/* Slug */}
-      <div className={`form-field ${errors.slug ? "has-error" : ""}`}>
-        <label className="form-label" htmlFor="strategy-slug">Slug</label>
-        <input
-          id="strategy-slug"
-          className="input"
-          type="text"
-          autoComplete="off"
-          spellCheck={false}
-          aria-describedby={
-            errors.slug ? "strategy-slug-error" : "strategy-slug-hint"
-          }
-          aria-invalid={errors.slug ? true : undefined}
-          {...register("slug")}
-        />
-        <p className="field-hint" id="strategy-slug-hint">
-          Lowercase letters, numbers, and single hyphens — e.g.{" "}
-          <code>india-trend-v2</code>
-        </p>
-        {errors.slug && (
-          <p className="field-error" role="alert" id="strategy-slug-error">
-            {errors.slug.message}
-          </p>
-        )}
-      </div>
+              <Input
+                id="strategy-slug"
+                label="Slug"
+                type="text"
+                autoComplete="off"
+                spellCheck={false}
+                className="mono"
+                hint={<>Unique identifier used in Marketplace URLs. Lowercase letters, numbers and single hyphens — e.g. <code>india-trend-v2</code></>}
+                error={errors.slug?.message}
+                {...slugField}
+                onChange={(e) => {
+                  slugTouched.current = true;
+                  void slugField.onChange(e);
+                }}
+              />
 
-      {/* Description */}
-      <div className={`form-field ${errors.description ? "has-error" : ""}`}>
-        <label className="form-label" htmlFor="strategy-description">
-          Description <span className="field-optional">(optional)</span>
-        </label>
-        <textarea
-          id="strategy-description"
-          className="input sb-textarea"
-          rows={4}
-          aria-describedby={errors.description ? "strategy-description-error" : undefined}
-          aria-invalid={errors.description ? true : undefined}
-          {...register("description")}
-        />
-        {errors.description && (
-          <p className="field-error" role="alert" id="strategy-description-error">
-            {errors.description.message}
-          </p>
-        )}
-      </div>
+              <div className={`form-field ${errors.description ? "has-error" : ""}`}>
+                <label className="form-label" htmlFor="strategy-description">
+                  Description <span className="field-optional">(optional)</span>
+                </label>
+                <textarea
+                  id="strategy-description"
+                  className="input"
+                  rows={4}
+                  aria-describedby={errors.description ? "strategy-description-error" : "strategy-description-hint"}
+                  aria-invalid={errors.description ? true : undefined}
+                  {...register("description")}
+                />
+                <div className="field-footer">
+                  {errors.description ? (
+                    <p className="field-error" role="alert" id="strategy-description-error">{errors.description.message}</p>
+                  ) : (
+                    <p className="field-hint" id="strategy-description-hint">A short summary of the idea. Shown on the Marketplace listing once published.</p>
+                  )}
+                  <span className="field-counter" aria-hidden="true">{descriptionLength}/1000</span>
+                </div>
+              </div>
+            </div>
+          </fieldset>
 
-      {apiError && (
-        <div role="alert">
-          <ErrorAlert>{apiError}</ErrorAlert>
+          {apiError && <ErrorPanel title="Couldn't save the strategy">{apiError}</ErrorPanel>}
+
+          <div className="form-actions">
+            <Button type="submit" loading={isSubmitting}>{isSubmitting ? "Saving…" : submitLabel}</Button>
+            <Link className="btn btn-ghost" to={cancelTo}>Cancel</Link>
+          </div>
         </div>
-      )}
-
-      <div>
-        <button
-          className="btn btn-primary"
-          type="submit"
-          disabled={isSubmitting}
-          aria-disabled={isSubmitting}
-        >
-          {isSubmitting ? "Saving…" : submitLabel}
-        </button>
+        <aside className="form-aside">{aside}</aside>
       </div>
     </form>
   );
 }
 
+/* ── Lifecycle stepper (used on forms and detail) ─────────────── */
+function LifecycleSteps({ strategy }: { strategy?: Strategy }) {
+  const status = strategy?.status ?? "draft";
+  const published = !!strategy?.published_at || status === "published" || status === "deployed";
+  const deployed = !!strategy?.deployed_at || status === "deployed";
+  const archived = status === "archived";
+  const stateOf = (done: boolean, current: boolean) => (done ? "is-done" : current ? "is-current" : "is-pending");
+
+  const steps = [
+    { key: "draft", title: "Draft", state: stateOf(published || deployed || archived, status === "draft"), meta: strategy ? `Created ${shortDate(strategy.created_at)}` : "Starting point" },
+    { key: "published", title: "Published", state: stateOf(deployed, status === "published"), meta: strategy?.published_at ? shortDate(strategy.published_at) : "Requires at least one Version" },
+    { key: "deployed", title: "Deployed", state: stateOf(deployed, false), meta: strategy?.deployed_at ? shortDate(strategy.deployed_at) : undefined },
+  ];
+
+  return (
+    <>
+      <ol className="stepper" aria-label="Lifecycle progress">
+        {steps.map(s => (
+          <li key={s.key} className={`step ${s.state}`} aria-current={s.state === "is-current" ? "step" : undefined}>
+            <span className="step-mark" aria-hidden="true">
+              {s.state === "is-done" ? <CheckCircle2 size={14} /> : s.state === "is-current" ? <PenLine size={12} /> : <CircleDashed size={14} />}
+            </span>
+            <div>
+              <p className="step-title">{s.title}{s.state === "is-done" && <span className="visually-hidden"> (complete)</span>}{s.state === "is-current" && <span className="visually-hidden"> (current)</span>}</p>
+              {s.meta && <p className="step-meta">{s.meta}</p>}
+            </div>
+          </li>
+        ))}
+      </ol>
+      {archived && <p className="hint-line" style={{ marginTop: "var(--space-4)" }}><Archive size={13} aria-hidden="true" /> Archived is terminal. No further actions are available.</p>}
+    </>
+  );
+}
+
 /* ── Strategy list page ───────────────────────────────────────── */
+type StatusFilter = "all" | Strategy["status"];
+type SortKey = "updated" | "created" | "name";
+
+const SORTERS: Record<SortKey, (a: Strategy, b: Strategy) => number> = {
+  updated: (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime(),
+  created: (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+  name: (a, b) => a.name.localeCompare(b.name),
+};
+
+function StrategyRow({ item }: { item: Strategy }) {
+  const menu: ActionMenuItem[] = [{ label: "Open details", to: `/creator/strategies/${item.id}` }];
+  if (item.is_public && (item.status === "published" || item.status === "deployed")) {
+    menu.push({ label: "View in Marketplace", to: `/marketplace/${item.slug}`, icon: <Store size={14} aria-hidden="true" /> });
+  }
+  return (
+    <tr>
+      <td className="cell-title">
+        <div className="cell-primary">
+          <Link to={`/creator/strategies/${item.id}`}>{item.name}</Link>
+          <small>{item.slug}</small>
+          {item.description && <p>{item.description}</p>}
+        </div>
+      </td>
+      <td data-label="Status"><StatusBadge status={item.status} /></td>
+      <td data-label="Visibility" className="cell-muted">{item.is_public ? "Public" : "Private"}</td>
+      <td data-label="Version" className="cell-muted">{item.current_version_id ? "Selected" : "None"}</td>
+      <td data-label="Updated" className="cell-muted">{shortDate(item.updated_at)}</td>
+      <td className="cell-actions">
+        <div className="row-actions">
+          <Link className="btn btn-sm btn-secondary" to={`/creator/strategies/${item.id}/edit`} aria-label={`Edit ${item.name}`}>Edit</Link>
+          <ActionMenu label={`Actions for ${item.name}`} items={menu} />
+        </div>
+      </td>
+    </tr>
+  );
+}
+
 export function StrategyListPage() {
   const query = useQuery({
     queryKey: queryKeys.strategies,
     queryFn: strategiesApi.list,
   });
+  const [search, setSearch] = useState("");
+  const [status, setStatus] = useState<StatusFilter>("all");
+  const [sort, setSort] = useState<SortKey>("updated");
 
-  if (query.isLoading) return <LoadingState label="Loading your strategies…" />;
-  if (query.isError)
-    return <ErrorAlert>{errorMessage(query.error, "Unable to load your strategies.")}</ErrorAlert>;
+  const all = query.data;
+  const counts = useMemo(() => {
+    const c: Record<StatusFilter, number> = { all: all?.length ?? 0, draft: 0, published: 0, deployed: 0, archived: 0 };
+    for (const s of all ?? []) c[s.status] += 1;
+    return c;
+  }, [all]);
+
+  const visible = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    return (all ?? [])
+      .filter(s => status === "all" || s.status === status)
+      .filter(s => !term || s.name.toLowerCase().includes(term) || s.slug.toLowerCase().includes(term))
+      .sort(SORTERS[sort]);
+  }, [all, search, status, sort]);
+
+  const createAction = (
+    <Link className="btn btn-primary" to="/creator/strategies/new">
+      <PlusCircle size={15} aria-hidden="true" /> Create strategy
+    </Link>
+  );
+
+  const header = (
+    <PageHeader
+      eyebrow="Creator workspace"
+      title="Strategies"
+      description="Create a draft, add immutable Versions, backtest them, then publish."
+      actions={createAction}
+    />
+  );
+
+  if (query.isLoading) {
+    return (
+      <div>
+        {header}
+        <div className="panel"><SkeletonRows label="Loading your strategies…" rows={5} /></div>
+      </div>
+    );
+  }
+  if (query.isError) {
+    return (
+      <div>
+        {header}
+        <ErrorPanel title="Strategies unavailable" onRetry={() => void query.refetch()} retrying={query.isFetching}>
+          We couldn't load your strategies. Check your connection and try again.
+        </ErrorPanel>
+      </div>
+    );
+  }
+
+  const filtering = search.trim() !== "" || status !== "all";
+  const clearFilters = () => { setSearch(""); setStatus("all"); };
 
   return (
-    <section>
-      <div className="page-heading">
-        <div>
-          <p className="eyebrow">Creator workspace</p>
-          <h1>Strategies</h1>
-          <p>
-            Manage strategy identity and lifecycle. Create a draft, add immutable Versions, then
-            publish.
-          </p>
-        </div>
-        <Link className="btn btn-primary" to="/creator/strategies/new">
-          Create strategy
-        </Link>
-      </div>
+    <div>
+      {header}
 
-      {!query.data?.length ? (
-        <EmptyState>No strategies yet. Create your first draft strategy to begin.</EmptyState>
+      {!all?.length ? (
+        <EmptyState
+          icon={<PenLine size={22} />}
+          title="No strategies yet"
+          action={createAction}
+        >
+          Create your first strategy to begin. It starts as a draft; you then add an immutable Version with an instrument and configuration.
+        </EmptyState>
       ) : (
-        <div className="strategy-table-wrap">
-          <table className="strategy-table">
-            <thead>
-              <tr>
-                <th>Strategy</th>
-                <th>Status</th>
-                <th>Current Version</th>
-                <th>Published</th>
-                <th>Deployed</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {query.data.map((item) => (
-                <tr key={item.id}>
-                  <td>
-                    <strong>{item.name}</strong>
-                    <small>{item.slug}</small>
-                    <p>{item.description || "No description provided."}</p>
-                  </td>
-                  <td>
-                    <Status value={item.status} />
-                  </td>
-                  <td>{item.current_version_id ? "Selected" : "—"}</td>
-                  <td>{date(item.published_at)}</td>
-                  <td>{date(item.deployed_at)}</td>
-                  <td>
-                    <div className="inline-actions">
-                      <Link className="btn btn-sm btn-ghost" to={`/creator/strategies/${item.id}`}>
-                        View
-                      </Link>
-                      <Link
-                        className="btn btn-sm btn-secondary"
-                        to={`/creator/strategies/${item.id}/edit`}
-                      >
-                        Edit
-                      </Link>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <>
+          <div className="toolbar" role="search" aria-label="Filter strategies">
+            <div className="toolbar-search">
+              <Input
+                type="search"
+                aria-label="Search strategies"
+                placeholder="Search by name or slug"
+                autoComplete="off"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                iconLeft={<Search size={15} />}
+              />
+            </div>
+            <FilterChips<StatusFilter>
+              label="Filter by status"
+              value={status}
+              onChange={setStatus}
+              options={[
+                { value: "all", label: "All", count: counts.all },
+                { value: "draft", label: "Draft", count: counts.draft },
+                { value: "published", label: "Published", count: counts.published },
+                { value: "deployed", label: "Deployed", count: counts.deployed },
+                { value: "archived", label: "Archived", count: counts.archived },
+              ]}
+            />
+            <label className="toolbar-sort">
+              Sort
+              <select value={sort} onChange={e => setSort(e.target.value as SortKey)}>
+                <option value="updated">Recently updated</option>
+                <option value="created">Newest</option>
+                <option value="name">Name A–Z</option>
+              </select>
+            </label>
+          </div>
+
+          <p className="result-count" role="status" aria-live="polite">
+            {filtering ? `Showing ${visible.length} of ${counts.all} strategies` : `${counts.all} ${counts.all === 1 ? "strategy" : "strategies"}`}
+          </p>
+
+          {visible.length === 0 ? (
+            <EmptyState
+              icon={<Search size={22} />}
+              title="No strategies match"
+              action={<Button variant="secondary" size="sm" onClick={clearFilters}>Clear filters</Button>}
+            >
+              Try a different search term or status.
+            </EmptyState>
+          ) : (
+            <div className="table-wrap is-stacked">
+              <table className="data-table is-stacked">
+                <caption className="visually-hidden">Your strategies</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Strategy</th>
+                    <th scope="col">Status</th>
+                    <th scope="col">Visibility</th>
+                    <th scope="col">Version</th>
+                    <th scope="col">Updated</th>
+                    <th scope="col"><span className="visually-hidden">Actions</span></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {visible.map(item => <StrategyRow key={item.id} item={item} />)}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
       )}
-    </section>
+    </div>
   );
 }
 
 /* ── New strategy page ────────────────────────────────────────── */
 export function StrategyNewPage() {
   const navigate = useNavigate();
+  const client = useQueryClient();
 
   return (
-    <section className="form-page">
-      <Link className="sb-back-link" to="/creator/strategies">
-        ← Strategies
-      </Link>
-      <div className="sb-page-header">
-        <p className="eyebrow">New draft</p>
-        <h1>Create strategy</h1>
-        <p className="sb-page-desc">
-          Define the identity for your strategy. Lifecycle transitions and Versions are managed
-          separately after creation.
-        </p>
-      </div>
-
-      <div className="card sb-form-card">
-        <div className="sb-form-section-label">Strategy identity</div>
-        <StrategyForm
-          submitLabel="Create strategy"
-          onSave={async (values) => {
-            const data: StrategyCreateRequest = {
-              name: values.name,
-              slug: values.slug,
-              description: values.description || null,
-            };
-            const result = await strategiesApi.create(data);
-            navigate(`/creator/strategies/${result.id}`);
-          }}
-        />
-      </div>
-
-      <div className="sb-help-block">
-        <p>
-          <strong>What happens next?</strong> After creation your strategy will be in{" "}
-          <Status value="draft" /> state. Add at least one immutable Version before publishing to
-          the Marketplace.
-        </p>
-      </div>
-    </section>
+    <div>
+      <Link className="back-crumb" to="/creator/strategies"><ArrowLeft size={14} aria-hidden="true" /> Strategies</Link>
+      <PageHeader
+        eyebrow="New draft"
+        title="Create strategy"
+        description="Name the strategy. Versions, backtests and lifecycle transitions are managed after creation."
+      />
+      <StrategyForm
+        mode="create"
+        submitLabel="Create strategy"
+        cancelTo="/creator/strategies"
+        onSave={async (values) => {
+          const data: StrategyCreateRequest = {
+            name: values.name,
+            slug: values.slug,
+            description: values.description || null,
+          };
+          const result = await strategiesApi.create(data);
+          await client.invalidateQueries({ queryKey: queryKeys.strategies });
+          navigate(`/creator/strategies/${result.id}`);
+        }}
+        aside={
+          <section className="panel" aria-labelledby="next-steps">
+            <div className="panel-body">
+              <h2 id="next-steps">What happens next</h2>
+              <ol className="stepper">
+                <li className="step is-current"><span className="step-mark" aria-hidden="true"><PenLine size={12} /></span><div><p className="step-title">Draft created</p><p className="step-meta">You land on the strategy workspace.</p></div></li>
+                <li className="step is-pending"><span className="step-mark" aria-hidden="true"><CircleDashed size={14} /></span><div><p className="step-title">Add a Version</p><p className="step-meta">Choose an instrument and JSON configuration. Versions are immutable.</p></div></li>
+                <li className="step is-pending"><span className="step-mark" aria-hidden="true"><CircleDashed size={14} /></span><div><p className="step-title">Backtest</p><p className="step-meta">Run historical simulations on a Version.</p></div></li>
+                <li className="step is-pending"><span className="step-mark" aria-hidden="true"><CircleDashed size={14} /></span><div><p className="step-title">Publish</p><p className="step-meta">Requires at least one Version.</p></div></li>
+              </ol>
+            </div>
+          </section>
+        }
+      />
+    </div>
   );
 }
 
 /* ── Edit strategy page ───────────────────────────────────────── */
+function DetailSkeleton({ label }: { label: string }) {
+  return (
+    <div className="skeleton-page">
+      <SkeletonGroup label={label}>
+        <Skeleton width="40%" height="2rem" />
+        <Skeleton width="60%" />
+      </SkeletonGroup>
+      <div className="panel"><SkeletonRows rows={3} label="Loading content…" /></div>
+    </div>
+  );
+}
+
+function LoadError({ error, notFound, what, onRetry }: { error: unknown; notFound: string; what: string; onRetry: () => void }) {
+  const missing = error instanceof ApiError && error.status === 404;
+  return (
+    <div>
+      <Link className="back-crumb" to="/creator/strategies"><ArrowLeft size={14} aria-hidden="true" /> Strategies</Link>
+      {missing ? (
+        <EmptyState icon={<CircleDashed size={22} />} title={notFound} action={<Link className="btn btn-secondary btn-sm" to="/creator/strategies">Back to strategies</Link>}>
+          It may have been deleted, or the link is incorrect.
+        </EmptyState>
+      ) : (
+        <ErrorPanel title={`${what} unavailable`} onRetry={onRetry}>We couldn't load this. Check your connection and try again.</ErrorPanel>
+      )}
+    </div>
+  );
+}
+
 export function StrategyEditPage() {
   const { strategyId = "" } = useParams();
   const navigate = useNavigate();
@@ -319,64 +530,61 @@ export function StrategyEditPage() {
     queryFn: () => strategiesApi.get(strategyId),
   });
 
-  if (query.isLoading) return <LoadingState label="Loading strategy…" />;
+  if (query.isLoading) return <DetailSkeleton label="Loading strategy…" />;
   if (query.isError || !query.data)
-    return (
-      <ErrorAlert>
-        {query.error instanceof ApiError && query.error.status === 404
-          ? "Strategy not found."
-          : "Unable to load this strategy."}
-      </ErrorAlert>
-    );
+    return <LoadError error={query.error} notFound="Strategy not found." what="Strategy" onRetry={() => void query.refetch()} />;
 
   const strategy = query.data;
 
   return (
-    <section className="form-page">
-      <Link className="sb-back-link" to={`/creator/strategies/${strategyId}`}>
-        ← Strategy
-      </Link>
-      <div className="sb-page-header">
-        <p className="eyebrow">Edit metadata</p>
-        <h1>{strategy.name}</h1>
-        <p className="sb-page-desc">
-          Update the strategy name, slug, or description. Lifecycle status and visibility are
-          managed separately.
-        </p>
-      </div>
+    <div>
+      <Link className="back-crumb" to={`/creator/strategies/${strategyId}`}><ArrowLeft size={14} aria-hidden="true" /> {strategy.name}</Link>
+      <PageHeader
+        eyebrow="Edit metadata"
+        title={strategy.name}
+        description="Update the name, slug or description. Lifecycle status and visibility are managed separately."
+      />
 
       {strategy.status !== "draft" && (
-        <div className="alert alert-warning sb-status-notice" role="note">
-          <span>
-            This strategy is currently <Status value={strategy.status} />. Editing metadata does not
-            affect its lifecycle state or Marketplace visibility.
-          </span>
+        <div style={{ marginBottom: "var(--space-5)" }}>
+          <div role="note">
+            <Alert variant="warning">
+              This strategy is currently <StatusBadge status={strategy.status} />. Editing metadata does not affect its lifecycle state or Marketplace visibility. Changing the slug changes its Marketplace URL.
+            </Alert>
+          </div>
         </div>
       )}
 
-      <div className="card sb-form-card">
-        <div className="sb-form-section-label">Strategy identity</div>
-        <StrategyForm
-          initial={{
-            name: strategy.name,
-            slug: strategy.slug,
-            description: strategy.description ?? "",
-          }}
-          submitLabel="Save changes"
-          onSave={async (values) => {
-            const data: StrategyUpdateRequest = {
-              name: values.name,
-              slug: values.slug,
-              description: values.description || null,
-            };
-            await strategiesApi.update(strategyId, data);
-            await client.invalidateQueries({ queryKey: queryKeys.strategy(strategyId) });
-            await client.invalidateQueries({ queryKey: queryKeys.strategies });
-            navigate(`/creator/strategies/${strategyId}`);
-          }}
-        />
-      </div>
-    </section>
+      <StrategyForm
+        mode="edit"
+        initial={{
+          name: strategy.name,
+          slug: strategy.slug,
+          description: strategy.description ?? "",
+        }}
+        submitLabel="Save changes"
+        cancelTo={`/creator/strategies/${strategyId}`}
+        onSave={async (values) => {
+          const data: StrategyUpdateRequest = {
+            name: values.name,
+            slug: values.slug,
+            description: values.description || null,
+          };
+          await strategiesApi.update(strategyId, data);
+          await client.invalidateQueries({ queryKey: queryKeys.strategy(strategyId) });
+          await client.invalidateQueries({ queryKey: queryKeys.strategies });
+          navigate(`/creator/strategies/${strategyId}`);
+        }}
+        aside={
+          <section className="panel" aria-labelledby="edit-lifecycle">
+            <div className="panel-body">
+              <h2 id="edit-lifecycle">Lifecycle</h2>
+              <LifecycleSteps strategy={strategy} />
+            </div>
+          </section>
+        }
+      />
+    </div>
   );
 }
 
@@ -393,10 +601,9 @@ function parseObject(raw: string, label: string): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
-function VersionCreator({ strategyId }: { strategyId: string }) {
+function VersionCreator({ strategyId, onClose }: { strategyId: string; onClose: () => void }) {
   const client = useQueryClient();
   const navigate = useNavigate();
-  const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [instrumentId, setInstrumentId] = useState("");
@@ -415,7 +622,6 @@ function VersionCreator({ strategyId }: { strategyId: string }) {
   const instruments = useQuery({
     queryKey: queryKeys.instruments(debouncedSearch),
     queryFn: () => instrumentsApi.list(debouncedSearch),
-    enabled: open,
   });
 
   const mutation = useMutation({
@@ -426,15 +632,7 @@ function VersionCreator({ strategyId }: { strategyId: string }) {
         backtest_configuration: parseObject(backtest, "Backtest configuration"),
       }),
     onSuccess: async (newVersion) => {
-      setOpen(false);
-      setSearch("");
-      setDebouncedSearch("");
-      setInstrumentId("");
-      setConfiguration("{}");
-      setBacktest("{}");
-      setError(null);
-      setConfigError(null);
-      setBacktestError(null);
+      onClose();
       await client.invalidateQueries({ queryKey: queryKeys.versions(strategyId) });
       navigate(`/creator/strategies/${strategyId}/versions/${newVersion.id}`);
     },
@@ -473,301 +671,178 @@ function VersionCreator({ strategyId }: { strategyId: string }) {
     }
   };
 
-  const cancel = () => {
-    setOpen(false);
-    setSearch("");
-    setDebouncedSearch("");
-    setInstrumentId("");
-    setConfiguration("{}");
-    setBacktest("{}");
-    setError(null);
-    setConfigError(null);
-    setBacktestError(null);
-  };
-
-  if (!open) {
-    return (
-      <button className="btn btn-secondary" onClick={() => setOpen(true)}>
-        Create Version
-      </button>
-    );
-  }
-
   const selectedInstrument = instruments.data?.find((i) => i.id === instrumentId);
 
   return (
-    <form
-      className="card form-stack version-form"
-      onSubmit={submit}
-      aria-label="Create Version"
-      noValidate
-    >
-      <h3>Create immutable Version</h3>
-      <p className="field-hint">
-        Versions are permanent once saved. Choose the Instrument and supply JSON configuration
-        objects — both fields accept only JSON objects.
-      </p>
-
-      {/* Instrument search */}
-      <div className="form-field">
-        <label className="form-label" htmlFor="version-instrument-search">
-          Search Instrument
-        </label>
-        <input
-          id="version-instrument-search"
-          className="input"
-          type="search"
-          placeholder="Search name or symbol"
-          value={search}
-          autoComplete="off"
-          aria-describedby="version-instrument-search-hint"
-          onChange={(e) => setSearch(e.target.value)}
+    <form className="panel" onSubmit={submit} aria-label="Create Version" noValidate>
+      <div className="panel-head">
+        <SectionHeader
+          title="Create Version"
+          description="Versions are permanent once saved: choose the instrument, then supply two JSON objects."
         />
-        <p className="field-hint" id="version-instrument-search-hint">
-          Results update after a short pause. Select from the list below.
-        </p>
       </div>
 
-      {/* Instrument selector */}
-      {instruments.isLoading ? (
-        <LoadingState label="Loading Instruments…" />
-      ) : instruments.isError ? (
-        <div role="alert">
-          <ErrorAlert>{errorMessage(instruments.error, "Unable to load Instruments.")}</ErrorAlert>
+      <fieldset className="form-section" style={{ borderBottom: "1px solid var(--border)" }}>
+        <legend className="visually-hidden">Instrument</legend>
+        <div className="form-section-head">
+          <span className="form-section-num" aria-hidden="true">1</span>
+          <div>
+            <h3>Instrument</h3>
+            <p>The market this Version trades. Stored canonically, separate from algorithm parameters.</p>
+          </div>
         </div>
-      ) : (
-        <div className={`form-field ${error && !instrumentId ? "has-error" : ""}`}>
-          <label className="form-label" htmlFor="version-instrument-select">
-            Instrument
-          </label>
-          <select
-            id="version-instrument-select"
-            className="input"
-            aria-label="Instrument"
-            aria-required="true"
-            aria-invalid={!instrumentId && !!error ? true : undefined}
-            aria-describedby={!instrumentId && error ? "version-instrument-error" : undefined}
-            value={instrumentId}
-            onChange={(e) => setInstrumentId(e.target.value)}
-          >
-            <option value="">Select an Instrument</option>
-            {instruments.data?.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.name} · {item.exchange_symbol} · {item.exchange.code} ·{" "}
-                {item.instrument_type} · {item.quote_currency}
-                {item.is_tradeable ? "" : " · non-tradeable"}
-              </option>
-            ))}
-          </select>
-          {!instrumentId && error && (
-            <p className="field-error" role="alert" id="version-instrument-error">
-              {error}
-            </p>
+        <div className="form-section-body">
+          <div className="form-field">
+            <label className="form-label" htmlFor="version-instrument-search">Search Instrument</label>
+            <input
+              id="version-instrument-search"
+              className="input"
+              type="search"
+              placeholder="Search name or symbol"
+              value={search}
+              autoComplete="off"
+              aria-describedby="version-instrument-search-hint"
+              onChange={(e) => setSearch(e.target.value)}
+            />
+            <p className="field-hint" id="version-instrument-search-hint">Results update after a short pause. Select from the list below.</p>
+          </div>
+
+          {instruments.isLoading ? (
+            <SkeletonGroup label="Loading Instruments…"><Skeleton height="2.5rem" /></SkeletonGroup>
+          ) : instruments.isError ? (
+            <ErrorPanel title="Couldn't load Instruments" onRetry={() => void instruments.refetch()}>
+              {errorMessage(instruments.error, "Unable to load Instruments.")}
+            </ErrorPanel>
+          ) : (
+            <div className={`form-field ${error && !instrumentId ? "has-error" : ""}`}>
+              <label className="form-label" htmlFor="version-instrument-select">Instrument</label>
+              <select
+                id="version-instrument-select"
+                className="input"
+                aria-label="Instrument"
+                aria-required="true"
+                aria-invalid={!instrumentId && !!error ? true : undefined}
+                aria-describedby={!instrumentId && error ? "version-instrument-error" : undefined}
+                value={instrumentId}
+                onChange={(e) => setInstrumentId(e.target.value)}
+              >
+                <option value="">Select an Instrument</option>
+                {instruments.data?.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name} · {item.exchange_symbol} · {item.exchange.code} · {item.instrument_type} · {item.quote_currency}
+                    {item.is_tradeable ? "" : " · non-tradeable"}
+                  </option>
+                ))}
+              </select>
+              {!instrumentId && error && (
+                <p className="field-error" role="alert" id="version-instrument-error">{error}</p>
+              )}
+            </div>
+          )}
+
+          {selectedInstrument && (
+            <div className="selected-instrument">
+              <strong>Selected: {selectedInstrument.name}</strong>
+              <span>
+                {selectedInstrument.canonical_symbol} · {selectedInstrument.exchange.code} · {selectedInstrument.instrument_type} · {selectedInstrument.quote_currency}
+                {selectedInstrument.is_tradeable ? "" : " · non-tradeable"}
+              </span>
+            </div>
           )}
         </div>
-      )}
+      </fieldset>
 
-      {/* Selected instrument preview */}
-      {selectedInstrument && (
-        <div className="instrument-preview field-hint">
-          <strong>Selected:</strong>{" "}
-          {selectedInstrument.name} · {selectedInstrument.canonical_symbol} ·{" "}
-          {selectedInstrument.exchange.code} · {selectedInstrument.instrument_type} ·{" "}
-          {selectedInstrument.quote_currency}
-          {selectedInstrument.is_tradeable ? "" : " · non-tradeable"}
+      <fieldset className="form-section" style={{ borderBottom: "1px solid var(--border)" }}>
+        <legend className="visually-hidden">Algorithm configuration</legend>
+        <div className="form-section-head">
+          <span className="form-section-num" aria-hidden="true">2</span>
+          <div>
+            <h3>Algorithm configuration</h3>
+            <p>The strategy's parameters, as a JSON object.</p>
+          </div>
         </div>
-      )}
+        <div className="form-section-body">
+          <div className={`form-field ${configError ? "has-error" : ""}`}>
+            <label className="form-label" htmlFor="version-configuration">Algorithm configuration</label>
+            <textarea
+              id="version-configuration"
+              className="input json-input"
+              rows={5}
+              spellCheck={false}
+              aria-invalid={configError ? true : undefined}
+              aria-describedby={configError ? "version-config-error" : "version-config-hint"}
+              value={configuration}
+              onChange={(e) => setConfiguration(e.target.value)}
+            />
+            {configError ? (
+              <p className="field-error" role="alert" id="version-config-error">{configError}</p>
+            ) : (
+              <p className="field-hint" id="version-config-hint">Must be a JSON object, e.g. <code>{"{ \"period\": 14 }"}</code></p>
+            )}
+          </div>
+        </div>
+      </fieldset>
 
-      <p className="field-hint">
-        Instrument identity is stored canonically. Algorithm parameters remain separate below.
-      </p>
+      <fieldset className="form-section">
+        <legend className="visually-hidden">Backtest configuration</legend>
+        <div className="form-section-head">
+          <span className="form-section-num" aria-hidden="true">3</span>
+          <div>
+            <h3>Backtest configuration</h3>
+            <p>Simulation settings used when this Version is backtested.</p>
+          </div>
+        </div>
+        <div className="form-section-body">
+          <div className={`form-field ${backtestError ? "has-error" : ""}`}>
+            <label className="form-label" htmlFor="version-backtest-configuration">Backtest configuration</label>
+            <textarea
+              id="version-backtest-configuration"
+              className="input json-input"
+              rows={5}
+              spellCheck={false}
+              aria-invalid={backtestError ? true : undefined}
+              aria-describedby={backtestError ? "version-backtest-error" : "version-backtest-hint"}
+              value={backtest}
+              onChange={(e) => setBacktest(e.target.value)}
+            />
+            {backtestError ? (
+              <p className="field-error" role="alert" id="version-backtest-error">{backtestError}</p>
+            ) : (
+              <p className="field-hint" id="version-backtest-hint">Must be a JSON object, e.g. <code>{"{ \"capital\": 100000 }"}</code></p>
+            )}
+          </div>
+        </div>
+      </fieldset>
 
-      {/* Algorithm configuration */}
-      <div className={`form-field ${configError ? "has-error" : ""}`}>
-        <label className="form-label" htmlFor="version-configuration">
-          Algorithm configuration
-        </label>
-        <textarea
-          id="version-configuration"
-          className="input json-input"
-          rows={5}
-          aria-invalid={configError ? true : undefined}
-          aria-describedby={configError ? "version-config-error" : "version-config-hint"}
-          value={configuration}
-          onChange={(e) => setConfiguration(e.target.value)}
-        />
-        <p className="field-hint" id="version-config-hint">
-          Must be a JSON object, e.g. <code>{"{ \"period\": 14 }"}</code>
-        </p>
-        {configError && (
-          <p className="field-error" role="alert" id="version-config-error">
-            {configError}
-          </p>
-        )}
-      </div>
-
-      {/* Backtest configuration */}
-      <div className={`form-field ${backtestError ? "has-error" : ""}`}>
-        <label className="form-label" htmlFor="version-backtest-configuration">
-          Backtest configuration
-        </label>
-        <textarea
-          id="version-backtest-configuration"
-          className="input json-input"
-          rows={5}
-          aria-invalid={backtestError ? true : undefined}
-          aria-describedby={backtestError ? "version-backtest-error" : "version-backtest-hint"}
-          value={backtest}
-          onChange={(e) => setBacktest(e.target.value)}
-        />
-        <p className="field-hint" id="version-backtest-hint">
-          Must be a JSON object, e.g. <code>{"{ \"capital\": 100000 }"}</code>
-        </p>
-        {backtestError && (
-          <p className="field-error" role="alert" id="version-backtest-error">
-            {backtestError}
-          </p>
-        )}
-      </div>
-
-      {/* API-level error (not field-specific) */}
       {error && instrumentId && (
-        <div role="alert">
-          <ErrorAlert>{error}</ErrorAlert>
-        </div>
+        <div className="panel-body"><ErrorPanel title="Couldn't create the Version">{error}</ErrorPanel></div>
       )}
 
-      <div className="inline-actions">
-        <button
-          className="btn btn-primary"
-          type="submit"
-          disabled={mutation.isPending || instruments.isLoading}
-          aria-disabled={mutation.isPending || instruments.isLoading}
-        >
+      <div className="panel-foot">
+        <Button type="submit" loading={mutation.isPending} disabled={instruments.isLoading}>
           {mutation.isPending ? "Creating…" : "Create Version"}
-        </button>
-        <button
-          className="btn btn-ghost"
-          type="button"
-          disabled={mutation.isPending}
-          onClick={cancel}
-        >
-          Cancel
-        </button>
+        </Button>
+        <Button type="button" variant="ghost" disabled={mutation.isPending} onClick={onClose}>Cancel</Button>
       </div>
     </form>
   );
 }
 
-/* ── Lifecycle controls ───────────────────────────────────────── */
-function Lifecycle({ strategy }: { strategy: Strategy }) {
-  const client = useQueryClient();
-  const [error, setError] = useState<string | null>(null);
-  const [confirmArchive, setConfirmArchive] = useState(false);
-
-  const mutation = useMutation({
-    mutationFn: (action: "publish" | "deploy" | "archive") =>
-      strategiesApi.lifecycle(strategy.id, action),
-    onSuccess: async () => {
-      setError(null);
-      setConfirmArchive(false);
-      await Promise.all([
-        client.invalidateQueries({ queryKey: queryKeys.strategy(strategy.id) }),
-        client.invalidateQueries({ queryKey: queryKeys.strategies }),
-        client.invalidateQueries({ queryKey: queryKeys.marketplace }),
-      ]);
-    },
-    onError: (reason) => setError(errorMessage(reason, "Lifecycle transition failed.")),
-  });
-
-  const actions: ("publish" | "deploy" | "archive")[] =
-    strategy.status === "draft"
-      ? ["publish", "archive"]
-      : strategy.status === "published"
-      ? ["deploy", "archive"]
-      : strategy.status === "deployed"
-      ? ["archive"]
-      : [];
-
-  return (
-    <div className="card">
-      <div className="card-title-row">
-        <div>
-          <h2>Lifecycle</h2>
-          <p>Transitions follow backend lifecycle rules.</p>
-        </div>
-        <Status value={strategy.status} />
-      </div>
-
-      {actions.length ? (
-        <div className="inline-actions">
-          {actions.map((action) =>
-            action === "archive" ? (
-              confirmArchive ? (
-                <span className="inline-actions" key={action}>
-                  <button
-                    className="btn btn-danger"
-                    disabled={mutation.isPending}
-                    onClick={() => mutation.mutate("archive")}
-                  >
-                    {mutation.isPending ? "Archiving…" : "Confirm archive"}
-                  </button>
-                  <button
-                    className="btn btn-ghost"
-                    disabled={mutation.isPending}
-                    onClick={() => setConfirmArchive(false)}
-                  >
-                    Cancel
-                  </button>
-                </span>
-              ) : (
-                <button
-                  className="btn btn-danger"
-                  disabled={mutation.isPending}
-                  key={action}
-                  onClick={() => setConfirmArchive(true)}
-                >
-                  Archive
-                </button>
-              )
-            ) : (
-              <button
-                className="btn btn-secondary"
-                disabled={mutation.isPending}
-                key={action}
-                onClick={() => mutation.mutate(action)}
-              >
-                {action[0].toUpperCase() + action.slice(1)}
-              </button>
-            )
-          )}
-        </div>
-      ) : (
-        <p className="muted">Archived is terminal. No further actions are available.</p>
-      )}
-
-      {confirmArchive && (
-        <p className="field-hint">
-          Archiving is terminal and makes this Strategy private.
-        </p>
-      )}
-
-      {error && (
-        <div role="alert">
-          <ErrorAlert>{error}</ErrorAlert>
-        </div>
-      )}
-    </div>
-  );
-}
-
 /* ── Strategy detail page ─────────────────────────────────────── */
+const ACTION_COPY: Record<LifecycleAction, { label: string; pending: string }> = {
+  publish: { label: "Publish", pending: "Publishing…" },
+  deploy: { label: "Deploy", pending: "Deploying…" },
+  archive: { label: "Archive", pending: "Archiving…" },
+};
+
 export function StrategyDetailPage() {
   const { strategyId = "" } = useParams();
   const navigate = useNavigate();
   const client = useQueryClient();
-  const [confirm, setConfirm] = useState(false);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [confirm, setConfirm] = useState<"archive" | "delete" | null>(null);
+  const [creatingVersion, setCreatingVersion] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [dialogError, setDialogError] = useState<string | null>(null);
 
   const query = useQuery({
     queryKey: queryKeys.strategy(strategyId),
@@ -779,172 +854,209 @@ export function StrategyDetailPage() {
     queryFn: () => strategiesApi.listVersions(strategyId),
   });
 
+  const lifecycle = useMutation({
+    mutationFn: (action: LifecycleAction) => strategiesApi.lifecycle(strategyId, action),
+    onSuccess: async () => {
+      setActionError(null);
+      setDialogError(null);
+      setConfirm(null);
+      await Promise.all([
+        client.invalidateQueries({ queryKey: queryKeys.strategy(strategyId) }),
+        client.invalidateQueries({ queryKey: queryKeys.strategies }),
+        client.invalidateQueries({ queryKey: queryKeys.marketplace }),
+      ]);
+    },
+    onError: (reason, action) => {
+      const message = errorMessage(reason, "Lifecycle transition failed.");
+      if (action === "archive") setDialogError(message);
+      else setActionError(message);
+    },
+  });
+
   const remove = useMutation({
     mutationFn: () => strategiesApi.delete(strategyId),
     onSuccess: async () => {
       await client.invalidateQueries({ queryKey: queryKeys.strategies });
       navigate("/creator/strategies");
     },
-    onError: (reason) => setDeleteError(errorMessage(reason, "Unable to delete strategy.")),
+    onError: (reason) => setDialogError(errorMessage(reason, "Unable to delete strategy.")),
   });
 
-  if (query.isLoading) return <LoadingState label="Loading strategy…" />;
+  if (query.isLoading) return <DetailSkeleton label="Loading strategy…" />;
   if (query.isError || !query.data)
-    return (
-      <ErrorAlert>
-        {query.error instanceof ApiError && query.error.status === 404
-          ? "Strategy not found."
-          : "Unable to load this strategy."}
-      </ErrorAlert>
-    );
+    return <LoadError error={query.error} notFound="Strategy not found." what="Strategy" onRetry={() => void query.refetch()} />;
 
   const strategy = query.data;
   const versionCount = versions.data?.length ?? 0;
+  const allowed = NEXT_ACTIONS[strategy.status];
+  const primary = allowed.find(a => a !== "archive");
+  const canArchive = allowed.includes("archive");
+  const currentVersion = strategy.current_version_id
+    ? versions.data?.find((v) => v.id === strategy.current_version_id)
+    : undefined;
+  const busy = lifecycle.isPending || remove.isPending;
+
+  const closeDialog = () => { setConfirm(null); setDialogError(null); };
+
+  const menuItems: ActionMenuItem[] = [
+    ...(canArchive ? [{ label: "Archive", icon: <Archive size={14} aria-hidden="true" />, onSelect: () => { setDialogError(null); setConfirm("archive" as const); } }] : []),
+    { label: "Delete strategy", icon: <Trash2 size={14} aria-hidden="true" />, tone: "danger" as const, onSelect: () => { setDialogError(null); setConfirm("delete" as const); } },
+  ];
+
+  const createVersionButton = (variant: "primary" | "secondary") => (
+    <Button variant={variant} size="sm" iconLeft={<PlusCircle size={14} aria-hidden="true" />} onClick={() => setCreatingVersion(true)}>
+      Create Version
+    </Button>
+  );
 
   return (
-    <section>
-      <Link className="sb-back-link" to="/creator/strategies">
-        ← Strategies
-      </Link>
+    <div>
+      <Link className="back-crumb" to="/creator/strategies"><ArrowLeft size={14} aria-hidden="true" /> Strategies</Link>
 
-      <div className="page-heading">
-        <div>
+      <header className="page-header">
+        <div className="page-header-text">
           <p className="eyebrow">Creator strategy</p>
-          <div className="card-title-row">
+          <div className="title-with-status">
             <h1>{strategy.name}</h1>
-            <Status value={strategy.status} />
+            <StatusBadge status={strategy.status} />
           </div>
-          <p className="lead">{strategy.description || "No description provided."}</p>
+          <p>{strategy.description || "No description provided."}</p>
         </div>
-        <Link
-          className="btn btn-secondary"
-          to={`/creator/strategies/${strategy.id}/edit`}
-        >
-          Edit metadata
-        </Link>
-      </div>
-
-      <div className="detail-grid">
-        <div className="card">
-          <h2>Metadata</h2>
-          <dl className="details-list">
-            <dt>Slug</dt>
-            <dd>{strategy.slug}</dd>
-            <dt>Current Version</dt>
-            <dd>
-              {strategy.current_version_id
-                ? (() => {
-                    const cur = versions.data?.find((v) => v.id === strategy.current_version_id);
-                    return cur ? `Version ${cur.version_number}` : "Selected";
-                  })()
-                : "None"}
-            </dd>
-            <dt>Created</dt>
-            <dd>{date(strategy.created_at)}</dd>
-            <dt>Updated</dt>
-            <dd>{date(strategy.updated_at)}</dd>
-            <dt>Published</dt>
-            <dd>{date(strategy.published_at)}</dd>
-            <dt>Deployed</dt>
-            <dd>{date(strategy.deployed_at)}</dd>
-          </dl>
-        </div>
-
-        <Lifecycle strategy={strategy} />
-      </div>
-
-      {/* Versions section */}
-      <div className="section-heading">
-        <div>
-          <h2>
-            Strategy Versions{" "}
-            {versionCount > 0 && (
-              <span className="version-count badge">
-                {versionCount}
-              </span>
-            )}
-          </h2>
-          <p>Versions are immutable once created. At least one Version is required to publish.</p>
-        </div>
-        <VersionCreator strategyId={strategy.id} />
-      </div>
-
-      {versions.isLoading ? (
-        <LoadingState label="Loading Versions…" />
-      ) : versions.isError ? (
-        <ErrorAlert>{errorMessage(versions.error, "Unable to load Versions.")}</ErrorAlert>
-      ) : !versions.data?.length ? (
-        <EmptyState>
-          No Versions yet. A draft requires at least one Version before it can be published.
-        </EmptyState>
-      ) : (
-        <div className="card version-list">
-          {versions.data.map((version) => (
-            <Link
-              key={version.id}
-              className="version-list-item"
-              to={`/creator/strategies/${strategy.id}/versions/${version.id}`}
+        <div className="page-header-actions">
+          {primary && (
+            <Button
+              iconLeft={primary === "publish" ? <Globe size={15} aria-hidden="true" /> : <Rocket size={15} aria-hidden="true" />}
+              loading={lifecycle.isPending && lifecycle.variables === primary}
+              disabled={busy}
+              onClick={() => { setActionError(null); lifecycle.mutate(primary); }}
             >
-              <div className="version-list-item-main">
-                <strong>Version {version.version_number}</strong>
-                {version.instrument && (
-                  <span className="version-instrument">
-                    {version.instrument.name} · {version.instrument.exchange.code}
-                  </span>
-                )}
-              </div>
-              <div className="version-list-item-meta">
-                <span className="version-date">{date(version.created_at)}</span>
-                {version.id === strategy.current_version_id && (
-                  <span className="badge badge-published">Current</span>
-                )}
-              </div>
-            </Link>
-          ))}
+              {ACTION_COPY[primary].label}
+            </Button>
+          )}
+          <Link className="btn btn-secondary" to={`/creator/strategies/${strategy.id}/edit`}>Edit metadata</Link>
+          <ActionMenu label="More actions" triggerText="More" items={menuItems} />
+        </div>
+      </header>
+
+      {actionError && (
+        <div style={{ marginBottom: "var(--space-5)" }} role="alert">
+          <Alert variant="error">{actionError}</Alert>
+        </div>
+      )}
+      {strategy.status === "draft" && versions.isSuccess && versionCount === 0 && !actionError && (
+        <div style={{ marginBottom: "var(--space-5)" }}>
+          <Alert variant="info">A draft needs at least one Version before it can be published.</Alert>
         </div>
       )}
 
-      <div className="danger-zone card">
-        <h2>Delete strategy</h2>
-        <p>Deletion is permanent. There is no restore action.</p>
-        {confirm ? (
-          <div>
-            <p>
-              Confirm deletion of <strong>{strategy.name}</strong>?
-            </p>
-            <div className="inline-actions">
-              <button
-                className="btn btn-danger"
-                disabled={remove.isPending}
-                onClick={() => remove.mutate()}
-              >
-                {remove.isPending ? "Deleting…" : "Delete permanently"}
-              </button>
-              <button
-                className="btn btn-ghost"
-                disabled={remove.isPending}
-                onClick={() => setConfirm(false)}
-              >
-                Cancel
-              </button>
+      <div className="detail-layout">
+        <div className="detail-main">
+          {creatingVersion && <VersionCreator strategyId={strategy.id} onClose={() => setCreatingVersion(false)} />}
+
+          <section className="panel" aria-labelledby="versions-heading">
+            <div className="panel-head">
+              <SectionHeader
+                id="versions-heading"
+                title="Strategy Versions"
+                count={versions.isSuccess ? versionCount : undefined}
+                description="Immutable once created. Open a Version to see its configuration and backtests."
+                actions={!creatingVersion && versionCount > 0 ? createVersionButton("secondary") : undefined}
+              />
             </div>
-          </div>
-        ) : (
-          <button
-            className="btn btn-danger"
-            disabled={remove.isPending}
-            onClick={() => setConfirm(true)}
-          >
-            Delete strategy
-          </button>
-        )}
-        {deleteError && (
-          <div role="alert">
-            <ErrorAlert>{deleteError}</ErrorAlert>
-          </div>
-        )}
+            <div className="panel-body is-flush">
+              {versions.isLoading ? (
+                <SkeletonRows label="Loading Versions…" rows={3} />
+              ) : versions.isError ? (
+                <div className="panel-body">
+                  <ErrorPanel title="Versions unavailable" onRetry={() => void versions.refetch()}>We couldn't load Versions. Try again.</ErrorPanel>
+                </div>
+              ) : !versions.data?.length ? (
+                <EmptyState
+                  variant="compact"
+                  icon={<PlusCircle size={22} />}
+                  title="No Versions yet"
+                  action={!creatingVersion ? createVersionButton("primary") : undefined}
+                >
+                  A Version pins an instrument and configuration. Create one to backtest this strategy and to publish it.
+                </EmptyState>
+              ) : (
+                <ul className="version-rows">
+                  {versions.data.map((version) => (
+                    <li key={version.id}>
+                      <Link className="version-row" to={`/creator/strategies/${strategy.id}/versions/${version.id}`}>
+                        <div className="version-row-main">
+                          <strong>Version {version.version_number}</strong>
+                          {version.instrument && <span>{version.instrument.name} · {version.instrument.exchange.code}</span>}
+                        </div>
+                        <div className="version-row-meta">
+                          <span>{date(version.created_at)}</span>
+                          {version.id === strategy.current_version_id && <span className="badge badge-info">Current</span>}
+                        </div>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </section>
+        </div>
+
+        <div className="detail-side">
+          <section className="panel" aria-labelledby="overview-heading">
+            <div className="panel-head"><SectionHeader id="overview-heading" title="Overview" /></div>
+            <div className="panel-body">
+              <dl className="kv">
+                <dt>Slug</dt>
+                <dd className="mono">{strategy.slug}</dd>
+                <dt>Visibility</dt>
+                <dd>{strategy.is_public ? "Public" : "Private"}</dd>
+                <dt>Current Version</dt>
+                <dd>{strategy.current_version_id ? (currentVersion ? `Version ${currentVersion.version_number}` : "Selected") : "None"}</dd>
+                <dt>Created</dt>
+                <dd>{date(strategy.created_at)}</dd>
+                <dt>Updated</dt>
+                <dd>{date(strategy.updated_at)}</dd>
+              </dl>
+            </div>
+          </section>
+
+          <section className="panel" aria-labelledby="lifecycle-heading">
+            <div className="panel-head"><SectionHeader id="lifecycle-heading" title="Lifecycle" description="Transitions follow backend lifecycle rules." /></div>
+            <div className="panel-body"><LifecycleSteps strategy={strategy} /></div>
+          </section>
+        </div>
       </div>
-    </section>
+
+      <ConfirmDialog
+        open={confirm === "archive"}
+        title="Archive this strategy?"
+        confirmLabel="Confirm archive"
+        pendingLabel="Archiving…"
+        pending={lifecycle.isPending}
+        error={dialogError}
+        onCancel={closeDialog}
+        onConfirm={() => lifecycle.mutate("archive")}
+      >
+        <p>
+          Archiving <strong>{strategy.name}</strong> is terminal and makes it private. You won't be able to publish or deploy it again.
+        </p>
+      </ConfirmDialog>
+
+      <ConfirmDialog
+        open={confirm === "delete"}
+        title="Delete this strategy?"
+        confirmLabel="Delete permanently"
+        pendingLabel="Deleting…"
+        pending={remove.isPending}
+        error={dialogError}
+        onCancel={closeDialog}
+        onConfirm={() => remove.mutate()}
+      >
+        <p>
+          Confirm deletion of <strong>{strategy.name}</strong>? Deletion is permanent. There is no restore action.
+        </p>
+      </ConfirmDialog>
+    </div>
   );
 }
 
@@ -962,88 +1074,90 @@ export function StrategyVersionPage() {
     queryFn: () => strategiesApi.getVersion(strategyId, versionId),
   });
 
-  if (query.isLoading) return <LoadingState label="Loading Version…" />;
+  if (query.isLoading) return <DetailSkeleton label="Loading Version…" />;
   if (query.isError || !query.data)
-    return (
-      <ErrorAlert>
-        {query.error instanceof ApiError && query.error.status === 404
-          ? "Strategy Version not found."
-          : "Unable to load this Version."}
-      </ErrorAlert>
-    );
+    return <LoadError error={query.error} notFound="Strategy Version not found." what="Version" onRetry={() => void query.refetch()} />;
 
   const instrument = query.data.instrument;
-  const strategyName = strategyQuery.data?.name;
+  const strategy = strategyQuery.data;
+  const strategyName = strategy?.name;
+  const isCurrent = strategy?.current_version_id === query.data.id;
 
   return (
-    <section>
-      <Link className="sb-back-link" to={`/creator/strategies/${strategyId}`}>
-        ← {strategyName ?? "Strategy"}
+    <div>
+      <Link className="back-crumb" to={`/creator/strategies/${strategyId}`}>
+        <ArrowLeft size={14} aria-hidden="true" /> {strategyName ?? "Strategy"}
       </Link>
 
-      <div className="sb-page-header">
-        <p className="eyebrow">
-          {strategyName ? `${strategyName} · ` : ""}Immutable version
-        </p>
-        <h1>Version {query.data.version_number}</h1>
-        <p>Created {date(query.data.created_at)}</p>
-      </div>
-
-      <div className="alert alert-info sb-status-notice" role="note">
-        Versions are immutable once created. There are no edit or delete actions.
-      </div>
-
-      <div className="card instrument-summary">
-        <h2>Instrument</h2>
-        {instrument ? (
-          <dl className="details-list">
-            <dt>Name</dt>
-            <dd>{instrument.name}</dd>
-            <dt>Canonical symbol</dt>
-            <dd>{instrument.canonical_symbol}</dd>
-            <dt>Exchange symbol</dt>
-            <dd>{instrument.exchange_symbol}</dd>
-            <dt>Exchange</dt>
-            <dd>{instrument.exchange.code}</dd>
-            <dt>Type</dt>
-            <dd>
-              {instrument.instrument_type}
-              {instrument.is_tradeable ? "" : " · non-tradeable"}
-            </dd>
-            <dt>Currency</dt>
-            <dd>{instrument.quote_currency}</dd>
-            <dt>Tick size</dt>
-            <dd>{instrument.tick_size ?? "—"}</dd>
-            <dt>Lot size</dt>
-            <dd>{instrument.lot_size ?? "—"}</dd>
-          </dl>
-        ) : (
-          <div>
-            <p className="badge badge-archived">legacy / unresolved</p>
-            <p>
-              This legacy Version has no resolved canonical Instrument. Its immutable configuration
-              remains available below.
-            </p>
+      <header className="page-header">
+        <div className="page-header-text">
+          <p className="eyebrow">{strategyName ? `${strategyName} · ` : ""}Immutable version</p>
+          <div className="title-with-status">
+            <h1>Version {query.data.version_number}</h1>
+            {isCurrent && <span className="badge badge-info">Current</span>}
           </div>
-        )}
-      </div>
-
-      <div className="detail-grid">
-        <div className="card">
-          <h2>Algorithm configuration</h2>
-          <pre className="json-view">{JSON.stringify(query.data.configuration, null, 2)}</pre>
+          <p>Created {date(query.data.created_at)}</p>
         </div>
-        <div className="card">
-          <h2>Backtest configuration</h2>
-          <pre className="json-view">
-            {JSON.stringify(query.data.backtest_configuration, null, 2)}
-          </pre>
-        </div>
-      </div>
+      </header>
 
-      <Suspense fallback={<LoadingState label="Loading Backtests…" />}>
-        <VersionBacktests strategyId={strategyId} versionId={versionId} />
-      </Suspense>
-    </section>
+      <div className="page-stack">
+        <div role="note"><Alert variant="info">Versions are immutable once created. There are no edit or delete actions.</Alert></div>
+
+        <div className="detail-layout">
+          <div className="detail-main">
+            <section className="panel" aria-labelledby="algo-config">
+              <div className="panel-head"><SectionHeader id="algo-config" title="Algorithm configuration" /></div>
+              <div className="panel-body"><pre className="json-view">{JSON.stringify(query.data.configuration, null, 2)}</pre></div>
+            </section>
+            <section className="panel" aria-labelledby="bt-config">
+              <div className="panel-head"><SectionHeader id="bt-config" title="Backtest configuration" /></div>
+              <div className="panel-body"><pre className="json-view">{JSON.stringify(query.data.backtest_configuration, null, 2)}</pre></div>
+            </section>
+          </div>
+
+          <div className="detail-side">
+            <section className="panel" aria-labelledby="instrument-heading">
+              <div className="panel-head"><SectionHeader id="instrument-heading" title="Instrument" /></div>
+              <div className="panel-body">
+                {instrument ? (
+                  <dl className="kv">
+                    <dt>Name</dt>
+                    <dd>{instrument.name}</dd>
+                    <dt>Canonical symbol</dt>
+                    <dd className="mono">{instrument.canonical_symbol}</dd>
+                    <dt>Exchange symbol</dt>
+                    <dd className="mono">{instrument.exchange_symbol}</dd>
+                    <dt>Exchange</dt>
+                    <dd>{instrument.exchange.code}</dd>
+                    <dt>Type</dt>
+                    <dd>
+                      {instrument.instrument_type}
+                      {instrument.is_tradeable ? "" : " · non-tradeable"}
+                    </dd>
+                    <dt>Currency</dt>
+                    <dd>{instrument.quote_currency}</dd>
+                    <dt>Tick size</dt>
+                    <dd>{instrument.tick_size ?? "—"}</dd>
+                    <dt>Lot size</dt>
+                    <dd>{instrument.lot_size ?? "—"}</dd>
+                  </dl>
+                ) : (
+                  <div>
+                    <p className="badge badge-muted">legacy / unresolved</p>
+                    <p className="hint-line" style={{ marginTop: "var(--space-3)" }}>
+                      This legacy Version has no resolved canonical Instrument. Its immutable configuration remains available.
+                    </p>
+                  </div>
+                )}
+              </div>
+            </section>
+          </div>
+        </div>
+
+        <Suspense fallback={<SkeletonRows label="Loading Backtests…" rows={3} />}>
+          <VersionBacktests strategyId={strategyId} versionId={versionId} />
+        </Suspense>
+      </div>
+    </div>
   );
 }

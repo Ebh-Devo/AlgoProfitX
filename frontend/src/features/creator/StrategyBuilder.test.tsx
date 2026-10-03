@@ -116,7 +116,8 @@ describe("StrategyNewPage — create form", () => {
     view(<StrategyNewPage />, "/creator/strategies/new");
 
     await userEvent.type(screen.getByLabelText("Name"), "Alpha Momentum");
-    await userEvent.type(screen.getByLabelText(/Slug/), "alpha-momentum");
+    // The slug follows the name until edited.
+    expect(screen.getByLabelText(/Slug/)).toHaveValue("alpha-momentum");
     await userEvent.click(screen.getByRole("button", { name: "Create strategy" }));
 
     await waitFor(() =>
