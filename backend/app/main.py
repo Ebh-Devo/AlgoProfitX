@@ -1,5 +1,6 @@
 from contextlib import asynccontextmanager
 import logging
+import os
 import re
 import time
 import uuid
@@ -133,6 +134,16 @@ def create_app() -> FastAPI:
         instruments_router,
         prefix="/api/v1",
     )
+
+    _RELEASE_IDENTITY = {
+        "repository": os.getenv("APP_SOURCE_REPO", "Ebh-Devo/AlgoProfitX"),
+        "sha": os.getenv("APP_SOURCE_SHA", ""),
+        "component": "algoprofitx-api",
+    }
+
+    @application.get("/api/version", include_in_schema=True, tags=["meta"])
+    async def api_version():
+        return _RELEASE_IDENTITY
 
     @application.get("/health", include_in_schema=False)
     @application.get("/health/live", include_in_schema=False)
