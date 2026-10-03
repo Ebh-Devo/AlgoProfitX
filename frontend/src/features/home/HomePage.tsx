@@ -1,242 +1,199 @@
 import { Link } from "react-router-dom";
-import { Check } from "lucide-react";
+import {
+  ArrowRight, BarChart3, Check, FlaskConical, GitBranch, LineChart, Minus, ScrollText, Store, Wallet,
+} from "lucide-react";
+
+const WORKFLOW = [
+  { name: "Create", text: "Define a strategy against canonical NSE/BSE Instruments." },
+  { name: "Version", text: "Freeze the exact configuration as an immutable Version." },
+  { name: "Backtest", text: "Run a deterministic historical simulation." },
+  { name: "Analyze", text: "Read return, drawdown, win rate, profit factor and trades." },
+  { name: "Publish", text: "Move a Version through published and deployed states." },
+  { name: "Allocate", text: "Investors pin an allocation intent to a specific Version." },
+  { name: "Paper execute", text: "Observe filled, no-fill and failed outcomes — simulated." },
+];
+
+const CAPABILITIES = [
+  { icon: <GitBranch size={18} />, title: "Versioned strategies", text: "Every change produces a new immutable Version, so a result always points to the exact configuration that produced it." },
+  { icon: <FlaskConical size={18} />, title: "Reference backtesting", text: "Deterministic historical simulations with provenance, so a run can be understood and repeated." },
+  { icon: <LineChart size={18} />, title: "Analytics that explain", text: "Total return, max drawdown, win rate, profit factor, trade list and equity curve for every completed run." },
+  { icon: <Store size={18} />, title: "Marketplace discovery", text: "Browse public deployed strategies without exposing a creator’s private configuration." },
+  { icon: <Wallet size={18} />, title: "Version-pinned allocations", text: "An allocation references one Version, so you always know what it is tied to." },
+  { icon: <BarChart3 size={18} />, title: "Instrument master", text: "NSE/BSE instrument identity, INR quote currency and session-aware design underpin every strategy." },
+];
+
+const METRICS = ["Total return", "Max drawdown", "Win rate", "Profit factor", "Trades"];
 
 export function HomePage() {
-  const workflow = ["Create", "Version", "Backtest", "Analyze", "Publish", "Allocate", "Paper execute"];
   return (
-    <>
-      <div className="landing-page">
-        <section className="hero premium-hero">
-          <div className="hero-copy">
-            <p className="eyebrow">
-              <span className="live-dot" aria-hidden="true" /> Systematic strategy workspace
-            </p>
-            <h1>Turn trading ideas into <span>testable strategies.</span></h1>
-            <p className="lead">
-              Build versioned strategies, run historical simulations, understand analytics, publish to
-              a discovery marketplace, and explore allocation through paper execution.
-            </p>
-            <div className="hero-actions">
-              <Link className="button button-large" to="/register">
-                Start building <span aria-hidden="true">→</span>
-              </Link>
-              <Link className="button button-secondary button-large" to="/marketplace">
-                Explore marketplace
-              </Link>
-            </div>
-            <ul className="trust-row" aria-label="Platform properties">
-              <li><Check size={11} aria-hidden="true" />NSE/BSE identity</li>
-              <li><Check size={11} aria-hidden="true" />INR-native</li>
-              <li><Check size={11} aria-hidden="true" />Session-aware</li>
-              <li><Check size={11} aria-hidden="true" />Clearly simulated</li>
-            </ul>
+    <div className="landing">
+      {/* ── Hero ─────────────────────────────────────────────── */}
+      <section className="l-hero l-wrap" aria-labelledby="hero-title">
+        <div className="l-hero-copy">
+          <p className="eyebrow">Systematic strategy research · Indian markets</p>
+          <h1 id="hero-title">Turn a trading idea into a strategy you can test.</h1>
+          <p className="lead">
+            AlgoProfitX is a workspace for building versioned strategies, running historical simulations,
+            publishing to a discovery marketplace and exploring allocation through paper execution.
+          </p>
+          <div className="l-actions">
+            <Link className="btn btn-lg" to="/register">Start building <ArrowRight size={16} aria-hidden="true" /></Link>
+            <Link className="btn btn-lg btn-secondary" to="/marketplace">Explore marketplace</Link>
           </div>
-          <div className="hero-terminal" aria-label="Representative AlgoProfitX backtest dashboard">
-            <div className="terminal-bar">
-              <span aria-hidden="true"><i /><i /><i /></span>
-              <strong>Momentum Alpha · Backtest</strong>
-              <span className="badge badge-completed">Completed</span>
-            </div>
-            <div className="terminal-metrics">
-              <div><small>Total return</small><strong className="positive">+18.42%</strong><em>Simulated</em></div>
-              <div><small>Max drawdown</small><strong>−6.18%</strong><em>Historical</em></div>
-              <div><small>Win rate</small><strong>61.8%</strong><em>34 trades</em></div>
-              <div><small>Profit factor</small><strong>1.74</strong><em>Reference</em></div>
-            </div>
-            <div className="hero-chart">
-              <div className="chart-grid" aria-hidden="true" />
-              <svg viewBox="0 0 600 190" role="img" aria-label="Representative rising equity curve">
-                <defs>
-                  <linearGradient id="equityFill" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0" stopColor="#39dfba" stopOpacity=".36" />
-                    <stop offset="1" stopColor="#39dfba" stopOpacity="0" />
-                  </linearGradient>
-                </defs>
-                <path
-                  className="chart-area"
-                  d="M0 160 C45 154 63 135 98 141 S160 112 198 123 S250 85 292 98 S355 70 390 78 S455 42 488 56 S548 25 600 20 L600 190 L0 190 Z"
-                />
-                <path
-                  className="chart-line"
-                  d="M0 160 C45 154 63 135 98 141 S160 112 198 123 S250 85 292 98 S355 70 390 78 S455 42 488 56 S548 25 600 20"
-                />
-              </svg>
-            </div>
-            <div className="terminal-footer">
-              <span><b>NSE</b> ALGOPROFITX_TEST_EQ</span>
-              <span>1d · INR</span>
-              <span>Synthetic reference dataset</span>
-            </div>
-          </div>
-        </section>
+          <ul className="l-proof" aria-label="Platform properties">
+            <li><Check size={14} aria-hidden="true" /> NSE/BSE instrument identity</li>
+            <li><Check size={14} aria-hidden="true" /> INR-native</li>
+            <li><Check size={14} aria-hidden="true" /> Version-pinned</li>
+            <li><Check size={14} aria-hidden="true" /> Clearly simulated</li>
+          </ul>
+        </div>
 
-        <section className="workflow-section" aria-labelledby="workflow-title">
-          <div className="section-intro">
-            <p className="eyebrow">One auditable workflow</p>
-            <h2 id="workflow-title">From hypothesis to paper execution.</h2>
-            <p>Every stage keeps identity, configuration, and provenance explicit.</p>
+        <figure className="l-preview" aria-label="Layout preview of a backtest report. Contains no real data.">
+          <div className="l-preview-bar">
+            <span className="l-preview-title"><ScrollText size={14} aria-hidden="true" /> Backtest report</span>
+            <span className="badge badge-muted">Layout preview · no data</span>
           </div>
-          <ol className="workflow-rail">
-            {workflow.map((step, index) => (
-              <li key={step}>
-                <span>{String(index + 1).padStart(2, "0")}</span>
-                <strong>{step}</strong>
+          <dl className="l-preview-metrics">
+            {METRICS.map(m => (
+              <div key={m}>
+                <dt>{m}</dt>
+                <dd><Minus size={14} aria-hidden="true" /><span className="visually-hidden">No data</span></dd>
+              </div>
+            ))}
+          </dl>
+          <div className="l-preview-chart" aria-hidden="true">
+            <svg viewBox="0 0 600 180" preserveAspectRatio="none">
+              {[36, 72, 108, 144].map(y => <line key={y} x1="0" x2="600" y1={y} y2={y} className="grid" />)}
+              <path className="curve" d="M0 140 C60 132 90 120 140 126 S220 96 280 104 S380 70 440 78 S540 44 600 38" />
+            </svg>
+            <span>Equity curve</span>
+          </div>
+          <div className="l-preview-rows" aria-hidden="true">
+            {[0, 1, 2].map(i => (
+              <div key={i}><span className="skeleton" /><span className="skeleton" /><span className="skeleton" /></div>
+            ))}
+          </div>
+        </figure>
+      </section>
+
+      {/* ── Positioning ──────────────────────────────────────── */}
+      <section className="l-band" aria-labelledby="why-title">
+        <div className="l-wrap l-why">
+          <h2 id="why-title">Rules you can write down are rules you can test.</h2>
+          <p>
+            Systematic trading replaces in-the-moment judgement with explicit rules. The value is in being
+            able to examine those rules — what they assume, how they behaved historically, and exactly which
+            configuration produced a result — before capital is ever involved. AlgoProfitX is built around that
+            discipline.
+          </p>
+        </div>
+      </section>
+
+      {/* ── Audience ─────────────────────────────────────────── */}
+      <section className="l-section l-wrap" aria-labelledby="audience-title">
+        <header className="l-head">
+          <p className="eyebrow">Who it is for</p>
+          <h2 id="audience-title">Two roles, one auditable workflow.</h2>
+        </header>
+        <div className="l-audience">
+          <article className="card">
+            <h3>Creators</h3>
+            <p>Model strategy ideas, bind them to Instruments, create immutable Versions and move them deliberately through draft, published, deployed and archived states.</p>
+            <ul className="l-ticks">
+              <li><Check size={14} aria-hidden="true" /> Immutable Versions preserve every configuration</li>
+              <li><Check size={14} aria-hidden="true" /> Reference backtests with provenance</li>
+              <li><Check size={14} aria-hidden="true" /> Analytics that explain a run</li>
+            </ul>
+            <Link className="l-link" to="/register">Create your workspace <ArrowRight size={14} aria-hidden="true" /></Link>
+          </article>
+          <article className="card">
+            <h3>Investors</h3>
+            <p>Explore public deployed strategies, pin an allocation intent to a Version and inspect every paper outcome — without access to a creator’s private configuration.</p>
+            <ul className="l-ticks">
+              <li><Check size={14} aria-hidden="true" /> Clear lifecycle and Version context</li>
+              <li><Check size={14} aria-hidden="true" /> Allocations tied to a specific Version</li>
+              <li><Check size={14} aria-hidden="true" /> Filled, no-fill and failed states stay unmistakable</li>
+            </ul>
+            <Link className="l-link" to="/marketplace">Browse the marketplace <ArrowRight size={14} aria-hidden="true" /></Link>
+          </article>
+        </div>
+      </section>
+
+      {/* ── Capabilities ─────────────────────────────────────── */}
+      <section className="l-section l-wrap" aria-labelledby="cap-title">
+        <header className="l-head">
+          <p className="eyebrow">Platform</p>
+          <h2 id="cap-title">What you can do today.</h2>
+        </header>
+        <ul className="l-grid" role="list">
+          {CAPABILITIES.map(c => (
+            <li key={c.title} className="l-cap">
+              <span className="l-cap-icon" aria-hidden="true">{c.icon}</span>
+              <h3>{c.title}</h3>
+              <p>{c.text}</p>
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      {/* ── Workflow ─────────────────────────────────────────── */}
+      <section className="l-band" aria-labelledby="flow-title">
+        <div className="l-wrap l-section">
+          <header className="l-head">
+            <p className="eyebrow">Workflow</p>
+            <h2 id="flow-title">From hypothesis to paper execution.</h2>
+          </header>
+          <ol className="l-flow">
+            {WORKFLOW.map((s, i) => (
+              <li key={s.name}>
+                <span className="l-flow-n">{String(i + 1).padStart(2, "0")}</span>
+                <strong>{s.name}</strong>
+                <p>{s.text}</p>
               </li>
             ))}
           </ol>
-        </section>
+        </div>
+      </section>
 
-        <section className="feature-split" aria-labelledby="creators-heading">
-          <article>
-            <p className="eyebrow">For creators</p>
-            <h2 id="creators-heading">Build with discipline, not guesswork.</h2>
-            <p>
-              Model strategy ideas, bind them to canonical Instruments, create immutable Versions,
-              and move deliberately through draft, published, deployed, and archived states.
-            </p>
-            <div className="feature-list">
-              <span>
-                <b>Immutable Versions</b>
-                <small>Preserve the exact configuration behind every run.</small>
-              </span>
-              <span>
-                <b>Reference Backtesting</b>
-                <small>Run deterministic historical simulations with provenance.</small>
-              </span>
-              <span>
-                <b>Analytics that explain</b>
-                <small>Return, drawdown, win rate, profit factor, trades, and equity.</small>
-              </span>
-            </div>
-            <Link to="/register">Create your workspace →</Link>
-          </article>
-          <div className="lifecycle-card card" aria-label="Strategy lifecycle diagram">
-            <div className="card-kicker">Strategy lifecycle</div>
-            <div className="lifecycle-track" role="list" aria-label="Lifecycle stages">
-              <span role="listitem" className="done">Draft</span>
-              <span role="listitem" className="done">Published</span>
-              <span role="listitem" className="active">Deployed</span>
-              <span role="listitem">Archived</span>
-            </div>
-            <div className="version-preview">
-              <small>Current version</small>
-              <strong>Version 04</strong>
-              <code>EMA crossover · NSE · 1d</code>
-            </div>
+      {/* ── Trust & boundaries ───────────────────────────────── */}
+      <section className="l-section l-wrap" aria-labelledby="trust-title">
+        <header className="l-head">
+          <p className="eyebrow">Transparency</p>
+          <h2 id="trust-title">Research infrastructure, clearly labelled.</h2>
+        </header>
+        <div className="l-trust">
+          <div className="card">
+            <h3>How results are presented</h3>
+            <ul className="l-ticks">
+              <li><Check size={14} aria-hidden="true" /> Backtests are simulated historical results, not live performance.</li>
+              <li><Check size={14} aria-hidden="true" /> Synthetic and reference datasets are identified wherever they appear.</li>
+              <li><Check size={14} aria-hidden="true" /> Every outcome links back to the Version that produced it.</li>
+            </ul>
           </div>
-        </section>
-
-        <section className="feature-split reverse" aria-labelledby="investors-heading">
-          <article>
-            <p className="eyebrow">For investors</p>
-            <h2 id="investors-heading">Discover the strategy, understand the context.</h2>
-            <p>
-              Explore public deployed strategies without exposing private Creator configuration.
-              Pin an allocation intent to a Version and inspect every paper outcome.
-            </p>
-            <div className="feature-list">
-              <span>
-                <b>Curated discovery</b>
-                <small>Clear lifecycle, Version, and public strategy context.</small>
-              </span>
-              <span>
-                <b>Version-pinned allocations</b>
-                <small>Know exactly what an allocation references.</small>
-              </span>
-              <span>
-                <b>Transparent paper outcomes</b>
-                <small>Filled, no-fill, and failed states remain unmistakable.</small>
-              </span>
-            </div>
-            <Link to="/marketplace">Browse the marketplace →</Link>
-          </article>
-          <div className="discovery-stack" aria-label="Example marketplace strategy cards">
-            <div className="mini-strategy card">
-              <span className="badge badge-deployed">Deployed</span>
-              <small>NSE · Equity</small>
-              <h3>Momentum Alpha</h3>
-              <p>Systematic trend participation with explicit risk controls.</p>
-              <footer>
-                <span>Version 4</span>
-                <Link to="/marketplace" className="mini-strategy-link">View strategy →</Link>
-              </footer>
-            </div>
-            <div className="mini-strategy card">
-              <span className="badge badge-published">Published</span>
-              <small>NSE · Index</small>
-              <h3>Index Regime</h3>
-              <p>Reference regime classification for market research.</p>
-              <footer>
-                <span>Version 2</span>
-                <Link to="/marketplace" className="mini-strategy-link">View strategy →</Link>
-              </footer>
-            </div>
+          <div className="card">
+            <h3>Boundaries today</h3>
+            <ul className="l-ticks l-ticks--muted">
+              <li><Minus size={14} aria-hidden="true" /> Paper execution places no broker orders and uses no funded capital.</li>
+              <li><Minus size={14} aria-hidden="true" /> Live broker connectivity is not available.</li>
+              <li><Minus size={14} aria-hidden="true" /> Nothing on the platform is investment advice.</li>
+            </ul>
           </div>
-        </section>
+        </div>
+      </section>
 
-        <section className="architecture-band" aria-labelledby="arch-heading">
+      {/* ── CTA ──────────────────────────────────────────────── */}
+      <section className="l-wrap" aria-labelledby="cta-title">
+        <div className="l-cta">
           <div>
-            <p className="eyebrow">Built for Indian-market identity</p>
-            <h2 id="arch-heading">Canonical Instruments. Explicit provenance.</h2>
+            <h2 id="cta-title">Build the strategy. Keep the evidence.</h2>
+            <p>Create an account to start your first strategy, or explore the instrument master first.</p>
           </div>
-          <div className="architecture-grid">
-            <span><b>NSE / BSE</b><small>Exchange identity</small></span>
-            <span><b>INR</b><small>Quote currency</small></span>
-            <span><b>Sessions</b><small>Calendar-aware design</small></span>
-            <span><b>Paper</b><small>No broker execution</small></span>
+          <div className="l-actions">
+            <Link className="btn btn-lg" to="/register">Create account</Link>
+            <Link className="btn btn-lg btn-secondary" to="/instruments">Explore instruments</Link>
           </div>
-        </section>
-
-        <div className="disclosure-panel" role="note">
-          <strong>Research infrastructure, clearly labelled.</strong>
-          <p>
-            Backtests are simulated historical results, not live performance. Paper Execution does
-            not place broker orders or use funded capital. Synthetic and reference datasets are
-            identified wherever they appear.
-          </p>
         </div>
-
-        <section className="landing-cta" aria-labelledby="cta-heading">
-          <p className="eyebrow">Start with a testable idea</p>
-          <h2 id="cta-heading">Build the strategy. Keep the evidence.</h2>
-          <p>Algorithmic trading infrastructure for Indian markets.</p>
-          <div className="hero-actions">
-            <Link className="button button-large" to="/register">Create account</Link>
-            <Link className="button button-secondary button-large" to="/instruments">Explore Instruments</Link>
-          </div>
-        </section>
-      </div>
-      <SiteFooter />
-    </>
-  );
-}
-
-function SiteFooter() {
-  const year = new Date().getFullYear();
-  return (
-    <footer className="site-footer" aria-label="Site footer">
-      <div className="site-footer-inner">
-        <div className="site-footer-brand">
-          <span className="footer-brand-name">AlgoProfitX</span>
-          <p className="footer-disclaimer">
-            Research infrastructure only. All backtests and paper execution results are simulated
-            reference data. No broker orders are placed. No funded capital is used.
-          </p>
-          <p className="footer-copyright">© {year} AlgoProfitX. All rights reserved.</p>
-        </div>
-        <nav className="site-footer-nav" aria-label="Footer navigation">
-          <div className="footer-nav-group">
-            <h4>Platform</h4>
-            <Link to="/marketplace">Marketplace</Link>
-            <Link to="/instruments">Instruments</Link>
-          </div>
-          <div className="footer-nav-group">
-            <h4>Account</h4>
-            <Link to="/login">Sign in</Link>
-            <Link to="/register">Get started</Link>
-          </div>
-        </nav>
-      </div>
-    </footer>
+      </section>
+    </div>
   );
 }

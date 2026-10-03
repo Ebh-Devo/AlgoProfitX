@@ -1,183 +1,102 @@
-import { useState, useEffect, useRef } from "react";
-import { Link, NavLink, Outlet, useNavigate, useLocation } from "react-router-dom";
-import { Menu, X, LogOut } from "lucide-react";
+import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { LogOut, Menu, X } from "lucide-react";
 
 import { useAuth } from "../auth/auth-context";
 import { CREATOR_ROLE, hasRole, INVESTOR_ROLE } from "../auth/roles";
+import { Brand } from "./layout/Brand";
+import { SiteFooter } from "./layout/SiteFooter";
+import { useDrawer } from "./layout/useDrawer";
 
+/** Public-site shell: marketing, marketplace, instruments, login/register. */
 export function AppShell() {
   const { user, isAuthenticated, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const creator  = hasRole(user, CREATOR_ROLE);
+  const creator = hasRole(user, CREATOR_ROLE);
   const investor = hasRole(user, INVESTOR_ROLE);
-  const [mobileOpen, setMobileOpen] = useState(false);
-
-  const toggleBtnRef = useRef<HTMLButtonElement>(null);
-  const drawerRef = useRef<HTMLElement>(null);
-  const prevOpenRef = useRef(mobileOpen);
-
-  /* Close drawer on route change */
-  useEffect(() => {
-    setMobileOpen(false);
-  }, [location.pathname]);
-
-  /* Prevent body scroll while drawer is open */
-  useEffect(() => {
-    document.body.style.overflow = mobileOpen ? "hidden" : "";
-    return () => { document.body.style.overflow = ""; };
-  }, [mobileOpen]);
-
-  /* Mobile drawer accessibility: focus trapping, Escape handling, and focus restoration */
-  useEffect(() => {
-    if (mobileOpen) {
-      const focusables = drawerRef.current?.querySelectorAll<HTMLElement>(
-        'a[href], button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])'
-      );
-      if (focusables && focusables.length > 0) {
-        focusables[0].focus();
-      } else {
-        drawerRef.current?.focus();
-      }
-
-      const handleKeyDown = (e: KeyboardEvent) => {
-        if (e.key === "Escape") {
-          setMobileOpen(false);
-          return;
-        }
-
-        if (e.key === "Tab" && drawerRef.current) {
-          const currentFocusables = Array.from(
-            drawerRef.current.querySelectorAll<HTMLElement>(
-              'a[href], button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])'
-            )
-          );
-          if (currentFocusables.length === 0) return;
-
-          const firstEl = currentFocusables[0];
-          const lastEl = currentFocusables[currentFocusables.length - 1];
-
-          if (e.shiftKey) {
-            if (document.activeElement === firstEl) {
-              e.preventDefault();
-              lastEl.focus();
-            }
-          } else {
-            if (document.activeElement === lastEl) {
-              e.preventDefault();
-              firstEl.focus();
-            }
-          }
-        }
-      };
-
-      window.addEventListener("keydown", handleKeyDown);
-      return () => window.removeEventListener("keydown", handleKeyDown);
-    } else if (prevOpenRef.current) {
-      toggleBtnRef.current?.focus();
-    }
-  }, [mobileOpen]);
-
-  useEffect(() => {
-    prevOpenRef.current = mobileOpen;
-  }, [mobileOpen]);
+  const { open, setOpen, toggleRef, drawerRef } = useDrawer(location.pathname);
+  const isLanding = location.pathname === "/";
 
   const endSession = async () => {
-    try { await logout(); }
-    finally { navigate("/"); }
+    try { await logout(); } finally { navigate("/"); }
   };
 
+  const links = (
+    <>
+      {isAuthenticated && <NavLink to="/app">Dashboard</NavLink>}
+      <NavLink to="/marketplace">Marketplace</NavLink>
+      <NavLink to="/instruments">Instruments</NavLink>
+      {creator && <NavLink to="/creator/strategies">Strategies</NavLink>}
+      {investor && (
+        <>
+          <NavLink to="/investor/allocations">Allocations</NavLink>
+          <NavLink to="/investor/execution-intents">Executions</NavLink>
+        </>
+      )}
+    </>
+  );
+
   return (
-    <div className="app-shell">
+    <div className={`app-shell ${isLanding ? "is-landing" : ""}`}>
+      <a className="skip-link" href="#main-content">Skip to content</a>
       <header className="site-header">
-        <Link className="brand" to="/" aria-label="AlgoProfitX home">
-          <span className="brand-mark" aria-hidden="true"><i /><i /><i /></span>
-          <span>AlgoProfit<span>X</span></span>
-        </Link>
+        <div className="site-header-inner">
+          <Brand />
+          <nav className="site-nav-desktop" aria-label="Primary navigation">{links}</nav>
 
-        {/* Desktop nav */}
-        <nav className="site-nav-desktop" aria-label="Primary navigation">
-          {isAuthenticated && <NavLink to="/app">Dashboard</NavLink>}
-          <NavLink to="/marketplace">Marketplace</NavLink>
-          <NavLink to="/instruments">Instruments</NavLink>
-          {creator  && <NavLink to="/creator/strategies">Strategies</NavLink>}
-          {investor && <>
-            <NavLink to="/investor/allocations">Allocations</NavLink>
-            <NavLink to="/investor/execution-intents">Executions</NavLink>
-          </>}
-        </nav>
-
-        {/* Desktop actions */}
-        <div className="header-actions">
-          {isAuthenticated ? (
-            <>
-              <div className="role-cluster" aria-label="Active roles">
-                {creator  && <span className="role-nav">Creator</span>}
-                {investor && <span className="role-nav">Investor</span>}
-              </div>
-              <NavLink className="account-link" to="/account">
-                <span className="avatar" aria-hidden="true">{user?.email?.[0]?.toUpperCase() ?? "A"}</span>
-                <span>Account</span>
-              </NavLink>
-              <button className="logout-button" onClick={endSession} aria-label="Log out">
-                <LogOut size={15} aria-hidden="true" />
-              </button>
-            </>
-          ) : (
-            <>
-              <NavLink to="/login">Log in</NavLink>
-              <Link className="button" to="/register">Create account</Link>
-            </>
-          )}
-
-          {/* Hamburger — mobile only */}
-          <button
-            ref={toggleBtnRef}
-            className="mobile-menu-toggle"
-            aria-label={mobileOpen ? "Close menu" : "Open menu"}
-            aria-expanded={mobileOpen}
-            aria-controls="mobile-nav-drawer"
-            onClick={() => setMobileOpen(o => !o)}
-          >
-            {mobileOpen ? <X size={20} /> : <Menu size={20} />}
-          </button>
+          <div className="header-actions">
+            {isAuthenticated ? (
+              <>
+                <div className="role-cluster" aria-label="Active roles">
+                  {creator && <span className="role-nav">Creator</span>}
+                  {investor && <span className="role-nav">Investor</span>}
+                </div>
+                <NavLink className="account-link" to="/account">
+                  <span className="avatar" aria-hidden="true">{user?.email?.[0]?.toUpperCase() ?? "A"}</span>
+                  <span>Account</span>
+                </NavLink>
+                <button type="button" className="icon-btn" onClick={endSession} aria-label="Log out">
+                  <LogOut size={16} aria-hidden="true" />
+                </button>
+              </>
+            ) : (
+              <>
+                <NavLink className="header-link" to="/login">Log in</NavLink>
+                <Link className="btn btn-sm" to="/register">Create account</Link>
+              </>
+            )}
+            <button
+              ref={toggleRef}
+              type="button"
+              className="icon-btn mobile-menu-toggle"
+              aria-label={open ? "Close menu" : "Open menu"}
+              aria-expanded={open}
+              aria-controls="mobile-nav-drawer"
+              onClick={() => setOpen(o => !o)}
+            >
+              {open ? <X size={20} /> : <Menu size={20} />}
+            </button>
+          </div>
         </div>
       </header>
 
-      {/* Mobile drawer overlay */}
-      {mobileOpen && (
-        <div
-          className="mobile-nav-overlay"
-          aria-hidden="true"
-          onClick={() => setMobileOpen(false)}
-        />
-      )}
-
-      {/* Mobile drawer */}
+      {open && <div className="scrim" aria-hidden="true" onClick={() => setOpen(false)} />}
       <nav
         ref={drawerRef}
         id="mobile-nav-drawer"
         tabIndex={-1}
-        className={`mobile-nav-drawer ${mobileOpen ? "mobile-nav-drawer--open" : ""}`}
+        className={`site-drawer ${open ? "is-open" : ""}`}
         aria-label="Mobile navigation"
-        aria-modal={mobileOpen ? "true" : undefined}
-        aria-hidden={!mobileOpen}
-        role="dialog"
+        aria-hidden={!open}
+        {...(open ? { role: "dialog", "aria-modal": "true" } : {})}
       >
-        <div className="mobile-nav-inner">
-          {isAuthenticated && <NavLink to="/app">Dashboard</NavLink>}
-          <NavLink to="/marketplace">Marketplace</NavLink>
-          <NavLink to="/instruments">Instruments</NavLink>
-          {creator  && <NavLink to="/creator/strategies">Strategies</NavLink>}
-          {investor && <>
-            <NavLink to="/investor/allocations">Allocations</NavLink>
-            <NavLink to="/investor/execution-intents">Executions</NavLink>
-          </>}
-          <div className="mobile-nav-divider" />
+        <div className="site-drawer-links">
+          {links}
+          <hr />
           {isAuthenticated ? (
             <>
               <NavLink to="/account">Account</NavLink>
-              <button className="mobile-nav-logout" onClick={endSession}>Log out</button>
+              <button type="button" className="site-drawer-logout" onClick={endSession}>Log out</button>
             </>
           ) : (
             <>
@@ -188,7 +107,8 @@ export function AppShell() {
         </div>
       </nav>
 
-      <main className="page-container"><Outlet /></main>
+      <main className={isLanding ? "landing-main" : "page-container"} id="main-content" tabIndex={-1}><Outlet /></main>
+      <SiteFooter />
     </div>
   );
 }
