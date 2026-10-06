@@ -15,7 +15,7 @@ import {
   parseTrades, periodLabel, shortId, summaryFigures, NOT_AVAILABLE,
 } from "./backtestFormat";
 import { AlgorithmSummary, StartingCapitalSummary, TechnicalDetails } from "./ConfigViews";
-import { describeEntry, readEmaRule } from "./strategyConfig";
+import { describeEntry, describeExit, readEmaRule, readExitRule } from "./strategyConfig";
 import { UNAVAILABLE, formatCurrency, formatInteger, formatNumber, formatPercentage } from "../../lib/format";
 
 const runPath = (strategyId: string, versionId: string, runId: string) =>
@@ -97,6 +97,7 @@ export function VersionBacktests({ strategyId, versionId, strategyName, version 
   const capital = configValue(bt, "initial_capital");
   const currency = instrument?.quote_currency;
   const entryRule = readEmaRule(version?.configuration);
+  const exitRule = readExitRule(version?.configuration);
   const period = start && end ? `${displayDay(start)} – ${displayDay(end)}` : null;
 
   const refId = "backtest-reference";
@@ -153,6 +154,12 @@ export function VersionBacktests({ strategyId, versionId, strategyName, version 
               <dd>{strategyName ?? "Strategy"}</dd>
               <dt>Entry</dt>
               <dd>{entryRule ? describeEntry(entryRule) : "Custom algorithm"}</dd>
+              {entryRule && (
+                <>
+                  <dt>Exit</dt>
+                  <dd>{exitRule ? describeExit(exitRule) : "None. Held until the end of the test."}</dd>
+                </>
+              )}
               <dt>Starting Capital</dt>
               <dd>{capital ? formatCurrency(capital, { currency }) : NOT_AVAILABLE}</dd>
               <dt>Data</dt>
