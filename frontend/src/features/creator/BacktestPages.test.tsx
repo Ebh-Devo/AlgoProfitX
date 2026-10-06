@@ -335,7 +335,7 @@ describe("Backtest detail", () => {
     expect(screen.getByText("0")).toBeInTheDocument();
   });
 
-  it("displays zero-value non-null metrics as formatted 0/0%, not Unavailable", async () => {
+  it("displays zero-value non-null metrics as formatted values, not Unavailable", async () => {
     api.getBacktest.mockResolvedValue(completed);
     api.getBacktestAnalytics.mockResolvedValue({
       ...analytics,
@@ -354,21 +354,21 @@ describe("Backtest detail", () => {
     // Zero (non-null) metrics must render as a formatted value, never as "Unavailable"
     // Initial capital: 0 → "0"
     const cards = screen.getAllByRole("listitem");
-    const initialCard = cards.find((c) => c.getAttribute("aria-label")?.startsWith("Initial capital:"));
+    const initialCard = cards.find((c) => c.getAttribute("aria-label")?.startsWith("Starting Capital:"));
     expect(initialCard).toBeDefined();
     expect(initialCard?.getAttribute("aria-label")).not.toContain("Unavailable");
-    expect(initialCard?.getAttribute("aria-label")).toContain("0");
+    expect(initialCard?.getAttribute("aria-label")).toContain("₹0.00");
     // Final equity: 0 → "0"
-    const finalCard = cards.find((c) => c.getAttribute("aria-label")?.startsWith("Final equity:"));
-    expect(finalCard?.getAttribute("aria-label")).toContain("0");
+    const finalCard = cards.find((c) => c.getAttribute("aria-label")?.startsWith("Final Equity:"));
+    expect(finalCard?.getAttribute("aria-label")).toContain("₹0.00");
     expect(finalCard?.getAttribute("aria-label")).not.toContain("Unavailable");
     // Total return: 0 → "0%"
-    const returnCard = cards.find((c) => c.getAttribute("aria-label")?.startsWith("Total return:"));
-    expect(returnCard?.getAttribute("aria-label")).toMatch(/0%/);
+    const returnCard = cards.find((c) => c.getAttribute("aria-label")?.startsWith("Total Return:"));
+    expect(returnCard?.getAttribute("aria-label")).toContain("0.00%");
     expect(returnCard?.getAttribute("aria-label")).not.toContain("Unavailable");
     // Max drawdown: 0 → "0%"
-    const drawdownCard = cards.find((c) => c.getAttribute("aria-label")?.startsWith("Max drawdown:"));
-    expect(drawdownCard?.getAttribute("aria-label")).toMatch(/0%/);
+    const drawdownCard = cards.find((c) => c.getAttribute("aria-label")?.startsWith("Max Drawdown:"));
+    expect(drawdownCard?.getAttribute("aria-label")).toContain("0.00%");
     expect(drawdownCard?.getAttribute("aria-label")).not.toContain("Unavailable");
     // Genuinely null metrics still render as Unavailable
     expect(screen.getAllByText("Unavailable")).toHaveLength(4);
@@ -398,10 +398,9 @@ describe("Backtest detail", () => {
     });
     view(<BacktestDetailPage />, "/creator/strategies/s1/versions/v1/backtests/b1");
     await screen.findByRole("heading", { name: "Backtest analytics" });
-    // Values should be rendered with numeric formatting (toLocaleString), not truncated
-    // Use toLocaleString to match whatever the current locale produces (e.g. 9,99,99,999 in Indian locale)
-    const formatted = (99999999).toLocaleString(undefined, { maximumFractionDigits: 4 });
-    expect(screen.getByText(formatted)).toBeInTheDocument();
+    // Indian grouping, two decimals, not truncated
+    expect(screen.getByText("₹9,99,99,999.00")).toBeInTheDocument();
+    expect(screen.getByText("₹10,00,00,000.00")).toBeInTheDocument();
   });
 
   it("renders total_return as a percentage value (backend stores as %, not ratio)", async () => {
@@ -409,8 +408,8 @@ describe("Backtest detail", () => {
     api.getBacktestAnalytics.mockResolvedValue({ ...analytics, total_return: "10.50000000" });
     view(<BacktestDetailPage />, "/creator/strategies/s1/versions/v1/backtests/b1");
     await screen.findByRole("heading", { name: "Backtest analytics" });
-    // 10.5 stored as pct → displayed as "10.5%", not "1050%"
-    expect(screen.getByText(/10\.5%/)).toBeInTheDocument();
+    // 10.5 stored as pct → displayed as "+10.50%", not "1050%"
+    expect(screen.getByText("+10.50%")).toBeInTheDocument();
     expect(screen.queryByText(/1,050%/)).not.toBeInTheDocument();
   });
 
@@ -420,7 +419,7 @@ describe("Backtest detail", () => {
     view(<BacktestDetailPage />, "/creator/strategies/s1/versions/v1/backtests/b1");
     await screen.findByRole("heading", { name: "Backtest analytics" });
     // 0.75 ratio → 75%
-    expect(screen.getByText("75%")).toBeInTheDocument();
+    expect(screen.getByText("75.00%")).toBeInTheDocument();
   });
 
   it("renders max_drawdown as a percentage value (backend stores as %, not ratio)", async () => {
@@ -429,7 +428,7 @@ describe("Backtest detail", () => {
     view(<BacktestDetailPage />, "/creator/strategies/s1/versions/v1/backtests/b1");
     await screen.findByRole("heading", { name: "Backtest analytics" });
     // 3.5 stored as pct → displayed as "3.5%"
-    expect(screen.getByText(/3\.5%/)).toBeInTheDocument();
+    expect(screen.getByText("3.50%")).toBeInTheDocument();
   });
 
   // ── Equity curve edge cases ───────────────────────────────────────────────
@@ -491,14 +490,14 @@ describe("Backtest detail", () => {
     api.getBacktestAnalytics.mockResolvedValue(analytics);
     view(<BacktestDetailPage />, "/creator/strategies/s1/versions/v1/backtests/b1");
     await screen.findByRole("heading", { name: "Backtest analytics" });
-    expect(screen.getByText("Initial capital")).toBeInTheDocument();
-    expect(screen.getByText("Win rate")).toBeInTheDocument();
-    expect(screen.getByText("Max drawdown")).toBeInTheDocument();
+    expect(screen.getByText("Starting Capital")).toBeInTheDocument();
+    expect(screen.getByText("Win Rate")).toBeInTheDocument();
+    expect(screen.getByText("Max Drawdown")).toBeInTheDocument();
     // Each listitem must carry an aria-label combining label and value
     const cards = screen.getAllByRole("listitem");
-    const initialCard = cards.find((c) => c.getAttribute("aria-label")?.startsWith("Initial capital:"));
+    const initialCard = cards.find((c) => c.getAttribute("aria-label")?.startsWith("Starting Capital:"));
     expect(initialCard).toBeDefined();
-    const winRateCard = cards.find((c) => c.getAttribute("aria-label")?.startsWith("Win rate:"));
+    const winRateCard = cards.find((c) => c.getAttribute("aria-label")?.startsWith("Win Rate:"));
     expect(winRateCard).toBeDefined();
   });
 

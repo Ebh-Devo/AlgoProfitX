@@ -24,6 +24,12 @@ import { strategiesApi } from "../../api/strategies";
 import { instrumentsApi } from "../../api/instruments";
 import { queryKeys } from "../../api/queryKeys";
 import type { Strategy, StrategyCreateRequest, StrategyUpdateRequest } from "../../api/types";
+import { formatCurrency } from "../../lib/format";
+import { AlgorithmSummary, StartingCapitalSummary, TechnicalDetails } from "./ConfigViews";
+import {
+  DEFAULT_CAPITAL, DEFAULT_EMA_RULE, STRATEGY_TYPE_LABEL, buildBacktestConfiguration, buildConfiguration, describeEntry,
+  parseCapital, validateCapital, validateEmaRule, type EmaRuleErrors, type EmaRuleInput,
+} from "./strategyConfig";
 import { EmptyState, ErrorPanel } from "../../components/PageState";
 import {
   ActionMenu,
@@ -485,7 +491,7 @@ export function StrategyNewPage() {
               <h2 id="next-steps">What happens next</h2>
               <ol className="stepper">
                 <li className="step is-current"><span className="step-mark" aria-hidden="true"><PenLine size={12} /></span><div><p className="step-title">Draft created</p><p className="step-meta">You land on the strategy workspace.</p></div></li>
-                <li className="step is-pending"><span className="step-mark" aria-hidden="true"><CircleDashed size={14} /></span><div><p className="step-title">Add a Version</p><p className="step-meta">Choose an instrument and JSON configuration. Versions are immutable.</p></div></li>
+                <li className="step is-pending"><span className="step-mark" aria-hidden="true"><CircleDashed size={14} /></span><div><p className="step-title">Add a Version</p><p className="step-meta">Choose an instrument, an entry rule and a starting capital. Versions are immutable.</p></div></li>
                 <li className="step is-pending"><span className="step-mark" aria-hidden="true"><CircleDashed size={14} /></span><div><p className="step-title">Backtest</p><p className="step-meta">Run historical simulations on a Version.</p></div></li>
                 <li className="step is-pending"><span className="step-mark" aria-hidden="true"><CircleDashed size={14} /></span><div><p className="step-title">Publish</p><p className="step-meta">Requires at least one Version.</p></div></li>
               </ol>
@@ -598,18 +604,6 @@ export function StrategyEditPage() {
 }
 
 /* ── Version creator ──────────────────────────────────────────── */
-function parseObject(raw: string, label: string): Record<string, unknown> {
-  let value: unknown;
-  try {
-    value = JSON.parse(raw);
-  } catch {
-    throw new Error(`${label} must contain valid JSON.`);
-  }
-  if (!value || typeof value !== "object" || Array.isArray(value))
-    throw new Error(`${label} must be a JSON object.`);
-  return value as Record<string, unknown>;
-}
-
 function VersionCreator({ strategyId, onClose }: { strategyId: string; onClose: () => void }) {
   const client = useQueryClient();
   const toast = useToast();
@@ -617,11 +611,11 @@ function VersionCreator({ strategyId, onClose }: { strategyId: string; onClose: 
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [instrumentId, setInstrumentId] = useState("");
-  const [configuration, setConfiguration] = useState("{}");
-  const [backtest, setBacktest] = useState("{}");
+  const [rule, setRule] = useState<EmaRuleInput>(DEFAULT_EMA_RULE);
+  const [capital, setCapital] = useState(DEFAULT_CAPITAL);
   const [error, setError] = useState<string | null>(null);
-  const [configError, setConfigError] = useState<string | null>(null);
-  const [backtestError, setBacktestError] = useState<string | null>(null);
+  const [ruleErrors, setRuleErrors] = useState<EmaRuleErrors>({});
+  const [capitalError, setCapitalError] = useState<string | null>(null);
 
   /* Debounce instrument search — ~300 ms */
   useEffect(() => {
@@ -638,8 +632,8 @@ function VersionCreator({ strategyId, onClose }: { strategyId: string; onClose: 
     mutationFn: () =>
       strategiesApi.createVersion(strategyId, {
         instrument_id: instrumentId,
-        configuration: parseObject(configuration, "Algorithm configuration"),
-        backtest_configuration: parseObject(backtest, "Backtest configuration"),
+        configuration: buildConfiguration(rule),
+        backtest_configuration: buildBacktestConfiguration(capital),
       }),
     onSuccess: async (newVersion) => {
       toast.success(`Version ${newVersion.version_number} created`, "It is immutable. You can now backtest it.");
@@ -653,8 +647,8 @@ function VersionCreator({ strategyId, onClose }: { strategyId: string; onClose: 
   const submit = (event: React.FormEvent) => {
     event.preventDefault();
     setError(null);
-    setConfigError(null);
-    setBacktestError(null);
+    setRuleErrors({});
+    setCapitalError(null);
 
     let valid = true;
 
@@ -663,17 +657,15 @@ function VersionCreator({ strategyId, onClose }: { strategyId: string; onClose: 
       valid = false;
     }
 
-    try {
-      parseObject(configuration, "Algorithm configuration");
-    } catch (reason) {
-      setConfigError(reason instanceof Error ? reason.message : "Invalid JSON.");
+    const nextRuleErrors = validateEmaRule(rule);
+    if (nextRuleErrors.shortTerm || nextRuleErrors.longTerm) {
+      setRuleErrors(nextRuleErrors);
       valid = false;
     }
 
-    try {
-      parseObject(backtest, "Backtest configuration");
-    } catch (reason) {
-      setBacktestError(reason instanceof Error ? reason.message : "Invalid JSON.");
+    const nextCapitalError = validateCapital(capital);
+    if (nextCapitalError) {
+      setCapitalError(nextCapitalError);
       valid = false;
     }
 
@@ -689,7 +681,7 @@ function VersionCreator({ strategyId, onClose }: { strategyId: string; onClose: 
       <div className="panel-head">
         <SectionHeader
           title="Create Version"
-          description="Versions are permanent once saved: choose the instrument, then supply two JSON objects."
+          description="Versions are permanent once saved: choose the instrument, set the entry rule, then set the starting capital."
         />
       </div>
 
@@ -764,63 +756,112 @@ function VersionCreator({ strategyId, onClose }: { strategyId: string; onClose: 
       </fieldset>
 
       <fieldset className="form-section" style={{ borderBottom: "1px solid var(--border)" }}>
-        <legend className="visually-hidden">Algorithm configuration</legend>
+        <legend className="visually-hidden">Algorithm</legend>
         <div className="form-section-head">
           <span className="form-section-num" aria-hidden="true">2</span>
           <div>
-            <h3>Algorithm configuration</h3>
-            <p>The strategy's parameters, as a JSON object.</p>
+            <h3>Algorithm</h3>
+            <p>{STRATEGY_TYPE_LABEL}: looks for a change between short-term and long-term price trends.</p>
           </div>
         </div>
         <div className="form-section-body">
-          <div className={`form-field ${configError ? "has-error" : ""}`}>
-            <label className="form-label" htmlFor="version-configuration">Algorithm configuration</label>
-            <textarea
-              id="version-configuration"
-              className="input json-input"
-              rows={5}
-              spellCheck={false}
-              aria-invalid={configError ? true : undefined}
-              aria-describedby={configError ? "version-config-error" : "version-config-hint"}
-              value={configuration}
-              onChange={(e) => setConfiguration(e.target.value)}
+          <h4 className="form-label">Entry rule</h4>
+          <div className="rule-sentence" role="group" aria-label="Entry rule">
+            <span className="rule-lead">Buy when the</span>
+            <input
+              className={`input${ruleErrors.shortTerm ? " has-error" : ""}`}
+              type="text"
+              inputMode="numeric"
+              aria-label="Short-term EMA (days)"
+              aria-invalid={ruleErrors.shortTerm ? true : undefined}
+              aria-describedby={ruleErrors.shortTerm ? "ema-short-error" : undefined}
+              value={rule.shortTerm}
+              onChange={(e) => setRule({ ...rule, shortTerm: e.target.value })}
             />
-            {configError ? (
-              <p className="field-error" role="alert" id="version-config-error">{configError}</p>
+            <span>day EMA crosses above the</span>
+            <input
+              className={`input${ruleErrors.longTerm ? " has-error" : ""}`}
+              type="text"
+              inputMode="numeric"
+              aria-label="Long-term EMA (days)"
+              aria-invalid={ruleErrors.longTerm ? true : undefined}
+              aria-describedby={ruleErrors.longTerm ? "ema-long-error" : undefined}
+              value={rule.longTerm}
+              onChange={(e) => setRule({ ...rule, longTerm: e.target.value })}
+            />
+            <span>day EMA.</span>
+          </div>
+          {ruleErrors.shortTerm && <p className="field-error" role="alert" id="ema-short-error">{ruleErrors.shortTerm}</p>}
+          {ruleErrors.longTerm && <p className="field-error" role="alert" id="ema-long-error">{ruleErrors.longTerm}</p>}
+          <p className="rule-explain">
+            EMA (exponential moving average) is a smoothed average price. The strategy enters a trade when the
+            shorter-term trend moves above the longer-term trend.
+          </p>
+        </div>
+      </fieldset>
+
+      <fieldset className="form-section" style={{ borderBottom: "1px solid var(--border)" }}>
+        <legend className="visually-hidden">Backtest settings</legend>
+        <div className="form-section-head">
+          <span className="form-section-num" aria-hidden="true">3</span>
+          <div>
+            <h3>Backtest settings</h3>
+            <p>Used when this Version is backtested.</p>
+          </div>
+        </div>
+        <div className="form-section-body">
+          <div className={`form-field ${capitalError ? "has-error" : ""}`}>
+            <label className="form-label" htmlFor="starting-capital">Starting Capital</label>
+            <p className="field-hint">How much money should the backtest start with?</p>
+            <div className="capital-field">
+              <span aria-hidden="true">₹</span>
+              <input
+                id="starting-capital"
+                className="input"
+                type="text"
+                inputMode="decimal"
+                aria-invalid={capitalError ? true : undefined}
+                aria-describedby={capitalError ? "starting-capital-error" : "starting-capital-hint"}
+                value={capital}
+                onChange={(e) => setCapital(e.target.value)}
+              />
+            </div>
+            {capitalError ? (
+              <p className="field-error" role="alert" id="starting-capital-error">{capitalError}</p>
             ) : (
-              <p className="field-hint" id="version-config-hint">Must be a JSON object, e.g. <code>{"{ \"period\": 14 }"}</code></p>
+              <p className="field-hint" id="starting-capital-hint">This is the amount of virtual capital used when testing your strategy. It does not involve real money.</p>
             )}
           </div>
         </div>
       </fieldset>
 
       <fieldset className="form-section">
-        <legend className="visually-hidden">Backtest configuration</legend>
+        <legend className="visually-hidden">Review</legend>
         <div className="form-section-head">
-          <span className="form-section-num" aria-hidden="true">3</span>
+          <span className="form-section-num" aria-hidden="true">4</span>
           <div>
-            <h3>Backtest configuration</h3>
-            <p>Simulation settings used when this Version is backtested.</p>
+            <h3>Review</h3>
+            <p>Check these details. A Version cannot be edited once it is saved.</p>
           </div>
         </div>
         <div className="form-section-body">
-          <div className={`form-field ${backtestError ? "has-error" : ""}`}>
-            <label className="form-label" htmlFor="version-backtest-configuration">Backtest configuration</label>
-            <textarea
-              id="version-backtest-configuration"
-              className="input json-input"
-              rows={5}
-              spellCheck={false}
-              aria-invalid={backtestError ? true : undefined}
-              aria-describedby={backtestError ? "version-backtest-error" : "version-backtest-hint"}
-              value={backtest}
-              onChange={(e) => setBacktest(e.target.value)}
-            />
-            {backtestError ? (
-              <p className="field-error" role="alert" id="version-backtest-error">{backtestError}</p>
-            ) : (
-              <p className="field-hint" id="version-backtest-hint">Must be a JSON object, e.g. <code>{"{ \"capital\": 100000 }"}</code></p>
-            )}
+          <div className="config-summary" role="group" aria-label="Version summary">
+            <dl className="kv">
+              <dt>Instrument</dt>
+              <dd>{selectedInstrument?.name ?? "Not selected yet"}</dd>
+              <dt>Entry</dt>
+              <dd>
+                {Object.keys(validateEmaRule(rule)).length === 0
+                  ? describeEntry({ fast: Number(rule.shortTerm), slow: Number(rule.longTerm) })
+                  : "Complete the entry rule above"}
+              </dd>
+              <dt>Starting Capital</dt>
+              <dd>
+                {parseCapital(capital) == null
+                  ? "Enter a starting capital above"
+                  : formatCurrency(parseCapital(capital), { currency: selectedInstrument?.quote_currency })}
+              </dd>
+            </dl>
           </div>
         </div>
       </fieldset>
@@ -1149,12 +1190,18 @@ export function StrategyVersionPage() {
         <div className="detail-layout">
           <div className="detail-main">
             <section className="panel" aria-labelledby="algo-config">
-              <div className="panel-head"><SectionHeader id="algo-config" title="Algorithm configuration" /></div>
-              <div className="panel-body"><pre className="json-view">{JSON.stringify(query.data.configuration, null, 2)}</pre></div>
+              <div className="panel-head"><SectionHeader id="algo-config" title="Algorithm" /></div>
+              <div className="panel-body">
+                <AlgorithmSummary configuration={query.data.configuration} />
+                <TechnicalDetails value={query.data.configuration} />
+              </div>
             </section>
             <section className="panel" aria-labelledby="bt-config">
-              <div className="panel-head"><SectionHeader id="bt-config" title="Backtest configuration" /></div>
-              <div className="panel-body"><pre className="json-view">{JSON.stringify(query.data.backtest_configuration, null, 2)}</pre></div>
+              <div className="panel-head"><SectionHeader id="bt-config" title="Backtest settings" /></div>
+              <div className="panel-body">
+                <StartingCapitalSummary backtestConfiguration={query.data.backtest_configuration} currency={instrument?.quote_currency} />
+                <TechnicalDetails value={query.data.backtest_configuration} />
+              </div>
             </section>
           </div>
 
