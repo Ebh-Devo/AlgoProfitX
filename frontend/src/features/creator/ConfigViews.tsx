@@ -1,9 +1,10 @@
 import { formatCurrency } from "../../lib/format";
-import { STRATEGY_TYPE_LABEL, describeEntry, readEmaRule, readInitialCapital } from "./strategyConfig";
+import { STRATEGY_TYPE_LABEL, describeEntry, describeExit, readEmaRule, readExitRule, readInitialCapital } from "./strategyConfig";
 
 /** Read-only, plain-language view of a stored algorithm configuration. Unknown shapes fall back to a neutral note. */
 export function AlgorithmSummary({ configuration }: { configuration: unknown }) {
   const rule = readEmaRule(configuration);
+  const exitRule = readExitRule(configuration);
   if (!rule) {
     return <p className="hint-line">This Version uses a custom algorithm that has no plain-language summary. See the technical details below.</p>;
   }
@@ -13,10 +14,8 @@ export function AlgorithmSummary({ configuration }: { configuration: unknown }) 
       <dd>{STRATEGY_TYPE_LABEL}</dd>
       <dt>Entry rule</dt>
       <dd>{describeEntry(rule)}</dd>
-      <dt>Short-term EMA</dt>
-      <dd>{rule.fast} days</dd>
-      <dt>Long-term EMA</dt>
-      <dd>{rule.slow} days</dd>
+      <dt>Exit rule</dt>
+      <dd>{exitRule ? describeExit(exitRule) : "No exit rule. The position is held until the end of the test."}</dd>
     </dl>
   );
 }

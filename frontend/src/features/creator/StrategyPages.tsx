@@ -27,7 +27,7 @@ import type { Strategy, StrategyCreateRequest, StrategyUpdateRequest } from "../
 import { formatCurrency } from "../../lib/format";
 import { AlgorithmSummary, StartingCapitalSummary, TechnicalDetails } from "./ConfigViews";
 import {
-  DEFAULT_CAPITAL, DEFAULT_EMA_RULE, STRATEGY_TYPE_LABEL, buildBacktestConfiguration, buildConfiguration, describeEntry,
+  DEFAULT_CAPITAL, DEFAULT_EMA_RULE, DEFAULT_EXIT_RULE, STRATEGY_TYPE_LABEL, buildBacktestConfiguration, buildConfiguration, describeEntry, describeExit,
   parseCapital, validateCapital, validateEmaRule, type EmaRuleErrors, type EmaRuleInput,
 } from "./strategyConfig";
 import { EmptyState, ErrorPanel } from "../../components/PageState";
@@ -491,7 +491,7 @@ export function StrategyNewPage() {
               <h2 id="next-steps">What happens next</h2>
               <ol className="stepper">
                 <li className="step is-current"><span className="step-mark" aria-hidden="true"><PenLine size={12} /></span><div><p className="step-title">Draft created</p><p className="step-meta">You land on the strategy workspace.</p></div></li>
-                <li className="step is-pending"><span className="step-mark" aria-hidden="true"><CircleDashed size={14} /></span><div><p className="step-title">Add a Version</p><p className="step-meta">Choose an instrument, an entry rule and a starting capital. Versions are immutable.</p></div></li>
+                <li className="step is-pending"><span className="step-mark" aria-hidden="true"><CircleDashed size={14} /></span><div><p className="step-title">Add a Version</p><p className="step-meta">Choose an instrument, entry and exit rules and a starting capital. Versions are immutable.</p></div></li>
                 <li className="step is-pending"><span className="step-mark" aria-hidden="true"><CircleDashed size={14} /></span><div><p className="step-title">Backtest</p><p className="step-meta">Run historical simulations on a Version.</p></div></li>
                 <li className="step is-pending"><span className="step-mark" aria-hidden="true"><CircleDashed size={14} /></span><div><p className="step-title">Publish</p><p className="step-meta">Requires at least one Version.</p></div></li>
               </ol>
@@ -612,6 +612,8 @@ function VersionCreator({ strategyId, onClose }: { strategyId: string; onClose: 
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [instrumentId, setInstrumentId] = useState("");
   const [rule, setRule] = useState<EmaRuleInput>(DEFAULT_EMA_RULE);
+  const [exitRule, setExitRule] = useState<EmaRuleInput>(DEFAULT_EXIT_RULE);
+  const [exitErrors, setExitErrors] = useState<EmaRuleErrors>({});
   const [capital, setCapital] = useState(DEFAULT_CAPITAL);
   const [error, setError] = useState<string | null>(null);
   const [ruleErrors, setRuleErrors] = useState<EmaRuleErrors>({});
@@ -632,7 +634,7 @@ function VersionCreator({ strategyId, onClose }: { strategyId: string; onClose: 
     mutationFn: () =>
       strategiesApi.createVersion(strategyId, {
         instrument_id: instrumentId,
-        configuration: buildConfiguration(rule),
+        configuration: buildConfiguration(rule, exitRule),
         backtest_configuration: buildBacktestConfiguration(capital),
       }),
     onSuccess: async (newVersion) => {
@@ -648,6 +650,7 @@ function VersionCreator({ strategyId, onClose }: { strategyId: string; onClose: 
     event.preventDefault();
     setError(null);
     setRuleErrors({});
+    setExitErrors({});
     setCapitalError(null);
 
     let valid = true;
@@ -660,6 +663,12 @@ function VersionCreator({ strategyId, onClose }: { strategyId: string; onClose: 
     const nextRuleErrors = validateEmaRule(rule);
     if (nextRuleErrors.shortTerm || nextRuleErrors.longTerm) {
       setRuleErrors(nextRuleErrors);
+      valid = false;
+    }
+
+    const nextExitErrors = validateEmaRule(exitRule);
+    if (nextExitErrors.shortTerm || nextExitErrors.longTerm) {
+      setExitErrors(nextExitErrors);
       valid = false;
     }
 
@@ -681,7 +690,7 @@ function VersionCreator({ strategyId, onClose }: { strategyId: string; onClose: 
       <div className="panel-head">
         <SectionHeader
           title="Create Version"
-          description="Versions are permanent once saved: choose the instrument, set the entry rule, then set the starting capital."
+          description="Versions are permanent once saved: choose the instrument, set the entry and exit rules, then set the starting capital."
         />
       </div>
 
@@ -765,38 +774,44 @@ function VersionCreator({ strategyId, onClose }: { strategyId: string; onClose: 
           </div>
         </div>
         <div className="form-section-body">
-          <h4 className="form-label">Entry rule</h4>
-          <div className="rule-sentence" role="group" aria-label="Entry rule">
-            <span className="rule-lead">Buy when the</span>
-            <input
-              className={`input${ruleErrors.shortTerm ? " has-error" : ""}`}
-              type="text"
-              inputMode="numeric"
-              aria-label="Short-term EMA (days)"
-              aria-invalid={ruleErrors.shortTerm ? true : undefined}
-              aria-describedby={ruleErrors.shortTerm ? "ema-short-error" : undefined}
-              value={rule.shortTerm}
-              onChange={(e) => setRule({ ...rule, shortTerm: e.target.value })}
-            />
-            <span>day EMA crosses above the</span>
-            <input
-              className={`input${ruleErrors.longTerm ? " has-error" : ""}`}
-              type="text"
-              inputMode="numeric"
-              aria-label="Long-term EMA (days)"
-              aria-invalid={ruleErrors.longTerm ? true : undefined}
-              aria-describedby={ruleErrors.longTerm ? "ema-long-error" : undefined}
-              value={rule.longTerm}
-              onChange={(e) => setRule({ ...rule, longTerm: e.target.value })}
-            />
-            <span>day EMA.</span>
-          </div>
-          {ruleErrors.shortTerm && <p className="field-error" role="alert" id="ema-short-error">{ruleErrors.shortTerm}</p>}
-          {ruleErrors.longTerm && <p className="field-error" role="alert" id="ema-long-error">{ruleErrors.longTerm}</p>}
-          <p className="rule-explain">
-            EMA (exponential moving average) is a smoothed average price. The strategy enters a trade when the
-            shorter-term trend moves above the longer-term trend.
-          </p>
+          {([
+            { id: "entry", title: "Entry rule", lead: "Buy when the", cross: "crosses above", value: rule, set: setRule, errors: ruleErrors,
+              explain: "EMA (exponential moving average) is a smoothed average price. The strategy buys when the shorter-term trend moves above the longer-term trend." },
+            { id: "exit", title: "Exit rule", lead: "Sell when the", cross: "crosses below", value: exitRule, set: setExitRule, errors: exitErrors,
+              explain: "The strategy sells when the shorter-term trend falls back below the longer-term trend." },
+          ] as const).map((r) => (
+            <div key={r.id} className="rule-block">
+              <h4 className="form-label">{r.title}</h4>
+              <div className="rule-sentence" role="group" aria-label={r.title}>
+                <span className="rule-lead">{r.lead}</span>
+                <input
+                  className={`input${r.errors.shortTerm ? " has-error" : ""}`}
+                  type="text"
+                  inputMode="numeric"
+                  aria-label={r.id === "exit" ? "Exit short-term EMA (days)" : "Short-term EMA (days)"}
+                  aria-invalid={r.errors.shortTerm ? true : undefined}
+                  aria-describedby={r.errors.shortTerm ? `${r.id}-ema-short-error` : undefined}
+                  value={r.value.shortTerm}
+                  onChange={(e) => r.set({ ...r.value, shortTerm: e.target.value })}
+                />
+                <span>day EMA {r.cross} the</span>
+                <input
+                  className={`input${r.errors.longTerm ? " has-error" : ""}`}
+                  type="text"
+                  inputMode="numeric"
+                  aria-label={r.id === "exit" ? "Exit long-term EMA (days)" : "Long-term EMA (days)"}
+                  aria-invalid={r.errors.longTerm ? true : undefined}
+                  aria-describedby={r.errors.longTerm ? `${r.id}-ema-long-error` : undefined}
+                  value={r.value.longTerm}
+                  onChange={(e) => r.set({ ...r.value, longTerm: e.target.value })}
+                />
+                <span>day EMA.</span>
+              </div>
+              {r.errors.shortTerm && <p className="field-error" role="alert" id={`${r.id}-ema-short-error`}>{r.errors.shortTerm}</p>}
+              {r.errors.longTerm && <p className="field-error" role="alert" id={`${r.id}-ema-long-error`}>{r.errors.longTerm}</p>}
+              <p className="rule-explain">{r.explain}</p>
+            </div>
+          ))}
         </div>
       </fieldset>
 
@@ -854,6 +869,12 @@ function VersionCreator({ strategyId, onClose }: { strategyId: string; onClose: 
                 {Object.keys(validateEmaRule(rule)).length === 0
                   ? describeEntry({ fast: Number(rule.shortTerm), slow: Number(rule.longTerm) })
                   : "Complete the entry rule above"}
+              </dd>
+              <dt>Exit</dt>
+              <dd>
+                {Object.keys(validateEmaRule(exitRule)).length === 0
+                  ? describeExit({ fast: Number(exitRule.shortTerm), slow: Number(exitRule.longTerm) })
+                  : "Complete the exit rule above"}
               </dd>
               <dt>Starting Capital</dt>
               <dd>

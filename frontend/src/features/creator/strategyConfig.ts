@@ -1,6 +1,7 @@
 /**
  * Translates between the human-friendly strategy form and the structured configuration the API stores.
- * The API shape is unchanged: { entry: { type, fast_period, slow_period } } and { initial_capital }.
+ * Stored shape: { entry: { type, fast_period, slow_period }, exit?: { type, direction: "below", fast_period, slow_period } }
+ * and { initial_capital }. `exit` is optional so versions saved before exit rules existed stay valid.
  */
 
 export const EMA_CROSSOVER = "ema_crossover";
@@ -10,6 +11,7 @@ export interface EmaRuleInput { shortTerm: string; longTerm: string }
 export interface EmaRuleErrors { shortTerm?: string; longTerm?: string }
 
 export const DEFAULT_EMA_RULE: EmaRuleInput = { shortTerm: "3", longTerm: "9" };
+export const DEFAULT_EXIT_RULE: EmaRuleInput = { shortTerm: "3", longTerm: "9" };
 export const DEFAULT_CAPITAL = "50000";
 
 const WHOLE = /^\d+$/;
@@ -26,8 +28,11 @@ export function validateEmaRule({ shortTerm, longTerm }: EmaRuleInput): EmaRuleE
   return errors;
 }
 
-export function buildConfiguration({ shortTerm, longTerm }: EmaRuleInput): Record<string, unknown> {
-  return { entry: { type: EMA_CROSSOVER, fast_period: Number(shortTerm.trim()), slow_period: Number(longTerm.trim()) } };
+export function buildConfiguration(entry: EmaRuleInput, exit?: EmaRuleInput): Record<string, unknown> {
+  const periods = ({ shortTerm, longTerm }: EmaRuleInput) => ({ fast_period: Number(shortTerm.trim()), slow_period: Number(longTerm.trim()) });
+  const configuration: Record<string, unknown> = { entry: { type: EMA_CROSSOVER, ...periods(entry) } };
+  if (exit) configuration.exit = { type: EMA_CROSSOVER, direction: "below", ...periods(exit) };
+  return configuration;
 }
 
 /** Accepts "50,000" or "1,25,000.50"; returns null when it isn't a positive number. */
@@ -56,8 +61,25 @@ export function readEmaRule(configuration: unknown): EmaRule | null {
   return Number.isInteger(fast) && Number.isInteger(slow) && fast > 0 && slow > 0 ? { fast, slow } : null;
 }
 
+function readEmaPeriods(rule: Record<string, unknown> | undefined): EmaRule | null {
+  if (!rule || typeof rule !== "object") return null;
+  const fast = Number(rule.fast_period);
+  const slow = Number(rule.slow_period);
+  return Number.isInteger(fast) && Number.isInteger(slow) && fast > 0 && slow > 0 ? { fast, slow } : null;
+}
+
+/** Reads a stored exit rule; null when absent (older versions) or not an EMA crossover below. */
+export function readExitRule(configuration: unknown): EmaRule | null {
+  const exit = (configuration as { exit?: Record<string, unknown> } | null)?.exit;
+  if (!exit || typeof exit !== "object" || exit.type !== EMA_CROSSOVER || exit.direction !== "below") return null;
+  return readEmaPeriods(exit);
+}
+
 export const describeEntry = ({ fast, slow }: EmaRule) =>
   `Buy when the ${fast}-day EMA crosses above the ${slow}-day EMA.`;
+
+export const describeExit = ({ fast, slow }: EmaRule) =>
+  `Sell when the ${fast}-day EMA crosses below the ${slow}-day EMA.`;
 
 export function readInitialCapital(backtestConfiguration: unknown): string | null {
   const v = (backtestConfiguration as { initial_capital?: unknown } | null)?.initial_capital;

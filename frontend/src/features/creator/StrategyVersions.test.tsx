@@ -289,12 +289,27 @@ describe("Create Version", () => {
     await waitFor(() => screen.getByRole("option", { name: /NIFTY 50 Index/ }));
   }
 
+  it("blocks creation and explains an invalid exit rule", async () => {
+    await openCreatorWithInstruments();
+    await userEvent.selectOptions(screen.getByLabelText("Instrument"), "i1");
+    fireEvent.change(screen.getByLabelText("Exit short-term EMA (days)"), { target: { value: "20" } });
+    await userEvent.click(screen.getByRole("button", { name: "Create Version" }));
+    expect(await screen.findByText("Short-term EMA must be smaller than long-term EMA.")).toBeInTheDocument();
+    expect(screen.getByLabelText("Exit short-term EMA (days)")).toHaveAttribute("aria-invalid", "true");
+    expect(api.createVersion).not.toHaveBeenCalled();
+  });
+
   it("renders the entry rule and starting capital as human-readable controls", async () => {
     await openCreatorWithInstruments();
     expect(screen.getByLabelText("Short-term EMA (days)")).toHaveValue("3");
     expect(screen.getByLabelText("Long-term EMA (days)")).toHaveValue("9");
     expect(screen.getByLabelText("Starting Capital")).toHaveValue("50000");
     expect(screen.getByText("Buy when the")).toBeInTheDocument();
+    expect(screen.getByText("Sell when the")).toBeInTheDocument();
+    expect(screen.getByLabelText("Exit short-term EMA (days)")).toHaveValue("3");
+    expect(screen.getByLabelText("Exit long-term EMA (days)")).toHaveValue("9");
+    expect(screen.getByText("Buy when the 3-day EMA crosses above the 9-day EMA.")).toBeInTheDocument();
+    expect(screen.getByText("Sell when the 3-day EMA crosses below the 9-day EMA.")).toBeInTheDocument();
     expect(screen.getByText(/does not involve real money/)).toBeInTheDocument();
     expect(screen.queryByText(/JSON/)).not.toBeInTheDocument();
     expect(screen.queryByText(/ema_crossover|fast_period|initial_capital/)).not.toBeInTheDocument();
@@ -348,7 +363,7 @@ describe("Create Version", () => {
     expect(api.createVersion).not.toHaveBeenCalled();
   });
 
-  it("submits the unchanged structured payload built from the form", async () => {
+  it("submits the structured entry and exit payload built from the form", async () => {
     api.createVersion.mockResolvedValue(version1);
     await openCreatorWithInstruments();
     await userEvent.selectOptions(screen.getByLabelText("Instrument"), "i1");
@@ -361,7 +376,10 @@ describe("Create Version", () => {
         "s1",
         expect.objectContaining({
           instrument_id: "i1",
-          configuration: { entry: { type: "ema_crossover", fast_period: 5, slow_period: 21 } },
+          configuration: {
+            entry: { type: "ema_crossover", fast_period: 5, slow_period: 21 },
+            exit: { type: "ema_crossover", direction: "below", fast_period: 3, slow_period: 9 },
+          },
           backtest_configuration: { initial_capital: 100000 },
         })
       )
