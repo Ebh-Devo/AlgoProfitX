@@ -1,17 +1,10 @@
 import { Link } from "react-router-dom";
+
+import { Reveal } from "../../components/ui/Reveal";
+import { WorkflowExplorer } from "./WorkflowExplorer";
 import {
   ArrowRight, BarChart3, Check, FlaskConical, GitBranch, LineChart, Minus, ScrollText, Store, Wallet,
 } from "lucide-react";
-
-const WORKFLOW = [
-  { name: "Create", text: "Define a strategy against canonical NSE/BSE Instruments." },
-  { name: "Version", text: "Freeze the exact configuration as an immutable Version." },
-  { name: "Backtest", text: "Run a deterministic historical simulation." },
-  { name: "Analyze", text: "Read return, drawdown, win rate, profit factor and trades." },
-  { name: "Publish", text: "Move a Version through published and deployed states." },
-  { name: "Allocate", text: "Investors pin an allocation intent to a specific Version." },
-  { name: "Paper execute", text: "Observe filled, no-fill and failed outcomes — simulated." },
-];
 
 const CAPABILITIES = [
   { icon: <GitBranch size={18} />, title: "Versioned strategies", text: "Every change produces a new immutable Version, so a result always points to the exact configuration that produced it." },
@@ -95,6 +88,7 @@ export function HomePage() {
           <p className="eyebrow">Who it is for</p>
           <h2 id="audience-title">Two roles, one auditable workflow.</h2>
         </header>
+        <Reveal>
         <div className="l-audience">
           <article className="card">
             <h3>Creators</h3>
@@ -117,6 +111,7 @@ export function HomePage() {
             <Link className="l-link" to="/marketplace">Browse the marketplace <ArrowRight size={14} aria-hidden="true" /></Link>
           </article>
         </div>
+        </Reveal>
       </section>
 
       {/* ── Capabilities ─────────────────────────────────────── */}
@@ -125,6 +120,7 @@ export function HomePage() {
           <p className="eyebrow">Platform</p>
           <h2 id="cap-title">What you can do today.</h2>
         </header>
+        <Reveal>
         <ul className="l-grid" role="list">
           {CAPABILITIES.map(c => (
             <li key={c.title} className="l-cap">
@@ -134,6 +130,7 @@ export function HomePage() {
             </li>
           ))}
         </ul>
+        </Reveal>
       </section>
 
       {/* ── Workflow ─────────────────────────────────────────── */}
@@ -143,15 +140,7 @@ export function HomePage() {
             <p className="eyebrow">Workflow</p>
             <h2 id="flow-title">From hypothesis to paper execution.</h2>
           </header>
-          <ol className="l-flow">
-            {WORKFLOW.map((s, i) => (
-              <li key={s.name}>
-                <span className="l-flow-n">{String(i + 1).padStart(2, "0")}</span>
-                <strong>{s.name}</strong>
-                <p>{s.text}</p>
-              </li>
-            ))}
-          </ol>
+          <WorkflowExplorer />
         </div>
       </section>
 
@@ -161,6 +150,7 @@ export function HomePage() {
           <p className="eyebrow">Transparency</p>
           <h2 id="trust-title">Research infrastructure, clearly labelled.</h2>
         </header>
+        <Reveal>
         <div className="l-trust">
           <div className="card">
             <h3>How results are presented</h3>
@@ -179,6 +169,7 @@ export function HomePage() {
             </ul>
           </div>
         </div>
+        </Reveal>
       </section>
 
       {/* ── CTA ──────────────────────────────────────────────── */}

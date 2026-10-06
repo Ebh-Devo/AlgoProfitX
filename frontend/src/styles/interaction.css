@@ -106,3 +106,7 @@
 .attention-icon { margin-right: 0.4rem; vertical-align: -2px; color: var(--color-warning-text); }
 .input-clear { display: grid; width: 1.6rem; height: 1.6rem; place-items: center; color: var(--muted); background: transparent; border: 0; border-radius: var(--radius-md); cursor: pointer; }
 .input-clear:hover { color: var(--text); background: var(--color-hover); }
+.menu-panel { animation: route-in var(--dur-fast) var(--ease) both; }
+.menu-trigger svg:last-child { transition: transform var(--dur-fast) var(--ease); }
+.menu-trigger[aria-expanded="true"] svg:last-child { transform: rotate(180deg); }
+@media (prefers-reduced-motion: reduce) { .menu-panel { animation: none; } }

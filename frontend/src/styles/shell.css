@@ -88,7 +88,11 @@
 .ws-nav-lock { margin-left: auto; }
 .ws-cta { display: flex; align-items: center; justify-content: space-between; margin-top: var(--space-2); padding: 0.55rem var(--space-3); color: var(--color-accent-text); background: var(--color-accent-subtle); border: 1px solid color-mix(in srgb, var(--color-accent) 40%, transparent); border-radius: var(--radius-md); font-size: var(--text-sm); font-weight: 500; }
 .ws-cta:hover { text-decoration: none; border-color: var(--color-accent); }
-.ws-sidebar-foot { padding: var(--space-4) var(--space-5); border-top: 1px solid var(--border); }
+.ws-sidebar-foot { display: grid; gap: var(--space-3); padding: var(--space-4) var(--space-5); border-top: 1px solid var(--border); }
+.ws-identity { display: flex; align-items: center; gap: var(--space-3); min-width: 0; }
+.ws-identity-text { display: grid; min-width: 0; }
+.ws-identity-text strong { overflow: hidden; font-size: var(--text-xs); text-overflow: ellipsis; white-space: nowrap; }
+.ws-identity-text small { color: var(--muted); font-size: 0.6875rem; }
 
 .ws-body { display: flex; min-width: 0; flex-direction: column; }
 .ws-topbar { position: sticky; top: 0; z-index: var(--z-nav); display: flex; align-items: center; gap: var(--space-4); height: var(--topbar-h); padding: 0 var(--space-6); background: color-mix(in srgb, var(--color-canvas) 90%, transparent); border-bottom: 1px solid var(--border); backdrop-filter: blur(12px); }
@@ -104,7 +108,7 @@
 .crumbs [aria-current] { color: var(--text); font-weight: 500; }
 
 .ws-main { flex: 1; min-width: 0; outline: none; }
-.ws-content { width: min(var(--content-max), 100%); margin: 0 auto; padding: var(--space-6); animation: rise var(--dur-slow) var(--ease); }
+.ws-content { width: min(var(--content-max), 100%); margin: 0 auto; padding: var(--space-6); }
 
 .ws-drawer { position: fixed; top: 0; bottom: 0; left: 0; z-index: var(--z-modal); display: flex; width: min(18rem, 86vw); flex-direction: column; background: var(--color-canvas-subtle); border-right: 1px solid var(--color-border-strong); box-shadow: var(--shadow-lg); visibility: hidden; transform: translateX(-100%); transition: transform var(--dur-base) var(--ease), visibility 0s linear var(--dur-base); }
 .ws-drawer.is-open { visibility: visible; transform: none; transition-delay: 0s; }

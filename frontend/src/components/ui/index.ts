@@ -17,3 +17,4 @@ export { ToastProvider, useToast } from "./Toast";
 export { RefreshIndicator } from "./RefreshIndicator";
 export { InlineStatus, type InlineStatusState } from "./InlineStatus";
 export { NextStep } from "./NextStep";
+export { Reveal } from "./Reveal";
