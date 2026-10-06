@@ -13,7 +13,7 @@ export const strategiesApi = {
   listVersions: (id: string) => apiRequest<StrategyVersion[]>(`${root}/${id}/versions`),
   getVersion: (id: string, versionId: string) => apiRequest<StrategyVersion>(`${root}/${id}/versions/${versionId}`),
   createVersion: (id: string, data: StrategyVersionCreateRequest) => apiRequest<StrategyVersion>(`${root}/${id}/versions`, { method: "POST", body: JSON.stringify(data) }),
-  listBacktests: (id: string, versionId: string) => apiRequest<Backtest[]>(`${root}/${id}/versions/${versionId}/backtests`),
+  listBacktests: (id: string, versionId: string) => apiRequest<Backtest[]>(`${root}/${id}/versions/${versionId}/backtests?limit=100`),
   getBacktest: (id: string, versionId: string, backtestId: string) => apiRequest<Backtest>(`${root}/${id}/versions/${versionId}/backtests/${backtestId}`),
   createBacktest: (id: string, versionId: string, data: BacktestCreateRequest) => apiRequest<Backtest>(`${root}/${id}/versions/${versionId}/backtests`, { method: "POST", body: JSON.stringify(data) }),
   executeBacktest: (id: string, versionId: string, backtestId: string) => apiRequest<Backtest>(`${root}/${id}/versions/${versionId}/backtests/${backtestId}/execute`, { method: "POST" }),

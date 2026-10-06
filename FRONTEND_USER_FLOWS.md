@@ -162,9 +162,11 @@ POST /auth/login → /app (AppPage)
   ├── Backtest config JSON (read-only pre block)
   └── VersionBacktests section (lazy-loaded):
       ├── GET /strategies/:id/versions/:versionId/backtests
-      ├── "Create Backtest" → inline form
-      │   ├── Optional: Market data reference field
-      │   └── Submit → POST /strategies/:id/versions/:versionId/backtests
+      ├── Configure panel (Strategy / Version / Instrument / Timeframe / Period fixed by the Version)
+      │   ├── Optional: Market data reference field (max 500 chars, validated inline)
+      │   └── "Run Backtest" → POST .../backtests, then opens the result page which executes it
+      ├── Run history: status filter, sort, Return/Trades from result_summary
+      ├── Compare: tick two completed runs → analytics for each, side by side
       └── Click backtest row → /creator/strategies/:id/versions/:versionId/backtests/:backtestId
 ```
 
@@ -175,14 +177,17 @@ POST /auth/login → /app (AppPage)
 ```
 /creator/strategies/:id/versions/:versionId/backtests/:backtestId (BacktestDetailPage)
   ├── GET /strategies/.../backtests/:id
-  ├── Status: queued → "Execute Backtest" button visible
+  ├── Context header (Strategy / Version / Instrument / Timeframe / Period / Data source / Engine)
+  ├── Run lifecycle (queued → running → result → completed/failed; no percentage progress)
+  ├── Status: queued → "Execute Backtest" button visible (auto-run when arriving from "Run Backtest")
   │   └── Click → POST .../execute → updates status to running/completed/failed
   ├── Status: completed → loads analytics automatically
   │   ├── GET .../analytics → BacktestAnalytics data
   │   ├── Metrics grid: capital, return, trade count, win rate, profit factor, etc.
   │   ├── Equity curve chart (Recharts LineChart)
   │   ├── Equity point detail table (collapsible)
-  │   └── Engine/provider identity cards
+  │   ├── Trades / Run configuration tabs (trades from result_summary)
+  │   └── Run metadata: run ID, timeline, engine/provider, instrument, data provenance
   ├── Status: failed → error alert with error_code + error_message
   └── Status: running/queued → info alert (no auto-refresh — user must reload)
 ```
