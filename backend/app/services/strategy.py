@@ -1,3 +1,4 @@
+import re
 import uuid
 from datetime import datetime, timezone
 
@@ -38,28 +39,74 @@ class StrategyVersionValidationError(Exception):
     pass
 
 
+_SLUG_MAX_LENGTH = 180
+_SLUG_MIN_LENGTH = 3
+_SLUG_SUFFIX_RESERVE = 12
+_SLUG_CREATE_ATTEMPTS = 5
+
+
+def slugify_strategy_name(name: str) -> str:
+    """Normalize a strategy name to the marketplace slug format."""
+    base = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+    base = base[: _SLUG_MAX_LENGTH - _SLUG_SUFFIX_RESERVE].strip("-")
+    if len(base) < _SLUG_MIN_LENGTH:
+        base = f"{base}-strategy" if base else "strategy"
+    return base
+
+
+async def generate_unique_slug(session: AsyncSession, name: str) -> str:
+    """Return base, base-2, base-3, ... - the first slug not yet in use."""
+    base = slugify_strategy_name(name)
+    # base only contains [a-z0-9-], so it is safe to use in a LIKE prefix.
+    result = await session.execute(
+        select(Strategy.slug).where(
+            (Strategy.slug == base) | Strategy.slug.like(f"{base}-%")
+        )
+    )
+    taken = set(result.scalars().all())
+    if base not in taken:
+        return base
+    suffix = 2
+    while f"{base}-{suffix}" in taken:
+        suffix += 1
+    return f"{base}-{suffix}"
+
+
 async def create_strategy(
     session: AsyncSession,
     creator_id: uuid.UUID,
     data: StrategyCreateRequest,
 ) -> Strategy:
-    strategy = Strategy(
-        creator_id=creator_id,
-        name=data.name,
-        slug=data.slug,
-        description=data.description,
-    )
+    explicit_slug = data.slug is not None
+    attempts = 1 if explicit_slug else _SLUG_CREATE_ATTEMPTS
 
-    session.add(strategy)
+    for _ in range(attempts):
+        slug = data.slug if explicit_slug else await generate_unique_slug(
+            session, data.name
+        )
+        strategy = Strategy(
+            creator_id=creator_id,
+            name=data.name,
+            slug=slug,
+            description=data.description,
+        )
 
-    try:
-        await session.flush()
+        try:
+            # Savepoint so a lost uniqueness race can be retried with a new slug.
+            async with session.begin_nested():
+                session.add(strategy)
+                await session.flush()
+        except IntegrityError:
+            continue
+
         await session.refresh(strategy)
-    except IntegrityError:
-        await session.rollback()
-        raise ValueError("Strategy slug is already in use")
+        return strategy
 
-    return strategy
+    raise ValueError(
+        "Strategy slug is already in use"
+        if explicit_slug
+        else "Could not create the strategy right now. Please try again."
+    )
 
 
 async def get_strategies_for_creator(

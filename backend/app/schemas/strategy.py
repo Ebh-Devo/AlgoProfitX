@@ -13,7 +13,9 @@ class StrategyCreateRequest(BaseModel):
         min_length=3,
         max_length=150,
     )
-    slug: str = Field(
+    # Optional: when omitted the server derives a unique slug from the name.
+    slug: str | None = Field(
+        default=None,
         min_length=3,
         max_length=180,
         pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$",

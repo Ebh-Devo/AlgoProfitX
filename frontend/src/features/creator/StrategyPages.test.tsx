@@ -22,11 +22,18 @@ describe("Creator strategy pages", () => {
     api.list.mockResolvedValueOnce([strategy]); const second = view(<StrategyListPage />, "/creator/strategies"); expect(await screen.findByText("India Trend")).toBeInTheDocument(); second.unmount();
     api.list.mockRejectedValueOnce(new ApiError(500, "Service unavailable")); view(<StrategyListPage />, "/creator/strategies"); expect(await screen.findByText(/couldn.t load your strategies/i)).toBeInTheDocument(); expect(screen.getByRole("button", { name: /try again/i })).toBeInTheDocument();
   });
-  it("creates a strategy and surfaces duplicate slug conflicts", async () => {
-    api.create.mockResolvedValueOnce(strategy); const first = view(<StrategyNewPage />, "/creator/strategies/new"); let fields = screen.getAllByRole("textbox"); await userEvent.type(fields[0], "India Trend"); await userEvent.clear(fields[1]); await userEvent.type(fields[1], "india-trend"); await userEvent.click(screen.getByRole("button", { name: "Create strategy" })); await waitFor(() => expect(api.create).toHaveBeenCalled()); first.unmount();
-    api.create.mockRejectedValueOnce(new ApiError(409, "Strategy slug already exists")); view(<StrategyNewPage />, "/creator/strategies/new"); fields = screen.getAllByRole("textbox"); await userEvent.type(fields[0], "India Trend"); await userEvent.clear(fields[1]); await userEvent.type(fields[1], "india-trend"); await userEvent.click(screen.getByRole("button", { name: "Create strategy" })); expect(await screen.findByText("Strategy slug already exists")).toBeInTheDocument();
+  it("creates a strategy from the name alone without sending a slug", async () => {
+    api.create.mockResolvedValueOnce(strategy); view(<StrategyNewPage />, "/creator/strategies/new");
+    await userEvent.type(screen.getByLabelText("Name"), "India Trend V2"); await userEvent.click(screen.getByRole("button", { name: "Create strategy" }));
+    await waitFor(() => expect(api.create).toHaveBeenCalled());
+    const payload = api.create.mock.calls[0][0]; expect(payload).toEqual({ name: "India Trend V2", description: null }); expect(payload).not.toHaveProperty("slug");
   });
-  it("edits strategy metadata", async () => { api.get.mockResolvedValue(strategy); api.update.mockResolvedValue({ ...strategy, name: "Updated Trend" }); view(<StrategyEditPage />, "/creator/strategies/s1/edit"); const name = await screen.findByLabelText("Name"); await userEvent.clear(name); await userEvent.type(name, "Updated Trend"); await userEvent.click(screen.getByRole("button", { name: "Save changes" })); await waitFor(() => expect(api.update).toHaveBeenCalledWith("s1", expect.objectContaining({ name: "Updated Trend" }))); });
+  it("surfaces API errors on create", async () => {
+    api.create.mockRejectedValueOnce(new ApiError(500, "Service unavailable")); view(<StrategyNewPage />, "/creator/strategies/new");
+    await userEvent.type(screen.getByLabelText("Name"), "India Trend"); await userEvent.click(screen.getByRole("button", { name: "Create strategy" }));
+    expect(await screen.findByText("Service unavailable")).toBeInTheDocument();
+  });
+  it("edits strategy metadata", async () => { api.get.mockResolvedValue(strategy); api.update.mockResolvedValue({ ...strategy, name: "Updated Trend" }); view(<StrategyEditPage />, "/creator/strategies/s1/edit"); const name = await screen.findByLabelText("Name"); await userEvent.clear(name); await userEvent.type(name, "Updated Trend"); await userEvent.click(screen.getByRole("button", { name: "Save changes" })); await waitFor(() => expect(api.update).toHaveBeenCalledWith("s1", expect.objectContaining({ name: "Updated Trend" }))); expect(api.update.mock.calls[0][1]).not.toHaveProperty("slug"); });
   it("requires confirmation before deletion", async () => { api.get.mockResolvedValue(strategy); api.delete.mockResolvedValue(undefined); view(<StrategyDetailPage />, "/creator/strategies/s1"); await userEvent.click(await screen.findByRole("button", { name: "More" })); await userEvent.click(screen.getByRole("menuitem", { name: "Delete strategy" })); expect(api.delete).not.toHaveBeenCalled(); await userEvent.click(screen.getByRole("button", { name: "Delete permanently" })); await waitFor(() => expect(api.delete).toHaveBeenCalledWith("s1")); });
   it("loads searchable Instruments and creates a Version with canonical identity", async () => { api.get.mockResolvedValue(strategy); api.createVersion.mockResolvedValue(version); view(<StrategyDetailPage />, "/creator/strategies/s1"); await userEvent.click(await screen.findByRole("button", { name: "Create Version" })); expect(await screen.findByRole("option", { name: /NIFTY 50 Index.*NSE.*non-tradeable/ })).toBeInTheDocument(); expect(screen.queryByLabelText(/Instrument UUID/i)).not.toBeInTheDocument(); await userEvent.type(screen.getByPlaceholderText("Search name or symbol"), "nifty"); await waitFor(() => expect(instrumentApi.list).toHaveBeenCalledWith("nifty")); await userEvent.selectOptions(screen.getByLabelText("Instrument"), "i1"); const areas = screen.getAllByRole("textbox"); fireEvent.change(areas[0], { target: { value: "not json" } }); await userEvent.click(screen.getByRole("button", { name: "Create Version" })); expect(await screen.findByText(/must contain valid JSON/)).toBeInTheDocument(); expect(api.createVersion).not.toHaveBeenCalled(); fireEvent.change(areas[0], { target: { value: '{"period":12}' } }); await userEvent.click(screen.getByRole("button", { name: "Create Version" })); await waitFor(() => expect(api.createVersion).toHaveBeenCalledWith("s1", expect.objectContaining({ instrument_id: "i1", configuration: { period: 12 } }))); });
   it("renders Version Instrument metadata and legacy unresolved detail safely", async () => { api.get.mockResolvedValue(strategy); api.listVersions.mockResolvedValue([version]); const first = view(<StrategyDetailPage />, "/creator/strategies/s1"); expect(await screen.findByText("Version 1")).toBeInTheDocument(); first.unmount(); api.getVersion.mockResolvedValue(version); const second = view(<StrategyVersionPage />, "/creator/strategies/s1/versions/v1"); expect(await screen.findByText("NIFTY 50 Index")).toBeInTheDocument(); expect(screen.getByText(/index.*non-tradeable/)).toBeInTheDocument(); expect(screen.getByText("NSE:NIFTY_50")).toBeInTheDocument(); second.unmount(); api.getVersion.mockResolvedValue({ ...version, instrument_id: null, instrument: null }); view(<StrategyVersionPage />, "/creator/strategies/s1/versions/v1"); expect(await screen.findByText("legacy / unresolved")).toBeInTheDocument(); });
@@ -52,11 +59,11 @@ describe("Creator strategy pages", () => {
     await userEvent.click(screen.getByRole("button", { name: "Clear filters" }));
     expect(names()).toHaveLength(2);
   });
-  it("derives the slug from the name until the slug is edited manually", async () => {
-    view(<StrategyNewPage />, "/creator/strategies/new");
-    const name = screen.getByLabelText("Name"); const slug = screen.getByLabelText("Slug");
-    await userEvent.type(name, "Gap Fade v2"); expect(slug).toHaveValue("gap-fade-v2");
-    await userEvent.clear(slug); await userEvent.type(slug, "custom-slug"); await userEvent.type(name, " more"); expect(slug).toHaveValue("custom-slug");
+  it("does not render a slug input when creating or editing", async () => {
+    const created = view(<StrategyNewPage />, "/creator/strategies/new");
+    expect(screen.getByLabelText("Name")).toBeInTheDocument(); expect(screen.queryByLabelText(/slug/i)).not.toBeInTheDocument(); expect(screen.getAllByRole("textbox")).toHaveLength(2); created.unmount();
+    api.get.mockResolvedValue(strategy); view(<StrategyEditPage />, "/creator/strategies/s1/edit");
+    await screen.findByLabelText("Name"); expect(screen.queryByLabelText(/slug/i)).not.toBeInTheDocument();
   });
   it("shows a state-appropriate primary action and keeps destructive actions in the menu", async () => {
     api.get.mockResolvedValue({ ...strategy, status: "published" }); view(<StrategyDetailPage />, "/creator/strategies/s1");
@@ -67,13 +74,6 @@ describe("Creator strategy pages", () => {
     expect(screen.getByRole("menuitem", { name: "Archive" })).toBeInTheDocument(); expect(screen.getByRole("menuitem", { name: "Delete strategy" })).toBeInTheDocument();
   });
   it("cancelling the delete dialog does not delete", async () => { api.get.mockResolvedValue(strategy); view(<StrategyDetailPage />, "/creator/strategies/s1"); await userEvent.click(await screen.findByRole("button", { name: "More" })); await userEvent.click(screen.getByRole("menuitem", { name: "Delete strategy" })); await userEvent.click(screen.getByRole("button", { name: "Cancel" })); expect(api.delete).not.toHaveBeenCalled(); });
-  it("clears a stale slug error when the slug is auto-derived after a failed submit", async () => {
-    view(<StrategyNewPage />, "/creator/strategies/new");
-    await userEvent.click(screen.getByRole("button", { name: "Create strategy" }));
-    expect(await screen.findByText("Slug must be at least 3 characters")).toBeInTheDocument();
-    await userEvent.type(screen.getByLabelText("Name"), "Gap Fade");
-    await waitFor(() => expect(screen.queryByText("Slug must be at least 3 characters")).not.toBeInTheDocument());
-  });
   it("returns focus to the More trigger after a menu action opens and closes a dialog", async () => {
     api.get.mockResolvedValue(strategy); view(<StrategyDetailPage />, "/creator/strategies/s1");
     const more = await screen.findByRole("button", { name: "More" }); await userEvent.click(more);

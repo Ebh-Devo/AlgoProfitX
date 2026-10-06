@@ -79,7 +79,7 @@ describe("StrategyNewPage — create form", () => {
   it("renders all required fields and the submit button", () => {
     view(<StrategyNewPage />, "/creator/strategies/new");
     expect(screen.getByLabelText("Name")).toBeInTheDocument();
-    expect(screen.getByLabelText(/Slug/)).toBeInTheDocument();
+    expect(screen.queryByLabelText(/Slug/)).not.toBeInTheDocument();
     expect(screen.getByLabelText(/Description/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Create strategy" })).toBeInTheDocument();
   });
@@ -94,20 +94,8 @@ describe("StrategyNewPage — create form", () => {
   it("rejects a name shorter than 3 characters", async () => {
     view(<StrategyNewPage />, "/creator/strategies/new");
     await userEvent.type(screen.getByLabelText("Name"), "ab");
-    await userEvent.type(screen.getByLabelText(/Slug/), "ab");
     await userEvent.click(screen.getByRole("button", { name: "Create strategy" }));
-    // Both name and slug are short — find the name-specific error by its id
     expect(await screen.findByText("Name must be at least 3 characters")).toBeInTheDocument();
-    expect(api.create).not.toHaveBeenCalled();
-  });
-
-  it("rejects an invalid slug pattern (uppercase, spaces)", async () => {
-    view(<StrategyNewPage />, "/creator/strategies/new");
-    await userEvent.type(screen.getByLabelText("Name"), "Valid Name");
-    await userEvent.type(screen.getByLabelText(/Slug/), "Invalid Slug!");
-    await userEvent.click(screen.getByRole("button", { name: "Create strategy" }));
-    // The slug error message is distinct from the hint text
-    expect(await screen.findByText("Lowercase letters, numbers, and hyphens only; no leading, trailing, or consecutive hyphens")).toBeInTheDocument();
     expect(api.create).not.toHaveBeenCalled();
   });
 
@@ -116,14 +104,11 @@ describe("StrategyNewPage — create form", () => {
     view(<StrategyNewPage />, "/creator/strategies/new");
 
     await userEvent.type(screen.getByLabelText("Name"), "Alpha Momentum");
-    // The slug follows the name until edited.
-    expect(screen.getByLabelText(/Slug/)).toHaveValue("alpha-momentum");
     await userEvent.click(screen.getByRole("button", { name: "Create strategy" }));
 
     await waitFor(() =>
       expect(api.create).toHaveBeenCalledWith({
         name: "Alpha Momentum",
-        slug: "alpha-momentum",
         description: null,
       })
     );
@@ -135,24 +120,9 @@ describe("StrategyNewPage — create form", () => {
     view(<StrategyNewPage />, "/creator/strategies/new");
 
     await userEvent.type(screen.getByLabelText("Name"), "Alpha Momentum");
-    await userEvent.type(screen.getByLabelText(/Slug/), "alpha-momentum");
     await userEvent.click(screen.getByRole("button", { name: "Create strategy" }));
 
     expect(await screen.findByText("Internal server error")).toBeInTheDocument();
-  });
-
-  it("maps an API field-level error for slug onto the slug field", async () => {
-    const err = new ApiError(409, "Slug already taken", [{ path: "slug", message: "Slug already taken" }]);
-    api.create.mockRejectedValue(err);
-
-    view(<StrategyNewPage />, "/creator/strategies/new");
-    await userEvent.type(screen.getByLabelText("Name"), "Alpha Momentum");
-    await userEvent.type(screen.getByLabelText(/Slug/), "alpha-momentum");
-    await userEvent.click(screen.getByRole("button", { name: "Create strategy" }));
-
-    expect(await screen.findByText("Slug already taken")).toBeInTheDocument();
-    // The error should appear near the slug field, not as a banner
-    expect(screen.queryByRole("alert", { name: /internal/i })).not.toBeInTheDocument();
   });
 
   it("maps an API field-level error for name onto the name field", async () => {
@@ -161,7 +131,6 @@ describe("StrategyNewPage — create form", () => {
 
     view(<StrategyNewPage />, "/creator/strategies/new");
     await userEvent.type(screen.getByLabelText("Name"), "Alpha Momentum");
-    await userEvent.type(screen.getByLabelText(/Slug/), "alpha-momentum");
     await userEvent.click(screen.getByRole("button", { name: "Create strategy" }));
 
     expect(await screen.findByText("Name is invalid")).toBeInTheDocument();
@@ -173,7 +142,6 @@ describe("StrategyNewPage — create form", () => {
 
     view(<StrategyNewPage />, "/creator/strategies/new");
     await userEvent.type(screen.getByLabelText("Name"), "Alpha Momentum");
-    await userEvent.type(screen.getByLabelText(/Slug/), "alpha-momentum");
 
     const btn = screen.getByRole("button", { name: "Create strategy" });
     await userEvent.click(btn);
@@ -192,7 +160,6 @@ describe("StrategyNewPage — create form", () => {
 
     view(<StrategyNewPage />, "/creator/strategies/new");
     await userEvent.type(screen.getByLabelText("Name"), "Alpha Momentum");
-    await userEvent.type(screen.getByLabelText(/Slug/), "alpha-momentum");
 
     const btn = screen.getByRole("button", { name: "Create strategy" });
     await userEvent.click(btn);
@@ -213,13 +180,6 @@ describe("StrategyNewPage — create form", () => {
     expect(nameInput).toHaveAttribute("aria-describedby", "strategy-name-error");
     expect(nameInput).toHaveAttribute("aria-invalid", "true");
   });
-
-  it("wires aria-describedby on Slug input to the hint when no error", () => {
-    view(<StrategyNewPage />, "/creator/strategies/new");
-    const slugInput = screen.getByLabelText(/Slug/);
-    expect(slugInput).toHaveAttribute("aria-describedby", "strategy-slug-hint");
-    expect(slugInput).not.toHaveAttribute("aria-invalid");
-  });
 });
 
 /* ═══════════════════════════════════════════════════════════════
@@ -235,7 +195,7 @@ describe("StrategyEditPage — edit form", () => {
 
     const name = await screen.findByLabelText("Name");
     expect(name).toHaveValue("Alpha Momentum");
-    expect(screen.getByLabelText(/Slug/)).toHaveValue("alpha-momentum");
+    expect(screen.queryByLabelText(/Slug/)).not.toBeInTheDocument();
     expect(screen.getByLabelText(/Description/)).toHaveValue("A momentum-based strategy");
   });
 

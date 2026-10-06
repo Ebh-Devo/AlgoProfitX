@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -60,13 +60,6 @@ const shortDate = (value?: string | null) =>
 const errorMessage = (error: unknown, fallback: string) =>
   error instanceof ApiError ? error.message : fallback;
 
-const slugify = (value: string) =>
-  value
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 180);
-
 type LifecycleAction = "publish" | "deploy" | "archive";
 
 /** Which lifecycle transitions the backend allows from each status. */
@@ -83,11 +76,6 @@ const strategySchema = z.object({
     .string()
     .min(3, "Name must be at least 3 characters")
     .max(150, "Name must be at most 150 characters"),
-  slug: z
-    .string()
-    .min(3, "Slug must be at least 3 characters")
-    .max(180, "Slug must be at most 180 characters")
-    .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, "Lowercase letters, numbers, and hyphens only; no leading, trailing, or consecutive hyphens"),
   description: z.string().max(1000, "Description must be at most 1000 characters").optional(),
 });
 
@@ -105,27 +93,21 @@ interface StrategyFormProps {
 
 function StrategyForm({ mode, initial, submitLabel, cancelTo, onSave, aside }: StrategyFormProps) {
   const [apiError, setApiError] = useState<string | null>(null);
-  // In create mode the slug follows the name until the user edits it themselves.
-  const slugTouched = useRef(mode === "edit");
-
   const {
     register,
     handleSubmit,
     setError,
-    setValue,
     watch,
     formState: { errors, isSubmitting },
   } = useForm<StrategyFormValues>({
     resolver: zodResolver(strategySchema),
     defaultValues: {
       name: initial?.name ?? "",
-      slug: initial?.slug ?? "",
       description: initial?.description ?? "",
     },
   });
 
   const nameField = register("name");
-  const slugField = register("slug");
   const descriptionLength = watch("description")?.length ?? 0;
 
   const submit = handleSubmit(async (values) => {
@@ -137,7 +119,7 @@ function StrategyForm({ mode, initial, submitLabel, cancelTo, onSave, aside }: S
         let hasFieldErrors = false;
         for (const fe of reason.fieldErrors) {
           const field = fe.path as keyof StrategyFormValues;
-          if (field === "name" || field === "slug" || field === "description") {
+          if (field === "name" || field === "description") {
             setError(field, { message: fe.message });
             hasFieldErrors = true;
           }
@@ -161,7 +143,7 @@ function StrategyForm({ mode, initial, submitLabel, cancelTo, onSave, aside }: S
               <span className="form-section-num" aria-hidden="true">1</span>
               <div>
                 <h2>Strategy identity</h2>
-                <p>How this strategy is named and referenced.</p>
+                <p>How this strategy is named.</p>
               </div>
             </div>
             <div className="form-section-body">
@@ -170,29 +152,9 @@ function StrategyForm({ mode, initial, submitLabel, cancelTo, onSave, aside }: S
                 label="Name"
                 type="text"
                 autoComplete="off"
-                hint="The display name. Shown in your workspace and, once published, in the Marketplace."
+                hint="The display name. Shown in your workspace and, once published, in the Marketplace. Its Marketplace link is created automatically."
                 error={errors.name?.message}
                 {...nameField}
-                onChange={(e) => {
-                  void nameField.onChange(e);
-                  if (!slugTouched.current) setValue("slug", slugify(e.target.value), { shouldValidate: !!errors.slug });
-                }}
-              />
-
-              <Input
-                id="strategy-slug"
-                label="Slug"
-                type="text"
-                autoComplete="off"
-                spellCheck={false}
-                className="mono"
-                hint={<>Unique identifier used in Marketplace URLs. Lowercase letters, numbers and single hyphens — e.g. <code>india-trend-v2</code></>}
-                error={errors.slug?.message}
-                {...slugField}
-                onChange={(e) => {
-                  slugTouched.current = true;
-                  void slugField.onChange(e);
-                }}
               />
 
               <div className={`form-field ${errors.description ? "has-error" : ""}`}>
@@ -510,7 +472,6 @@ export function StrategyNewPage() {
         onSave={async (values) => {
           const data: StrategyCreateRequest = {
             name: values.name,
-            slug: values.slug,
             description: values.description || null,
           };
           const result = await strategiesApi.create(data);
@@ -591,14 +552,14 @@ export function StrategyEditPage() {
       <PageHeader
         eyebrow="Edit metadata"
         title={strategy.name}
-        description="Update the name, slug or description. Lifecycle status and visibility are managed separately."
+        description="Update the name or description. Lifecycle status and visibility are managed separately."
       />
 
       {strategy.status !== "draft" && (
         <div style={{ marginBottom: "var(--space-5)" }}>
           <div role="note">
             <Alert variant="warning">
-              This strategy is currently <StatusBadge status={strategy.status} />. Editing metadata does not affect its lifecycle state or Marketplace visibility. Changing the slug changes its Marketplace URL.
+              This strategy is currently <StatusBadge status={strategy.status} />. Editing metadata does not affect its lifecycle state or Marketplace visibility.
             </Alert>
           </div>
         </div>
@@ -608,7 +569,6 @@ export function StrategyEditPage() {
         mode="edit"
         initial={{
           name: strategy.name,
-          slug: strategy.slug,
           description: strategy.description ?? "",
         }}
         submitLabel="Save changes"
@@ -616,7 +576,6 @@ export function StrategyEditPage() {
         onSave={async (values) => {
           const data: StrategyUpdateRequest = {
             name: values.name,
-            slug: values.slug,
             description: values.description || null,
           };
           await strategiesApi.update(strategyId, data);
