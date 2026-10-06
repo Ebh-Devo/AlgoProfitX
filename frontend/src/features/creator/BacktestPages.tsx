@@ -12,8 +12,11 @@ import { Alert, Button, FilterChips, InlineStatus, StatusBadge, Tabs } from "../
 import { EquityChart } from "./EquityChart";
 import {
   MAX_REFERENCE_LENGTH, configValue, displayDate, displayDay, errorMessage, instrumentOf, isActive, isSynthetic,
-  metric, parseTrades, periodLabel, ratioPercent, shortId, summaryFigures, NOT_AVAILABLE,
+  parseTrades, periodLabel, shortId, summaryFigures, NOT_AVAILABLE,
 } from "./backtestFormat";
+import { AlgorithmSummary, StartingCapitalSummary, TechnicalDetails } from "./ConfigViews";
+import { describeEntry, readEmaRule } from "./strategyConfig";
+import { UNAVAILABLE, formatCurrency, formatInteger, formatNumber, formatPercentage } from "../../lib/format";
 
 const runPath = (strategyId: string, versionId: string, runId: string) =>
   `/creator/strategies/${strategyId}/versions/${versionId}/backtests/${runId}`;
@@ -92,6 +95,8 @@ export function VersionBacktests({ strategyId, versionId, strategyName, version 
   const start = configValue(bt, "start_date");
   const end = configValue(bt, "end_date");
   const capital = configValue(bt, "initial_capital");
+  const currency = instrument?.quote_currency;
+  const entryRule = readEmaRule(version?.configuration);
   const period = start && end ? `${displayDay(start)} – ${displayDay(end)}` : null;
 
   const refId = "backtest-reference";
@@ -111,7 +116,7 @@ export function VersionBacktests({ strategyId, versionId, strategyName, version 
         <div className="panel-head">
           <div>
             <h3 className="research-h3">Configure</h3>
-            <p className="research-sub">Everything below is fixed by this immutable Version except the optional data reference.</p>
+            <p className="research-sub">Review what will be tested. These settings are fixed by this immutable Version; only the optional data reference can change.</p>
           </div>
         </div>
         <div className="panel-body research-config-body">
@@ -125,7 +130,7 @@ export function VersionBacktests({ strategyId, versionId, strategyName, version 
               { label: "Instrument", value: instrument ? <strong>{`${instrument.exchange_symbol} · ${instrument.exchange.code}`}</strong> : "Legacy / unresolved" },
               { label: "Timeframe", value: timeframe ?? (version ? "1d (engine default)" : NOT_AVAILABLE) },
               { label: "Period", value: period ?? (version ? "Set by the data provider" : NOT_AVAILABLE) },
-              { label: "Initial capital", value: capital ? metric(capital) : NOT_AVAILABLE },
+              { label: "Starting Capital", value: capital ? formatCurrency(capital, { currency }) : NOT_AVAILABLE },
             ]}
           />
           <div className="research-engine">
@@ -139,6 +144,20 @@ export function VersionBacktests({ strategyId, versionId, strategyName, version 
               <strong>Synthetic reference data</strong>
               <p>The server-configured provider supplies deterministic reference candles. Real NSE history is not connected yet.</p>
             </div>
+          </div>
+
+          <div className="config-summary" role="group" aria-label="Backtest Summary">
+            <h4>Backtest Summary</h4>
+            <dl className="kv">
+              <dt>Strategy</dt>
+              <dd>{strategyName ?? "Strategy"}</dd>
+              <dt>Entry</dt>
+              <dd>{entryRule ? describeEntry(entryRule) : "Custom algorithm"}</dd>
+              <dt>Starting Capital</dt>
+              <dd>{capital ? formatCurrency(capital, { currency }) : NOT_AVAILABLE}</dd>
+              <dt>Data</dt>
+              <dd>Reference / Synthetic Market Data</dd>
+            </dl>
           </div>
 
           <div className="form-field">
@@ -315,8 +334,8 @@ function RunHistory({ strategyId, versionId, version }: { strategyId: string; ve
                         <td data-label="Instrument">{inst?.symbol ?? "Legacy"}</td>
                         <td data-label="Period" className="cell-muted">{period ?? NOT_AVAILABLE}</td>
                         <td data-label="Status"><StatusBadge status={run.status} /></td>
-                        <td data-label="Return" className="num">{fig.totalReturn == null ? "—" : metric(fig.totalReturn, "%")}</td>
-                        <td data-label="Trades" className="num">{fig.tradeCount == null ? "—" : fig.tradeCount.toLocaleString()}</td>
+                        <td data-label="Return" className="num">{fig.totalReturn == null ? "—" : formatPercentage(fig.totalReturn, { signed: true })}</td>
+                        <td data-label="Trades" className="num">{fig.tradeCount == null ? "—" : formatInteger(fig.tradeCount)}</td>
                         <td data-label="Created" className="cell-muted">{displayDate(run.created_at)}</td>
                       </tr>
                     );
@@ -362,12 +381,12 @@ function ComparePanel({ strategyId, versionId, runs, onClear }: { strategyId: st
     { label: "Period", cell: (r) => periodLabel(r.range_start, r.range_end) ?? NOT_AVAILABLE },
     { label: "Data provider", cell: (r) => r.market_data_provider ?? NOT_AVAILABLE },
     { label: "Engine", cell: (r, a) => a?.engine_identifier ?? summaryFigures(r).engine ?? NOT_AVAILABLE },
-    { label: "Initial capital", cell: (_, a) => (a ? metric(a.initial_capital) : "…") },
-    { label: "Final equity", cell: (_, a) => (a ? metric(a.final_equity) : "…") },
-    { label: "Total return", cell: (_, a) => (a ? metric(a.total_return, "%") : "…") },
-    { label: "Max drawdown", cell: (_, a) => (a ? metric(a.max_drawdown, "%") : "…") },
-    { label: "Trade count", cell: (_, a) => (a ? a.trade_count.toLocaleString() : "…") },
-    { label: "Win rate", cell: (_, a) => (a ? ratioPercent(a.win_rate) : "…") },
+    { label: "Starting Capital", cell: (_, a) => (a ? formatCurrency(a.initial_capital) : "…") },
+    { label: "Final equity", cell: (_, a) => (a ? formatCurrency(a.final_equity) : "…") },
+    { label: "Total return", cell: (_, a) => (a ? formatPercentage(a.total_return, { signed: true }) : "…") },
+    { label: "Max drawdown", cell: (_, a) => (a ? formatPercentage(a.max_drawdown) : "…") },
+    { label: "Trades", cell: (_, a) => (a ? formatInteger(a.trade_count) : "…") },
+    { label: "Win rate", cell: (_, a) => (a ? formatPercentage(a.win_rate, { ratio: true }) : "…") },
   ];
 
   return (
@@ -456,20 +475,19 @@ function RunLifecycle({ run, executing, resultLoading }: { run: Backtest; execut
 /* ── Result: metrics, chart, trades ───────────────────────────── */
 
 function Analytics({ data, run }: { data: BacktestAnalytics; run: Backtest }) {
-  const positive = Number(data.total_return) > 0;
-  const metrics: [string, string][] = [
-    ["Initial capital", metric(data.initial_capital)],
-    ["Final equity", metric(data.final_equity)],
+  const metrics: { label: string; value: string; hint?: string }[] = [
+    { label: "Starting Capital", value: formatCurrency(data.initial_capital) },
+    { label: "Final Equity", value: formatCurrency(data.final_equity), hint: "Account value at the end of the backtest." },
     // total_return is stored as a percentage value (e.g. 10.5 = 10.5%) by the backend engine
-    ["Total return", `${positive ? "+" : ""}${metric(data.total_return, "%")}`],
-    ["Trade count", data.trade_count.toLocaleString()],
-    // win_rate is a decimal ratio (0–1) stored by the analytics service; multiply × 100 to display
-    ["Win rate", ratioPercent(data.win_rate)],
-    ["Profit factor", metric(data.profit_factor)],
-    ["Average win", metric(data.average_win)],
-    ["Average loss", metric(data.average_loss)],
+    { label: "Total Return", value: formatPercentage(data.total_return, { signed: true }), hint: "Gain or loss relative to starting capital." },
+    { label: "Trades", value: formatInteger(data.trade_count), hint: "Number of completed trades." },
+    // win_rate is a decimal ratio (0-1) stored by the analytics service
+    { label: "Win Rate", value: formatPercentage(data.win_rate, { ratio: true }), hint: "Percentage of completed trades that ended profitably." },
+    { label: "Profit Factor", value: formatNumber(data.profit_factor), hint: "Total profit from winning trades divided by total loss from losing trades." },
+    { label: "Average Winning Trade", value: formatCurrency(data.average_win) },
+    { label: "Average Losing Trade", value: formatCurrency(data.average_loss) },
     // max_drawdown is stored as a percentage value by the analytics service
-    ["Max drawdown", metric(data.max_drawdown, "%")],
+    { label: "Max Drawdown", value: formatPercentage(data.max_drawdown), hint: "Largest peak-to-trough fall in account value." },
   ];
   const curve = data.equity_curve;
   const trades = parseTrades(run.result_summary);
@@ -485,8 +503,8 @@ function Analytics({ data, run }: { data: BacktestAnalytics; run: Backtest }) {
       </div>
 
       <div className="rs-metrics" role="list" aria-label="Backtest metrics">
-        {metrics.map(([label, value]) => (
-          <div className={`rs-metric${value === "Unavailable" ? " is-unavailable" : ""}${label === "Total return" ? " is-primary" : ""}`} key={label} role="listitem" aria-label={`${label}: ${value}`}>
+        {metrics.map(({ label, value, hint }) => (
+          <div className={`rs-metric${value === UNAVAILABLE ? " is-unavailable" : ""}${label === "Total Return" ? " is-primary" : ""}`} key={label} role="listitem" aria-label={`${label}: ${value}`} title={hint}>
             <span>{label}</span>
             <strong>{value}</strong>
           </div>
@@ -504,7 +522,7 @@ function Analytics({ data, run }: { data: BacktestAnalytics; run: Backtest }) {
             <div className="table-wrap">
               <table className="data-table" aria-label="Equity curve data points">
                 <thead><tr><th scope="col">Timestamp</th><th scope="col" className="num">Equity</th></tr></thead>
-                <tbody>{curve.map((point) => <tr key={`${point.timestamp}-${point.equity}`}><td>{point.timestamp}</td><td className="num">{metric(point.equity)}</td></tr>)}</tbody>
+                <tbody>{curve.map((point) => <tr key={`${point.timestamp}-${point.equity}`}><td>{point.timestamp}</td><td className="num">{formatCurrency(point.equity)}</td></tr>)}</tbody>
               </table>
             </div>
           </details>
@@ -520,8 +538,16 @@ function Analytics({ data, run }: { data: BacktestAnalytics; run: Backtest }) {
             label: "Run configuration",
             content: (
               <div className="config-grid">
-                <div><h4 className="research-h4">Algorithm configuration</h4><pre className="json-view">{JSON.stringify(run.configuration_snapshot, null, 2)}</pre></div>
-                <div><h4 className="research-h4">Backtest configuration</h4><pre className="json-view">{JSON.stringify(run.backtest_configuration_snapshot, null, 2)}</pre></div>
+                <div>
+                  <h4 className="research-h4">Algorithm</h4>
+                  <AlgorithmSummary configuration={run.configuration_snapshot} />
+                  <TechnicalDetails value={run.configuration_snapshot} />
+                </div>
+                <div>
+                  <h4 className="research-h4">Backtest settings</h4>
+                  <StartingCapitalSummary backtestConfiguration={run.backtest_configuration_snapshot} currency={instrumentOf(run)?.currency ?? undefined} />
+                  <TechnicalDetails value={run.backtest_configuration_snapshot} />
+                </div>
               </div>
             ),
           },
@@ -554,11 +580,11 @@ function TradesPanel({ trades, tradeCount }: { trades: ReturnType<typeof parseTr
                 <td data-label="Side">{t.side}</td>
                 <td data-label="Entry" className="cell-muted">{displayDate(t.entryTimestamp)}</td>
                 <td data-label="Exit" className="cell-muted">{displayDate(t.exitTimestamp)}</td>
-                <td data-label="Quantity" className="num">{metric(t.quantity)}</td>
-                <td data-label="Entry price" className="num">{metric(t.entryPrice)}</td>
-                <td data-label="Exit price" className="num">{metric(t.exitPrice)}</td>
+                <td data-label="Quantity" className="num">{formatNumber(t.quantity)}</td>
+                <td data-label="Entry price" className="num">{formatNumber(t.entryPrice)}</td>
+                <td data-label="Exit price" className="num">{formatNumber(t.exitPrice)}</td>
                 <td data-label="P&L" className={`num${pnl == null ? "" : pnl > 0 ? " is-profit" : pnl < 0 ? " is-loss" : ""}`}>
-                  {pnl == null ? "Unavailable" : `${pnl > 0 ? "+" : ""}${metric(t.pnl)}`}
+                  {formatCurrency(t.pnl, { signed: true })}
                 </td>
               </tr>
             );

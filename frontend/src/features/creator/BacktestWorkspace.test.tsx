@@ -76,6 +76,17 @@ beforeEach(() => {
 describe("Configure", () => {
   const renderConfig = () => view(<VersionBacktests strategyId="s1" versionId="v1" strategyName="EMA Trend Follower" version={version as never} />);
 
+  it("shows a plain-language Backtest Summary before running", () => {
+    view(<VersionBacktests strategyId="s1" versionId="v1" strategyName="Nifty Trend Strategy"
+      version={{ ...version, configuration: { entry: { type: "ema_crossover", fast_period: 3, slow_period: 9 } } } as never} />);
+    const summary = screen.getByRole("group", { name: "Backtest Summary" });
+    expect(summary).toHaveTextContent("Nifty Trend Strategy");
+    expect(summary).toHaveTextContent("Buy when the 3-day EMA crosses above the 9-day EMA.");
+    expect(summary).toHaveTextContent("₹1,00,000.00");
+    expect(summary).toHaveTextContent("Reference / Synthetic Market Data");
+    expect(screen.getByRole("button", { name: "Run Backtest" })).toBeInTheDocument();
+  });
+
   it("states what is being tested from the real Version", () => {
     renderConfig();
     const context = screen.getByRole("group", { name: /what is being tested/i });
@@ -190,7 +201,7 @@ describe("Results", () => {
     view(null, detailPath);
     const table = await screen.findByRole("table", { name: "Trades" });
     expect(within(table).getByText("long")).toBeInTheDocument();
-    expect(within(table).getByText("+125")).toBeInTheDocument();
+    expect(within(table).getByText("+₹125.00")).toBeInTheDocument();
   });
 
   it("explains missing trade detail instead of inventing rows", async () => {
@@ -213,8 +224,8 @@ describe("Results", () => {
     api.getBacktestAnalytics.mockResolvedValue(analytics);
     view(null, detailPath);
     await screen.findByRole("heading", { name: "Backtest analytics" });
-    const winRate = screen.getAllByRole("listitem").find((i) => i.getAttribute("aria-label")?.startsWith("Win rate"));
-    expect(winRate).toHaveAttribute("aria-label", "Win rate: Unavailable");
+    const winRate = screen.getAllByRole("listitem").find((i) => i.getAttribute("aria-label")?.startsWith("Win Rate"));
+    expect(winRate).toHaveAttribute("aria-label", "Win Rate: Unavailable");
   });
 
   it("gives the equity chart a textual summary built from the real series", async () => {
@@ -223,7 +234,7 @@ describe("Results", () => {
     view(null, detailPath);
     const chart = await screen.findByRole("img", { name: /equity curve chart/i });
     expect(chart.getAttribute("aria-label")).toMatch(/2 points/);
-    expect(chart.getAttribute("aria-label")).toContain(`starts at ${(100000).toLocaleString()}`);
+    expect(chart.getAttribute("aria-label")).toContain("starts at ₹1,00,000.00");
     expect(describeEquity([])).toBeNull();
   });
 
@@ -245,7 +256,7 @@ describe("Results", () => {
     tab.focus();
     await userEvent.keyboard("{ArrowRight}");
     expect(screen.getByRole("tab", { name: "Run configuration" })).toHaveAttribute("aria-selected", "true");
-    expect(screen.getByText("Algorithm configuration")).toBeInTheDocument();
+    expect(screen.getByText("Backtest settings")).toBeInTheDocument();
   });
 
   it("offers a retry when the run cannot be loaded", async () => {
@@ -280,7 +291,7 @@ describe("History", () => {
     expect(await screen.findByRole("link", { name: "Run aaaaaaaa" })).toBeInTheDocument();
     const failedRow = bodyRows().find((r) => within(r).queryByText("Run cccccccc"));
     expect(failedRow).toHaveTextContent("—");
-    expect(bodyRows().find((r) => within(r).queryByText("Run bbbbbbbb"))).toHaveTextContent("15%");
+    expect(bodyRows().find((r) => within(r).queryByText("Run bbbbbbbb"))).toHaveTextContent("+15.00%");
   });
 
   it("filters by status and updates the count", async () => {
@@ -338,9 +349,9 @@ describe("History", () => {
     await userEvent.click(screen.getByRole("checkbox", { name: /Compare run bbbbbbbb/ }));
     const table = await screen.findByRole("table", { name: /Side-by-side comparison/ });
     const returnRow = within(table).getByRole("row", { name: /Total return/ });
-    await waitFor(() => expect(returnRow).toHaveTextContent("15%"));
-    expect(returnRow).toHaveTextContent("5%");
-    expect(within(table).getByRole("row", { name: /Max drawdown/ })).toHaveTextContent("4%");
+    await waitFor(() => expect(returnRow).toHaveTextContent("+15.00%"));
+    expect(returnRow).toHaveTextContent("+5.00%");
+    expect(within(table).getByRole("row", { name: /Max drawdown/ })).toHaveTextContent("4.00%");
     await userEvent.click(screen.getByRole("button", { name: "Clear" }));
     expect(screen.queryByRole("table", { name: /Side-by-side comparison/ })).not.toBeInTheDocument();
   });

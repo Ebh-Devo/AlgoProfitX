@@ -13,13 +13,6 @@ export const displayDay = (value?: string | null) =>
 
 export const errorMessage = (error: unknown, fallback: string) => (error instanceof ApiError ? error.message : fallback);
 
-export const metric = (value: string | null | undefined, suffix = "") =>
-  value == null ? "Unavailable" : `${Number(value).toLocaleString(undefined, { maximumFractionDigits: 4 })}${suffix}`;
-
-/** Backend returns win_rate as a 0–1 ratio. */
-export const ratioPercent = (value: string | null | undefined) =>
-  value == null ? "Unavailable" : `${(Number(value) * 100).toLocaleString(undefined, { maximumFractionDigits: 2 })}%`;
-
 export const isActive = (status: string) => status === "queued" || status === "running";
 
 export const shortId = (id: string) => id.slice(0, 8);

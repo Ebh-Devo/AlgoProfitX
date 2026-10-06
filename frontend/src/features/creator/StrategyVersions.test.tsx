@@ -88,8 +88,8 @@ const version1 = {
   instrument_id: "i1",
   instrument,
   version_number: 1,
-  configuration: { period: 14 },
-  backtest_configuration: { capital: 100000 },
+  configuration: { entry: { type: "ema_crossover", fast_period: 3, slow_period: 9 } },
+  backtest_configuration: { initial_capital: 100000 },
   created_at: "2026-01-02T00:00:00Z",
 };
 
@@ -289,10 +289,24 @@ describe("Create Version", () => {
     await waitFor(() => screen.getByRole("option", { name: /NIFTY 50 Index/ }));
   }
 
-  it("renders the version creation form", async () => {
+  it("renders the entry rule and starting capital as human-readable controls", async () => {
     await openCreatorWithInstruments();
-    expect(screen.getByLabelText("Algorithm configuration")).toBeInTheDocument();
-    expect(screen.getByLabelText("Backtest configuration")).toBeInTheDocument();
+    expect(screen.getByLabelText("Short-term EMA (days)")).toHaveValue("3");
+    expect(screen.getByLabelText("Long-term EMA (days)")).toHaveValue("9");
+    expect(screen.getByLabelText("Starting Capital")).toHaveValue("50000");
+    expect(screen.getByText("Buy when the")).toBeInTheDocument();
+    expect(screen.getByText(/does not involve real money/)).toBeInTheDocument();
+    expect(screen.queryByText(/JSON/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/ema_crossover|fast_period|initial_capital/)).not.toBeInTheDocument();
+  });
+
+  it("shows a plain-language review of the rule and capital", async () => {
+    await openCreatorWithInstruments();
+    const review = screen.getByRole("group", { name: "Version summary" });
+    expect(review).toHaveTextContent("Buy when the 3-day EMA crosses above the 9-day EMA.");
+    expect(review).toHaveTextContent("₹50,000.00");
+    fireEvent.change(screen.getByLabelText("Starting Capital"), { target: { value: "125000" } });
+    expect(review).toHaveTextContent("₹1,25,000.00");
   });
 
   it("requires an Instrument to be selected", async () => {
@@ -303,68 +317,52 @@ describe("Create Version", () => {
     expect(api.createVersion).not.toHaveBeenCalled();
   });
 
-  it("rejects invalid JSON in algorithm configuration", async () => {
+  it("requires the short-term EMA to be smaller than the long-term EMA", async () => {
     await openCreatorWithInstruments();
     await userEvent.selectOptions(screen.getByLabelText("Instrument"), "i1");
-    fireEvent.change(screen.getByLabelText("Algorithm configuration"), {
-      target: { value: "not json" },
-    });
+    fireEvent.change(screen.getByLabelText("Short-term EMA (days)"), { target: { value: "20" } });
     await userEvent.click(screen.getByRole("button", { name: "Create Version" }));
-    expect(await screen.findByText(/must contain valid JSON/)).toBeInTheDocument();
+    expect(await screen.findByText("Short-term EMA must be smaller than long-term EMA.")).toBeInTheDocument();
+    expect(screen.getByLabelText("Short-term EMA (days)")).toHaveAttribute("aria-invalid", "true");
     expect(api.createVersion).not.toHaveBeenCalled();
   });
 
-  it("rejects a JSON array in algorithm configuration", async () => {
+  it("rejects non-numeric or non-positive EMA periods", async () => {
     await openCreatorWithInstruments();
     await userEvent.selectOptions(screen.getByLabelText("Instrument"), "i1");
-    fireEvent.change(screen.getByLabelText("Algorithm configuration"), {
-      target: { value: "[1, 2, 3]" },
-    });
+    fireEvent.change(screen.getByLabelText("Short-term EMA (days)"), { target: { value: "0" } });
+    fireEvent.change(screen.getByLabelText("Long-term EMA (days)"), { target: { value: "abc" } });
     await userEvent.click(screen.getByRole("button", { name: "Create Version" }));
-    expect(await screen.findByText(/must be a JSON object/)).toBeInTheDocument();
+    expect(await screen.findByText(/Enter the short-term EMA as a whole number/)).toBeInTheDocument();
+    expect(screen.getByText(/Enter the long-term EMA as a whole number/)).toBeInTheDocument();
     expect(api.createVersion).not.toHaveBeenCalled();
   });
 
-  it("rejects a JSON primitive in algorithm configuration", async () => {
+  it("rejects an invalid starting capital", async () => {
     await openCreatorWithInstruments();
     await userEvent.selectOptions(screen.getByLabelText("Instrument"), "i1");
-    fireEvent.change(screen.getByLabelText("Algorithm configuration"), {
-      target: { value: "42" },
-    });
+    fireEvent.change(screen.getByLabelText("Starting Capital"), { target: { value: "0" } });
     await userEvent.click(screen.getByRole("button", { name: "Create Version" }));
-    expect(await screen.findByText(/must be a JSON object/)).toBeInTheDocument();
+    expect(await screen.findByText(/Enter a starting capital greater than zero/)).toBeInTheDocument();
+    expect(screen.getByLabelText("Starting Capital")).toHaveAttribute("aria-invalid", "true");
     expect(api.createVersion).not.toHaveBeenCalled();
   });
 
-  it("rejects invalid JSON in backtest configuration", async () => {
-    await openCreatorWithInstruments();
-    await userEvent.selectOptions(screen.getByLabelText("Instrument"), "i1");
-    fireEvent.change(screen.getByLabelText("Backtest configuration"), {
-      target: { value: "bad json" },
-    });
-    await userEvent.click(screen.getByRole("button", { name: "Create Version" }));
-    expect(await screen.findByText(/must contain valid JSON/)).toBeInTheDocument();
-    expect(api.createVersion).not.toHaveBeenCalled();
-  });
-
-  it("accepts valid JSON objects and submits correct payload", async () => {
+  it("submits the unchanged structured payload built from the form", async () => {
     api.createVersion.mockResolvedValue(version1);
     await openCreatorWithInstruments();
     await userEvent.selectOptions(screen.getByLabelText("Instrument"), "i1");
-    fireEvent.change(screen.getByLabelText("Algorithm configuration"), {
-      target: { value: '{"period":14}' },
-    });
-    fireEvent.change(screen.getByLabelText("Backtest configuration"), {
-      target: { value: '{"capital":100000}' },
-    });
+    fireEvent.change(screen.getByLabelText("Short-term EMA (days)"), { target: { value: "5" } });
+    fireEvent.change(screen.getByLabelText("Long-term EMA (days)"), { target: { value: "21" } });
+    fireEvent.change(screen.getByLabelText("Starting Capital"), { target: { value: "1,00,000" } });
     await userEvent.click(screen.getByRole("button", { name: "Create Version" }));
     await waitFor(() =>
       expect(api.createVersion).toHaveBeenCalledWith(
         "s1",
         expect.objectContaining({
           instrument_id: "i1",
-          configuration: { period: 14 },
-          backtest_configuration: { capital: 100000 },
+          configuration: { entry: { type: "ema_crossover", fast_period: 5, slow_period: 21 } },
+          backtest_configuration: { initial_capital: 100000 },
         })
       )
     );
@@ -508,18 +506,19 @@ describe("Version detail page", () => {
     expect(screen.getByText("50")).toBeInTheDocument();
   });
 
-  it("renders algorithm configuration as formatted JSON", async () => {
+  it("renders the algorithm in plain language with technical details collapsed", async () => {
     api.getVersion.mockResolvedValue(version1);
     view(<StrategyVersionPage />, "/creator/strategies/s1/versions/v1");
-    await screen.findByText("Algorithm configuration");
-    expect(screen.getByText(/\"period\"/)).toBeInTheDocument();
+    expect((await screen.findAllByText("Buy when the 3-day EMA crosses above the 9-day EMA.")).length).toBeGreaterThan(0);
+    expect(screen.getByText("EMA Crossover")).toBeInTheDocument();
+    const details = screen.getAllByText("Advanced / Technical details")[0].closest("details");
+    expect(details).not.toHaveAttribute("open");
   });
 
-  it("renders backtest configuration as formatted JSON", async () => {
+  it("renders starting capital as formatted INR", async () => {
     api.getVersion.mockResolvedValue(version1);
     view(<StrategyVersionPage />, "/creator/strategies/s1/versions/v1");
-    await screen.findByText("Backtest configuration");
-    expect(screen.getByText(/\"capital\"/)).toBeInTheDocument();
+    expect((await screen.findAllByText("₹1,00,000.00")).length).toBeGreaterThan(0);
   });
 
   it("handles missing instrument (legacy/unresolved) safely — no crash", async () => {
@@ -584,41 +583,19 @@ describe("Accessibility", () => {
     await openCreatorWithInstruments();
     expect(screen.getByLabelText("Search Instrument")).toBeInTheDocument();
     expect(screen.getByLabelText("Instrument")).toBeInTheDocument();
-    expect(screen.getByLabelText("Algorithm configuration")).toBeInTheDocument();
-    expect(screen.getByLabelText("Backtest configuration")).toBeInTheDocument();
+    expect(screen.getByLabelText("Short-term EMA (days)")).toBeInTheDocument();
+    expect(screen.getByLabelText("Long-term EMA (days)")).toBeInTheDocument();
+    expect(screen.getByLabelText("Starting Capital")).toBeInTheDocument();
   });
 
-  it("sets aria-invalid on algorithm configuration textarea when JSON is invalid", async () => {
+  it("links the starting capital hint and error to the input", async () => {
     await openCreatorWithInstruments();
+    expect(screen.getByLabelText("Starting Capital")).toHaveAttribute("aria-describedby", "starting-capital-hint");
     await userEvent.selectOptions(screen.getByLabelText("Instrument"), "i1");
-    fireEvent.change(screen.getByLabelText("Algorithm configuration"), {
-      target: { value: "bad json" },
-    });
+    fireEvent.change(screen.getByLabelText("Starting Capital"), { target: { value: "" } });
     await userEvent.click(screen.getByRole("button", { name: "Create Version" }));
-    await screen.findByText(/must contain valid JSON/);
-    expect(screen.getByLabelText("Algorithm configuration")).toHaveAttribute("aria-invalid", "true");
-  });
-
-  it("sets aria-describedby on configuration textarea to hint when no error", async () => {
-    await openCreatorWithInstruments();
-    expect(screen.getByLabelText("Algorithm configuration")).toHaveAttribute(
-      "aria-describedby",
-      "version-config-hint"
-    );
-  });
-
-  it("sets aria-describedby to error id when configuration has a JSON error", async () => {
-    await openCreatorWithInstruments();
-    await userEvent.selectOptions(screen.getByLabelText("Instrument"), "i1");
-    fireEvent.change(screen.getByLabelText("Algorithm configuration"), {
-      target: { value: "bad json" },
-    });
-    await userEvent.click(screen.getByRole("button", { name: "Create Version" }));
-    await screen.findByText(/must contain valid JSON/);
-    expect(screen.getByLabelText("Algorithm configuration")).toHaveAttribute(
-      "aria-describedby",
-      "version-config-error"
-    );
+    await screen.findByRole("alert", { name: "" });
+    expect(screen.getByLabelText("Starting Capital")).toHaveAttribute("aria-describedby", "starting-capital-error");
   });
 
   it("exposes validation errors with alert role", async () => {

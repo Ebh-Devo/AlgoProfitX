@@ -2,11 +2,12 @@ import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YA
 
 import type { BacktestAnalytics } from "../../api/types";
 import { EmptyState } from "../../components/PageState";
-import { displayDay, metric } from "./backtestFormat";
+import { formatCurrency } from "../../lib/format";
+import { displayDay } from "./backtestFormat";
 
 type Point = BacktestAnalytics["equity_curve"][number];
 
-const money = (v: number) => v.toLocaleString(undefined, { maximumFractionDigits: 4 });
+const money = (v: number) => formatCurrency(v);
 
 /** Plain-language description of the real series, used as the chart's accessible name and visible caption. */
 export function describeEquity(curve: Point[]): string | null {
@@ -45,7 +46,7 @@ export function EquityChart({ curve }: { curve: Point[] }) {
             <Tooltip
               contentStyle={{ background: "var(--surface)", border: "1px solid var(--border)", color: "var(--text)" }}
               labelFormatter={(_, items) => { const ts = items?.[0]?.payload?.timestamp; return typeof ts === "string" ? displayDay(ts) : ""; }}
-              formatter={(v) => [typeof v === "number" ? metric(String(v)) : String(v), "Equity"]}
+              formatter={(v) => [typeof v === "number" ? formatCurrency(v) : String(v), "Equity"]}
             />
             <Line type="monotone" dataKey="value" name="Equity" stroke="var(--color-accent)" strokeWidth={2} dot={false} isAnimationActive={false} />
           </LineChart>
