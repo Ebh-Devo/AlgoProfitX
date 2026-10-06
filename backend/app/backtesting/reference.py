@@ -99,6 +99,27 @@ class SyntheticMarketDataProvider:
         return descending + ascending
 
 
+def exit_periods(configuration: dict) -> tuple[int, int]:
+    """Validate configuration.exit: an EMA crossover below, fast < slow."""
+    exit_rule = configuration.get("exit")
+    if (
+        not isinstance(exit_rule, dict)
+        or exit_rule.get("type") != "ema_crossover"
+        or exit_rule.get("direction") != "below"
+    ):
+        raise BacktestExecutionError(
+            "Reference engine supports only exit.type=ema_crossover with direction=below"
+        )
+    try:
+        fast_period = int(exit_rule["fast_period"])
+        slow_period = int(exit_rule["slow_period"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise BacktestExecutionError("Exit EMA periods must be positive integers") from exc
+    if fast_period <= 0 or slow_period <= fast_period:
+        raise BacktestExecutionError("Exit EMA periods must satisfy 0 < fast < slow")
+    return fast_period, slow_period
+
+
 class EmaCrossoverReferenceEngine:
     """A one-long-trade EMA crossover reference, not a general strategy engine."""
 
@@ -122,6 +143,17 @@ class EmaCrossoverReferenceEngine:
         slow_ema = self._ema(closes, slow_period)
         entry_index = self._entry_index(fast_ema, slow_ema)
 
+        # Optional exit rule: the first downward EMA cross after entry. Entry-only
+        # configurations hold to the final candle, exactly as before.
+        exit_index = len(candles) - 1
+        if entry_index is not None and "exit" in configuration:
+            exit_fast, exit_slow = self._exit_periods(configuration)
+            exit_fast_ema = self._ema(closes, exit_fast)
+            exit_slow_ema = self._ema(closes, exit_slow)
+            crossed = self._exit_index(exit_fast_ema, exit_slow_ema, entry_index)
+            if crossed is not None:
+                exit_index = crossed
+
         quantity = Decimal("0")
         entry_price: Decimal | None = None
         if entry_index is not None:
@@ -134,7 +166,7 @@ class EmaCrossoverReferenceEngine:
                 "equity": self._decimal_string(
                     initial_capital
                     if entry_index is None or index < entry_index
-                    else quantity * candle.close
+                    else quantity * candles[min(index, exit_index)].close
                 ),
             }
             for index, candle in enumerate(candles)
@@ -143,7 +175,7 @@ class EmaCrossoverReferenceEngine:
         final_equity = (
             initial_capital
             if entry_index is None
-            else quantity * candles[-1].close
+            else quantity * candles[exit_index].close
         )
         trades: tuple[dict[str, str], ...] = ()
         if entry_index is not None and entry_price is not None:
@@ -151,10 +183,10 @@ class EmaCrossoverReferenceEngine:
                 {
                     "side": "long",
                     "entry_timestamp": candles[entry_index].timestamp.isoformat(),
-                    "exit_timestamp": candles[-1].timestamp.isoformat(),
+                    "exit_timestamp": candles[exit_index].timestamp.isoformat(),
                     "quantity": self._decimal_string(quantity),
                     "entry_price": self._decimal_string(entry_price),
-                    "exit_price": self._decimal_string(candles[-1].close),
+                    "exit_price": self._decimal_string(candles[exit_index].close),
                     "pnl": self._decimal_string(final_equity - initial_capital),
                 },
             )
@@ -200,6 +232,10 @@ class EmaCrossoverReferenceEngine:
         return fast_period, slow_period
 
     @staticmethod
+    def _exit_periods(configuration: dict) -> tuple[int, int]:
+        return exit_periods(configuration)
+
+    @staticmethod
     def _initial_capital(backtest_configuration: dict) -> Decimal:
         try:
             value = Decimal(str(backtest_configuration["initial_capital"]))
@@ -242,6 +278,28 @@ class EmaCrossoverReferenceEngine:
                 and current_slow is not None
                 and previous_fast <= previous_slow
                 and current_fast > current_slow
+            ):
+                return index
+        return None
+
+    @staticmethod
+    def _exit_index(
+        fast_ema: Sequence[Decimal | None],
+        slow_ema: Sequence[Decimal | None],
+        entry_index: int,
+    ) -> int | None:
+        for index in range(entry_index + 1, len(fast_ema)):
+            previous_fast = fast_ema[index - 1]
+            previous_slow = slow_ema[index - 1]
+            current_fast = fast_ema[index]
+            current_slow = slow_ema[index]
+            if (
+                previous_fast is not None
+                and previous_slow is not None
+                and current_fast is not None
+                and current_slow is not None
+                and previous_fast >= previous_slow
+                and current_fast < current_slow
             ):
                 return index
         return None
