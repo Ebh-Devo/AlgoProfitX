@@ -35,15 +35,15 @@ function renderApp() {
 beforeEach(() => { document.documentElement.removeAttribute("data-theme"); mockSystem(true); });
 
 describe("theme preference", () => {
-  it("defaults to dark when nothing is stored", () => {
+  it("defaults to light when nothing is stored", () => {
     renderApp();
-    expect(screen.getByTestId("probe")).toHaveTextContent("dark/dark");
-    expect(theme()).toBe("dark");
+    expect(screen.getByTestId("probe")).toHaveTextContent("light/light");
+    expect(theme()).toBe("light");
   });
 
-  it("falls back to dark for an invalid stored value", () => {
+  it("falls back to light for an invalid stored value", () => {
     window.localStorage.setItem(THEME_STORAGE_KEY, "neon");
-    expect(readStoredPreference()).toBe("dark");
+    expect(readStoredPreference()).toBe("light");
   });
 
   it("applies an explicit Light and Dark regardless of the OS", () => {
@@ -115,10 +115,10 @@ describe("account menu appearance", () => {
     render(<MemoryRouter><ThemeProvider><AccountMenu email="a@b.co" roles={[]} onLogout={vi.fn()} /></ThemeProvider></MemoryRouter>);
     fireEvent.click(screen.getByRole("button", { name: /account menu/i }));
     expect(screen.getAllByRole("menuitemradio").map(r => r.textContent?.replace("✓", "").trim())).toEqual(["System", "Light", "Dark"]);
-    expect(screen.getByRole("menuitemradio", { name: /dark/i })).toHaveAttribute("aria-checked", "true");
-    fireEvent.click(screen.getByRole("menuitemradio", { name: /light/i }));
-    expect(theme()).toBe("light");
     expect(screen.getByRole("menuitemradio", { name: /light/i })).toHaveAttribute("aria-checked", "true");
+    fireEvent.click(screen.getByRole("menuitemradio", { name: /dark/i }));
+    expect(theme()).toBe("dark");
+    expect(screen.getByRole("menuitemradio", { name: /dark/i })).toHaveAttribute("aria-checked", "true");
     expect(screen.getByRole("menu")).toBeInTheDocument();
   });
 });

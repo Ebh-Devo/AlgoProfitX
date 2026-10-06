@@ -1,14 +1,14 @@
 /**
  * Theme preference model. The user chooses a PREFERENCE ("system" | "light" | "dark");
  * the app applies the RESOLVED theme ("light" | "dark") as `data-theme` on <html>, where
- * tokens.css swaps the palette. Dark is the default. public/theme-init.js mirrors this
+ * tokens.css swaps the palette. Light is the default. public/theme-init.js mirrors this
  * logic before first paint — keep the two (and THEME_STORAGE_KEY) in sync.
  */
 export type ThemePreference = "system" | "light" | "dark";
 export type ResolvedTheme = "light" | "dark";
 
 export const THEME_STORAGE_KEY = "algoprofitx-theme";
-export const DEFAULT_THEME_PREFERENCE: ThemePreference = "dark";
+export const DEFAULT_THEME_PREFERENCE: ThemePreference = "light";
 export const THEME_PREFERENCES: readonly ThemePreference[] = ["system", "light", "dark"];
 export const DARK_QUERY = "(prefers-color-scheme: dark)";
 

@@ -5,7 +5,7 @@
  * brand colour never competes with P&L meaning.
  * Legacy aliases (--canvas, --s4, --r2 …) are kept so existing pages inherit the system.
  *
- * THEMING: the palette is defined twice — dark (default) in the first block and
+ * THEMING: the palette is defined twice — dark in the first block (also the no-JS fallback; the app default is Light via theme-init.js) and
  * light under :root[data-theme="light"]. `data-theme` on <html> is always the
  * RESOLVED theme ("dark" | "light"); the user's preference (system/light/dark)
  * lives in src/lib/theme.ts and public/theme-init.js. Components must only consume

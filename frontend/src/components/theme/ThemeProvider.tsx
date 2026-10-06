@@ -12,7 +12,7 @@ interface ThemeContextValue {
 }
 
 /** Inert default so components stay renderable in isolation (tests, stories); main.tsx always mounts the real provider. */
-const ThemeContext = createContext<ThemeContextValue>({ preference: DEFAULT_THEME_PREFERENCE, resolved: "dark", setPreference: () => undefined });
+const ThemeContext = createContext<ThemeContextValue>({ preference: DEFAULT_THEME_PREFERENCE, resolved: "light", setPreference: () => undefined });
 
 /** Holds the preference, applies the resolved theme to <html>, follows the OS in "system" mode and syncs across tabs. */
 export function ThemeProvider({ children }: { children: ReactNode }) {

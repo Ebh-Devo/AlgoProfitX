@@ -507,8 +507,8 @@ This does not require a Tailwind or CSS-in-JS migration — pure CSS custom prop
 
 ## Theming (System / Light / Dark)
 
-- Palette tokens live in `frontend/src/styles/tokens.css`: dark (default) on `:root, :root[data-theme="dark"]`, light on `:root[data-theme="light"]`. Components consume semantic tokens only (`--color-surface`, `--color-text-*`, `--color-input-*`, `--color-profit/loss`, …). Do not hard-code colours in components.
-- `data-theme` on `<html>` is always the *resolved* theme. The user *preference* (`system | light | dark`, default `dark`) is stored in `localStorage["algoprofitx-theme"]`.
+- Palette tokens live in `frontend/src/styles/tokens.css`: dark on `:root, :root[data-theme="dark"]`, light on `:root[data-theme="light"]`. Components consume semantic tokens only (`--color-surface`, `--color-text-*`, `--color-input-*`, `--color-profit/loss`, …). Do not hard-code colours in components.
+- `data-theme` on `<html>` is always the *resolved* theme. The user *preference* (`system | light | dark`, default `light`) is stored in `localStorage["algoprofitx-theme"]`.
 - `frontend/public/theme-init.js` (external, CSP-safe) applies the theme before first paint; `ThemeProvider` (`src/components/theme`) keeps it in sync, follows `prefers-color-scheme` in System mode and syncs across tabs.
 - Selector: Account menu → Appearance (workspace), compact cycle button + mobile drawer selector (public shell).
 - Profit/loss colours keep their meaning in both themes; never rely on colour alone (signs and labels stay in the UI).
