@@ -278,3 +278,51 @@ describe("DashboardPage", () => {
     }
   });
 });
+
+/* ═══════════════════════════════════════════════════════════════
+   Contextual guidance (PR #26) — derived from real fields only
+   ═══════════════════════════════════════════════════════════════ */
+import { buildAttention, pickNextStep } from "./DashboardPage";
+
+describe("dashboard guidance", () => {
+  const strat = (over: Record<string, unknown> = {}) => ({
+    id: "s1", name: "Alpha", slug: "alpha", status: "draft", current_version_id: null, is_public: false,
+    created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:00Z", published_at: null, deployed_at: null, ...over,
+  }) as never;
+  const run = (over: Record<string, unknown> = {}) => ({ id: "e1", strategy_name: "Alpha", status: "completed", ...over }) as never;
+
+  it("flags drafts without a Version and failed or in-progress executions", () => {
+    const items = buildAttention([strat(), strat({ id: "s2" })], [run({ status: "failed" }), run({ id: "e2", status: "running" })]);
+    expect(items.map(i => i.key)).toEqual(["failed-executions", "active-executions", "drafts-without-version"]);
+    expect(items[2].label).toMatch(/2 drafts have no Version/);
+  });
+
+  it("reports nothing when nothing needs attention", () => {
+    expect(buildAttention([strat({ status: "published", current_version_id: "v1" })], [run()])).toEqual([]);
+  });
+
+  it("suggests adding a Version for a draft without one, linking to that strategy", () => {
+    const step = pickNextStep(true, false, [strat()], [], []);
+    expect(step?.stage).toBe("version");
+    expect(step?.action.to).toBe("/creator/strategies/s1");
+  });
+
+  it("does not duplicate the empty-state call to action for a creator with no strategies", () => {
+    expect(pickNextStep(true, false, [], [], [])).toBeNull();
+  });
+
+  it("points an investor with no allocations at the marketplace, and prioritises failures", () => {
+    expect(pickNextStep(false, true, [], [], [])?.action.to).toBe("/marketplace");
+    expect(pickNextStep(false, true, [], [{} as never], [run({ status: "failed" })])?.action.to).toBe("/investor/execution-intents/e1");
+  });
+
+  it("renders the next step and attention list for a creator with an unversioned draft", async () => {
+    auth.value = { user: { email: "c@example.com", roles: ["CREATOR"] }, isAuthenticated: true, isLoading: false, logout: vi.fn() };
+    listStrategies.mockResolvedValue([strat()]);
+    renderWithProviders(<DashboardPage />);
+    expect(await screen.findByRole("region", { name: "Suggested next step" })).toHaveTextContent("Continue building");
+    expect(screen.getByRole("heading", { name: /Needs attention/ })).toBeInTheDocument();
+    expect(screen.getByRole("list", { name: "Where you are in the workflow" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Refresh data" })).toBeInTheDocument();
+  });
+});

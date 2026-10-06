@@ -86,3 +86,39 @@ describe("Creator strategy pages", () => {
     const alert = await screen.findByRole("alert"); expect(alert).toHaveTextContent("Needs a Version"); expect(alert.parentElement?.closest("[role=alert]")).toBeNull();
   });
 });
+
+describe("Strategy list interaction (PR #26)", () => {
+  it("restores filters from the URL and offers an honest next action per row", async () => {
+    api.list.mockResolvedValue([
+      { ...strategy, id: "a", name: "Zeta Trend", slug: "zeta-trend", status: "draft" },
+      { ...strategy, id: "b", name: "Alpha Revert", slug: "alpha-revert", status: "published", is_public: true, current_version_id: "v1" },
+    ]);
+    view(<StrategyListPage />, "/creator/strategies?status=published");
+    expect(await screen.findByText("Alpha Revert")).toBeInTheDocument();
+    expect(screen.queryByText("Zeta Trend")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Published/ })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("link", { name: "View in marketplace: Alpha Revert" })).toHaveAttribute("href", "/marketplace/alpha-revert");
+  });
+
+  it("offers a clear-search control that resets results", async () => {
+    api.list.mockResolvedValue([strategy]);
+    view(<StrategyListPage />, "/creator/strategies?q=zzz");
+    expect(await screen.findByText("No strategies match")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Clear search" }));
+    expect(await screen.findByText("India Trend")).toBeInTheDocument();
+  });
+
+  it("suggests the next step on a draft detail page without duplicating the Version call to action", async () => {
+    api.get.mockResolvedValue(strategy);
+    view(<StrategyDetailPage />, "/creator/strategies/s1");
+    expect(await screen.findByRole("region", { name: "Suggested next step" })).toHaveTextContent("Next: create a Version");
+    expect(screen.getAllByRole("button", { name: "Create Version" })).toHaveLength(1);
+  });
+
+  it("points a draft that has Versions at the latest one", async () => {
+    api.get.mockResolvedValue({ ...strategy, current_version_id: "v1" });
+    api.listVersions.mockResolvedValue([version]);
+    view(<StrategyDetailPage />, "/creator/strategies/s1");
+    expect(await screen.findByRole("link", { name: "Open latest Version" })).toHaveAttribute("href", "/creator/strategies/s1/versions/v1");
+  });
+});

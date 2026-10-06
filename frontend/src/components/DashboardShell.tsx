@@ -2,7 +2,7 @@ import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-do
 import {
   BarChart3, BookOpen, ChevronRight, FlaskConical, LayoutDashboard, Lock, LogOut, Menu, Store, X, Zap,
 } from "lucide-react";
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 
 import { useAuth } from "../auth/auth-context";
 import { CREATOR_ROLE, hasRole, INVESTOR_ROLE } from "../auth/roles";
@@ -47,6 +47,12 @@ export function DashboardShell() {
   const email = user?.email ?? "Account";
   const roles = [creator && "Creator", investor && "Investor"].filter(Boolean) as string[];
   const crumbs = buildCrumbs(location.pathname);
+  const here = crumbs[crumbs.length - 1]?.label ?? "Dashboard";
+
+  /* Keep the tab title and screen-reader context in step with client-side navigation. */
+  const generic = ["Details", "Version", "Backtest", "Edit"].includes(here);
+  const title = [here, ...(generic && crumbs.length > 2 ? [crumbs[crumbs.length - 2].label] : []), "AlgoProfitX"].join(" · ");
+  useEffect(() => { document.title = title; }, [title]);
 
   const groups: NavGroup[] = [
     { label: "Overview", items: [{ to: "/app", label: "Dashboard", icon: <LayoutDashboard size={17} />, end: true }] },
@@ -94,6 +100,13 @@ export function DashboardShell() {
         <div className="ws-sidebar-head"><Brand to="/app" /></div>
         <nav className="ws-nav" aria-label="Application navigation">{sidebar}</nav>
         <div className="ws-sidebar-foot">
+          <div className="ws-identity" title={email}>
+            <span className="avatar" aria-hidden="true">{(email[0] ?? "A").toUpperCase()}</span>
+            <span className="ws-identity-text">
+              <strong>{email}</strong>
+              <small>{roles.length ? roles.join(" · ") : "Member"}</small>
+            </span>
+          </div>
           <span className="env-chip" title="Backtests and paper execution are simulated. No broker orders are placed.">
             <span className="env-dot" aria-hidden="true" /> Simulated · Paper
           </span>
@@ -133,7 +146,10 @@ export function DashboardShell() {
         </header>
 
         <main className="ws-main" id="main-content" tabIndex={-1}>
-          <div className="ws-content"><Outlet /></div>
+          <div className="ws-content">
+            <span className="visually-hidden" role="status" aria-live="polite">{`${here} page`}</span>
+            <div className="route-view" key={location.pathname}><Outlet /></div>
+          </div>
         </main>
       </div>
 
@@ -150,6 +166,13 @@ export function DashboardShell() {
         <div className="ws-sidebar-head"><Brand to="/app" /></div>
         <div className="ws-nav">{sidebar}</div>
         <div className="ws-sidebar-foot">
+          <div className="ws-identity">
+            <span className="avatar" aria-hidden="true">{(email[0] ?? "A").toUpperCase()}</span>
+            <span className="ws-identity-text">
+              <strong>{email}</strong>
+              <small>{roles.length ? roles.join(" · ") : "Member"}</small>
+            </span>
+          </div>
           <button type="button" className="btn btn-secondary ws-logout" onClick={endSession}>
             <LogOut size={15} aria-hidden="true" /> Log out
           </button>
