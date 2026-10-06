@@ -278,6 +278,7 @@ async def test_nonexistent_strategy_returns_not_found(client):
 @pytest.mark.parametrize(
     "payload",
     [
+        {"name": "ab"},
         {"name": "ab", "slug": "short-name"},
         {"name": "Valid Name", "slug": "Not-A-Valid-Slug"},
         {"slug": "missing-name"},
@@ -305,3 +306,96 @@ async def test_update_rejects_invalid_schema_payload(client):
     )
 
     assert response.status_code == 422
+
+
+async def create_named(client, headers, name):
+    response = await client.post(
+        "/api/v1/strategies", headers=headers, json={"name": name}
+    )
+    assert response.status_code == 201
+    return response.json()
+
+
+@pytest.mark.asyncio
+async def test_create_without_slug_generates_it_from_name(client):
+    headers = await register_and_login(client)
+    suffix = uuid.uuid4().hex[:8]
+
+    created = await create_named(client, headers, f"India Trend V2 {suffix}")
+
+    assert created["slug"] == f"india-trend-v2-{suffix}"
+    assert created["name"] == f"India Trend V2 {suffix}"
+    assert created["status"] == "draft"
+
+    async with AsyncSessionLocal() as session:
+        persisted = await session.scalar(
+            select(Strategy).where(Strategy.id == uuid.UUID(created["id"]))
+        )
+    assert persisted is not None
+    assert persisted.slug == created["slug"]
+
+
+@pytest.mark.parametrize(
+    ("name", "expected"),
+    [
+        ("Nifty Momentum Strategy", "nifty-momentum-strategy"),
+        ("  Bank   Nifty -- Scalper!!  ", "bank-nifty-scalper"),
+        ("UPPER_case & Symbols (v1.2)", "upper-case-symbols-v1-2"),
+        ("--Edge--", "edge"),
+        ("Ab!", "ab-strategy"),
+        ("!!!", "strategy"),
+    ],
+)
+def test_slugify_strategy_name_normalizes(name, expected):
+    from app.services.strategy import slugify_strategy_name
+
+    assert slugify_strategy_name(name) == expected
+
+
+@pytest.mark.asyncio
+async def test_generated_slug_collisions_get_deterministic_suffixes(client):
+    first_headers = await register_and_login(client)
+    second_headers = await register_and_login(client)
+    name = f"Collision {uuid.uuid4().hex[:8]}"
+
+    first = await create_named(client, first_headers, name)
+    second = await create_named(client, second_headers, name)
+    third = await create_named(client, first_headers, name.upper())
+
+    assert second["slug"] == f"{first['slug']}-2"
+    assert third["slug"] == f"{first['slug']}-3"
+
+
+@pytest.mark.asyncio
+async def test_explicit_slug_is_still_honoured(client):
+    headers = await register_and_login(client)
+    slug = f"explicit-{uuid.uuid4().hex[:8]}"
+
+    created = await create_strategy(client, headers, slug)
+
+    assert created["slug"] == slug
+
+
+@pytest.mark.asyncio
+async def test_rename_does_not_change_existing_slug(client):
+    headers = await register_and_login(client)
+    created = await create_named(
+        client, headers, f"India Trend V2 {uuid.uuid4().hex[:8]}"
+    )
+
+    response = await client.patch(
+        f"/api/v1/strategies/{created['id']}",
+        headers=headers,
+        json={"name": "India Trend V2 - Conservative"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["name"] == "India Trend V2 - Conservative"
+    assert response.json()["slug"] == created["slug"]
+
+    async with AsyncSessionLocal() as session:
+        persisted = await session.scalar(
+            select(Strategy).where(Strategy.id == uuid.UUID(created["id"]))
+        )
+    assert persisted is not None
+    assert persisted.slug == created["slug"]

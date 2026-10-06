@@ -873,7 +873,7 @@ export interface components {
             /** Name */
             name: string;
             /** Slug */
-            slug: string;
+            slug?: string | null;
             /** Description */
             description?: string | null;
         };
