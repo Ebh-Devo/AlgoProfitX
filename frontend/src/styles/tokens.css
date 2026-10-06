@@ -4,11 +4,18 @@
  * Green/red are reserved for market state (profit/loss, success/danger) so the
  * brand colour never competes with P&L meaning.
  * Legacy aliases (--canvas, --s4, --r2 …) are kept so existing pages inherit the system.
+ *
+ * THEMING: the palette is defined twice — dark (default) in the first block and
+ * light under :root[data-theme="light"]. `data-theme` on <html> is always the
+ * RESOLVED theme ("dark" | "light"); the user's preference (system/light/dark)
+ * lives in src/lib/theme.ts and public/theme-init.js. Components must only consume
+ * the semantic tokens below — never hard-code a colour.
  */
 @import "@fontsource-variable/inter";
 @import "@fontsource-variable/jetbrains-mono";
 
-:root {
+:root,
+:root[data-theme="dark"] {
   color-scheme: dark;
 
   /* ── Surfaces (elevation = lightness, not glow) ───────────── */
@@ -64,6 +71,22 @@
   --color-loss-subtle:    #3d1d21;
   --color-loss-text:      #ffd0d2;
   --color-neutral-value:  #8c95a6;
+
+  /* ── Form, code, overlay ──────────────────────────────────── */
+  --color-input-bg:           #080b10;
+  --color-input-border:       #343d50;
+  --color-input-border-hover: #46526b;
+  --color-code-bg:            #07090d;
+  --color-table-head:         #0e1218;
+  --color-row-hover:          #161b25;
+  --color-scrim:              rgba(4, 5, 8, 0.7);
+  --color-inset-glow:         rgba(60, 164, 123, 0.12);
+  --color-hairline:           rgba(57, 93, 114, 0.35);
+
+  /* ── Landing expressive accents ───────────────────────────── */
+  --l-a: #4f6ef7;  /* AlgoProfitX blue */
+  --l-b: #22bfd0;  /* cyan */
+  --l-c: #7a6cf7;  /* indigo */
 
   /* ── Chart palette (categorical, colour-blind-aware order) ── */
   --chart-1: #6582fa;
@@ -172,4 +195,85 @@
   --z-overlay: 20;
   --z-modal: 30;
   --z-toast: 40;
+}
+
+/* ═══ Light theme — same identity, designed for paper-like canvases ═══
+   Canvas is a cool neutral grey (not white); cards lift to near-white; accent is a
+   deeper signal blue so white-on-accent and link text keep >= 4.5:1. */
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --color-canvas:         #eef1f5;
+  --color-canvas-subtle:  #e7ebf1;
+  --color-surface:        #f9fafc;
+  --color-surface-raised: #ffffff;
+  --color-overlay:        #ffffff;
+  --color-hover:          #e6eaf1;
+
+  --color-border:         #d8dde6;
+  --color-border-strong:  #b6bfcd;
+
+  --color-text-primary:   #0e1522;
+  --color-text-secondary: #384357;
+  --color-text-muted:     #545f74;
+  --color-text-faint:     #5d687d;
+
+  --color-accent:         #3652dc;
+  --color-accent-hover:   #2c43bf;
+  --color-accent-subtle:  #e1e7ff;
+  --color-accent-text:    #1f3099;
+  --color-on-accent:      #ffffff;
+
+  --color-link:           #2a44c2;
+  --color-focus:          #2f4ad0;
+
+  --color-success:        #1d7a56;
+  --color-success-subtle: #dff3e9;
+  --color-success-text:   #135138;
+
+  --color-warning:        #946200;
+  --color-warning-subtle: #faedcd;
+  --color-warning-text:   #654200;
+
+  --color-danger:         #bf3239;
+  --color-danger-subtle:  #fbe3e4;
+  --color-danger-text:    #8c1d24;
+
+  --color-info:           #1d68a3;
+  --color-info-subtle:    #dfedf9;
+  --color-info-text:      #154a77;
+
+  --color-profit:         #0e7a47;
+  --color-profit-subtle:  #dcf2e6;
+  --color-profit-text:    #0c5a37;
+  --color-loss:           #c0282f;
+  --color-loss-subtle:    #fbe2e3;
+  --color-loss-text:      #8c1d24;
+  --color-neutral-value:  #545f74;
+
+  --color-input-bg:           #ffffff;
+  --color-input-border:       #8792a6;
+  --color-input-border-hover: #5d687d;
+  --color-code-bg:            #f1f3f8;
+  --color-table-head:         #e9edf3;
+  --color-row-hover:          #eaeff7;
+  --color-scrim:              rgba(15, 21, 34, 0.45);
+  --color-inset-glow:         rgba(29, 122, 86, 0.1);
+  --color-hairline:           rgba(84, 95, 116, 0.25);
+
+  --l-a: #3652dc;
+  --l-b: #0f8fa3;
+  --l-c: #5b4fd6;
+
+  --chart-1: #3652dc;
+  --chart-2: #0e7a47;
+  --chart-3: #a8700f;
+  --chart-4: #8a4fd6;
+  --chart-5: #168aa8;
+  --chart-grid: #dde2ea;
+  --chart-axis: #545f74;
+
+  --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.07);
+  --shadow-md: 0 6px 20px rgba(16, 24, 40, 0.1);
+  --shadow-lg: 0 20px 56px rgba(16, 24, 40, 0.16);
 }
