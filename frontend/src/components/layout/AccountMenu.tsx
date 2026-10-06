@@ -2,6 +2,10 @@ import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { ChevronDown, LogOut, Settings } from "lucide-react";
 
+import { THEME_PREFERENCES } from "../../lib/theme";
+import { useTheme } from "../theme/ThemeProvider";
+import { THEME_OPTIONS } from "../theme/ThemeSelector";
+
 interface AccountMenuProps {
   email: string;
   roles: string[];
@@ -13,11 +17,12 @@ export function AccountMenu({ email, roles, onLogout }: AccountMenuProps) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
+  const { preference, setPreference } = useTheme();
   const initial = (email[0] ?? "A").toUpperCase();
 
   useEffect(() => {
     if (!open) return;
-    const items = () => Array.from(wrapRef.current?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? []);
+    const items = () => Array.from(wrapRef.current?.querySelectorAll<HTMLElement>('[role="menuitem"], [role="menuitemradio"]') ?? []);
     items()[0]?.focus();
     const onDown = (e: MouseEvent) => { if (!wrapRef.current?.contains(e.target as Node)) setOpen(false); };
     const onKey = (e: KeyboardEvent) => {
@@ -59,7 +64,19 @@ export function AccountMenu({ email, roles, onLogout }: AccountMenuProps) {
           <Link role="menuitem" className="menu-item" to="/account" onClick={() => setOpen(false)}>
             <Settings size={15} aria-hidden="true" /> Account settings
           </Link>
-          <button role="menuitem" type="button" className="menu-item" onClick={() => { setOpen(false); onLogout(); }}>
+          <div className="menu-group" role="group" aria-labelledby="appearance-label">
+            <span id="appearance-label" className="menu-group-label">Appearance</span>
+            {THEME_PREFERENCES.map(value => {
+              const { label, Icon } = THEME_OPTIONS[value];
+              return (
+                <button key={value} role="menuitemradio" aria-checked={preference === value} type="button" className="menu-item menu-item-radio" onClick={() => setPreference(value)}>
+                  <Icon size={15} aria-hidden="true" /> {label}
+                  <span className="menu-check" aria-hidden="true">{preference === value ? "✓" : ""}</span>
+                </button>
+              );
+            })}
+          </div>
+          <button role="menuitem" type="button" className="menu-item menu-item-logout" onClick={() => { setOpen(false); onLogout(); }}>
             <LogOut size={15} aria-hidden="true" /> Log out
           </button>
         </div>

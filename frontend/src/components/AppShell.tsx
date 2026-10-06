@@ -6,6 +6,7 @@ import { useAuth } from "../auth/auth-context";
 import { CREATOR_ROLE, hasRole, INVESTOR_ROLE } from "../auth/roles";
 import { Brand } from "./layout/Brand";
 import { PUBLIC_NAV, PublicNav } from "./layout/PublicNav";
+import { ThemeCycleButton, ThemeSelector } from "./theme/ThemeSelector";
 import { SiteFooter } from "./layout/SiteFooter";
 import { useDrawer } from "./layout/useDrawer";
 
@@ -66,6 +67,7 @@ export function AppShell() {
             : <PublicNav />}
 
           <div className="header-actions">
+            <span className="theme-cycle-wrap"><ThemeCycleButton /></span>
             {isAuthenticated ? (
               <>
                 <div className="role-cluster" aria-label="Active roles">
@@ -113,6 +115,7 @@ export function AppShell() {
         {...(open ? { role: "dialog", "aria-modal": "true" } : {})}
       >
         <div className="site-drawer-links">
+          <div className="site-drawer-theme"><span className="menu-group-label">Appearance</span><ThemeSelector /></div>
           {isAuthenticated ? links : (
             <>
               {PUBLIC_NAV.map(entry => entry.children ? (
