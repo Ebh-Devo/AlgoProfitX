@@ -81,7 +81,7 @@ describe("Configure", () => {
     const context = screen.getByRole("group", { name: /what is being tested/i });
     expect(within(context).getByText("EMA Trend Follower")).toBeInTheDocument();
     expect(within(context).getByText(/v2/)).toBeInTheDocument();
-    expect(within(context).getByText("REF")).toBeInTheDocument();
+    expect(within(context).getByText("REF · NSE")).toBeInTheDocument();
     expect(within(context).getByText("1d")).toBeInTheDocument();
     expect(screen.getByText("Reference backtest engine")).toBeInTheDocument();
     expect(screen.getByText("Synthetic reference data")).toBeInTheDocument();

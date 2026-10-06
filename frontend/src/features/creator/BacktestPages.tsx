@@ -122,7 +122,7 @@ export function VersionBacktests({ strategyId, versionId, strategyName, version 
             versionNumber={version?.version_number}
             versionLabel={version ? `v${version.version_number} · immutable` : undefined}
             fields={[
-              { label: "Instrument", value: instrument ? <><strong>{instrument.exchange_symbol}</strong> <span className="muted">{instrument.exchange.code}</span></> : "Legacy / unresolved" },
+              { label: "Instrument", value: instrument ? <strong>{`${instrument.exchange_symbol} · ${instrument.exchange.code}`}</strong> : "Legacy / unresolved" },
               { label: "Timeframe", value: timeframe ?? (version ? "1d (engine default)" : NOT_AVAILABLE) },
               { label: "Period", value: period ?? (version ? "Set by the data provider" : NOT_AVAILABLE) },
               { label: "Initial capital", value: capital ? metric(capital) : NOT_AVAILABLE },
