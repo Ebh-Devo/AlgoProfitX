@@ -19,6 +19,7 @@ import "./styles/premium.css";
 import "./styles/dashboard.css";
 import "./styles/workspace.css";
 import "./styles/interaction.css";
+import "./styles/landing-motion.css";
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } } });
 

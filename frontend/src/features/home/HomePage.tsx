@@ -1,77 +1,96 @@
-import { Link } from "react-router-dom";
-
-import { Reveal } from "../../components/ui/Reveal";
-import { WorkflowExplorer } from "./WorkflowExplorer";
+import { useEffect, type ReactNode } from "react";
+import { Link, useLocation } from "react-router-dom";
 import {
-  ArrowRight, BarChart3, Check, FlaskConical, GitBranch, LineChart, Minus, ScrollText, Store, Wallet,
+  ArrowRight, BarChart3, Check, FlaskConical, GitBranch, LineChart, Minus, Store, Wallet,
 } from "lucide-react";
 
+import { Reveal } from "../../components/ui/Reveal";
+import { useReveal } from "../../lib/useReveal";
+import { HeroVisual } from "./HeroVisual";
+import { ProductPreview } from "./ProductPreview";
+import { WorkflowExplorer } from "./WorkflowExplorer";
+
 const CAPABILITIES = [
-  { icon: <GitBranch size={18} />, title: "Versioned strategies", text: "Every change produces a new immutable Version, so a result always points to the exact configuration that produced it." },
-  { icon: <FlaskConical size={18} />, title: "Reference backtesting", text: "Deterministic historical simulations with provenance, so a run can be understood and repeated." },
-  { icon: <LineChart size={18} />, title: "Analytics that explain", text: "Total return, max drawdown, win rate, profit factor, trade list and equity curve for every completed run." },
-  { icon: <Store size={18} />, title: "Marketplace discovery", text: "Browse public deployed strategies without exposing a creator’s private configuration." },
-  { icon: <Wallet size={18} />, title: "Version-pinned allocations", text: "An allocation references one Version, so you always know what it is tied to." },
-  { icon: <BarChart3 size={18} />, title: "Instrument master", text: "NSE/BSE instrument identity, INR quote currency and session-aware design underpin every strategy." },
+  { id: "cap-versioned", to: "/#stage-version", icon: <GitBranch size={18} />, title: "Versioned strategies", text: "Every change produces a new immutable Version, so a result always points to the exact configuration that produced it." },
+  { id: "cap-backtesting", to: "/#stage-backtest", icon: <FlaskConical size={18} />, title: "Reference backtesting", text: "Deterministic historical simulations with provenance, so a run can be understood and repeated." },
+  { id: "cap-analytics", to: "/#stage-analyze", icon: <LineChart size={18} />, title: "Analytics that explain", text: "Total return, max drawdown, win rate, profit factor, trade list and equity curve for every completed run." },
+  { id: "cap-marketplace", to: "/marketplace", icon: <Store size={18} />, title: "Marketplace discovery", text: "Browse public deployed strategies without exposing a creator’s private configuration." },
+  { id: "cap-allocations", to: "/#stage-allocate", icon: <Wallet size={18} />, title: "Version-pinned allocations", text: "An allocation references one Version, so you always know what it is tied to." },
+  { id: "cap-instruments", to: "/instruments", icon: <BarChart3 size={18} />, title: "Instrument master", text: "NSE/BSE instrument identity, INR quote currency and session-aware design underpin every strategy." },
 ];
 
-const METRICS = ["Total return", "Max drawdown", "Win rate", "Profit factor", "Trades"];
+const FAQ = [
+  { q: "Is this live trading?", a: "No. Backtests are simulated historical runs and paper execution is simulated. No orders are placed with a broker and no funded capital is used." },
+  { q: "Where do backtest results come from?", a: "From reference or synthetic datasets that are identified wherever they appear. Results are not live performance." },
+  { q: "Who can create strategies?", a: "Create an account and enroll as a Creator. Investors can browse public deployed strategies and pin allocations to a specific Version." },
+  { q: "Is anything here investment advice?", a: "No. AlgoProfitX is research and simulation infrastructure. Nothing on the platform is investment advice." },
+];
+
+/** Section heading with an accent line that draws in as it enters the viewport. */
+function Head({ id, eyebrow, children }: { id: string; eyebrow: string; children: ReactNode }) {
+  const r = useReveal<HTMLElement>();
+  return (
+    <header ref={r.ref} className={`l-head ${r.className}`}>
+      <p className="eyebrow">{eyebrow}</p>
+      <h2 id={id}>{children}</h2>
+      <span className="accent-line" aria-hidden="true" />
+    </header>
+  );
+}
+
+/** Scrolls to in-page anchors after client-side navigation (e.g. from the header menu). */
+function useAnchorScroll() {
+  const { hash, key } = useLocation();
+  useEffect(() => {
+    if (!hash) return;
+    const raw = hash.slice(1);
+    const el = document.getElementById(raw.startsWith("stage-") ? "how-it-works" : raw);
+    if (!el) return;
+    const calm = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    el.scrollIntoView?.({ behavior: calm ? "auto" : "smooth", block: "start" });
+  }, [hash, key]);
+}
 
 export function HomePage() {
+  useAnchorScroll();
+
   return (
     <div className="landing">
       {/* ── Hero ─────────────────────────────────────────────── */}
-      <section className="l-hero l-wrap" aria-labelledby="hero-title">
-        <div className="l-hero-copy">
-          <p className="eyebrow">Systematic strategy research · Indian markets</p>
-          <h1 id="hero-title">Turn a trading idea into a strategy you can test.</h1>
-          <p className="lead">
-            AlgoProfitX is a workspace for building versioned strategies, running historical simulations,
-            publishing to a discovery marketplace and exploring allocation through paper execution.
-          </p>
-          <div className="l-actions">
-            <Link className="btn btn-lg" to="/register">Start building <ArrowRight size={16} aria-hidden="true" /></Link>
-            <Link className="btn btn-lg btn-secondary" to="/marketplace">Explore marketplace</Link>
-          </div>
-          <ul className="l-proof" aria-label="Platform properties">
-            <li><Check size={14} aria-hidden="true" /> NSE/BSE instrument identity</li>
-            <li><Check size={14} aria-hidden="true" /> INR-native</li>
-            <li><Check size={14} aria-hidden="true" /> Version-pinned</li>
-            <li><Check size={14} aria-hidden="true" /> Clearly simulated</li>
-          </ul>
+      <div className="l-hero-stage">
+        <div className="l-ambient" aria-hidden="true">
+          <span className="l-grid-field" />
+          <span className="l-glow l-glow-a" />
+          <span className="l-glow l-glow-b" />
+          {[0, 1, 2, 3, 4].map(i => <span key={i} className="l-particle" style={{ ["--i" as string]: i }} />)}
         </div>
 
-        <figure className="l-preview" aria-label="Layout preview of a backtest report. Contains no real data.">
-          <div className="l-preview-bar">
-            <span className="l-preview-title"><ScrollText size={14} aria-hidden="true" /> Backtest report</span>
-            <span className="badge badge-muted">Layout preview · no data</span>
+        <section className="l-hero l-wrap" aria-labelledby="hero-title">
+          <div className="l-hero-copy">
+            <p className="eyebrow">Systematic strategy research · Indian markets</p>
+            <h1 id="hero-title">Turn a trading idea into a strategy you can <span className="l-grad">test</span>.</h1>
+            <p className="lead">
+              AlgoProfitX is a workspace for building versioned strategies, running historical simulations,
+              publishing to a discovery marketplace and exploring allocation through paper execution.
+            </p>
+            <div className="l-actions">
+              <Link className="btn btn-lg btn-cta" to="/register">Start building <ArrowRight size={16} aria-hidden="true" /></Link>
+              <Link className="btn btn-lg btn-secondary" to="/marketplace">Explore marketplace</Link>
+            </div>
+            <ul className="l-proof" aria-label="Platform properties">
+              <li><Check size={14} aria-hidden="true" /> NSE/BSE instrument identity</li>
+              <li><Check size={14} aria-hidden="true" /> INR-native</li>
+              <li><Check size={14} aria-hidden="true" /> Version-pinned</li>
+              <li><Check size={14} aria-hidden="true" /> Clearly simulated</li>
+            </ul>
           </div>
-          <dl className="l-preview-metrics">
-            {METRICS.map(m => (
-              <div key={m}>
-                <dt>{m}</dt>
-                <dd><Minus size={14} aria-hidden="true" /><span className="visually-hidden">No data</span></dd>
-              </div>
-            ))}
-          </dl>
-          <div className="l-preview-chart" aria-hidden="true">
-            <svg viewBox="0 0 600 180" preserveAspectRatio="none">
-              {[36, 72, 108, 144].map(y => <line key={y} x1="0" x2="600" y1={y} y2={y} className="grid" />)}
-              <path className="curve" d="M0 140 C60 132 90 120 140 126 S220 96 280 104 S380 70 440 78 S540 44 600 38" />
-            </svg>
-            <span>Equity curve</span>
-          </div>
-          <div className="l-preview-rows" aria-hidden="true">
-            {[0, 1, 2].map(i => (
-              <div key={i}><span className="skeleton" /><span className="skeleton" /><span className="skeleton" /></div>
-            ))}
-          </div>
-        </figure>
-      </section>
+          <HeroVisual />
+        </section>
+      </div>
 
       {/* ── Positioning ──────────────────────────────────────── */}
-      <section className="l-band" aria-labelledby="why-title">
-        <div className="l-wrap l-why">
+      <section className="l-band" id="about" aria-labelledby="why-title">
+        <Reveal stagger className="l-wrap l-why">
           <h2 id="why-title">Rules you can write down are rules you can test.</h2>
           <p>
             Systematic trading replaces in-the-moment judgement with explicit rules. The value is in being
@@ -79,17 +98,13 @@ export function HomePage() {
             configuration produced a result — before capital is ever involved. AlgoProfitX is built around that
             discipline.
           </p>
-        </div>
+        </Reveal>
       </section>
 
       {/* ── Audience ─────────────────────────────────────────── */}
       <section className="l-section l-wrap" aria-labelledby="audience-title">
-        <header className="l-head">
-          <p className="eyebrow">Who it is for</p>
-          <h2 id="audience-title">Two roles, one auditable workflow.</h2>
-        </header>
-        <Reveal>
-        <div className="l-audience">
+        <Head id="audience-title" eyebrow="Who it is for">Two roles, one auditable workflow.</Head>
+        <Reveal stagger className="l-audience">
           <article className="card">
             <h3>Creators</h3>
             <p>Model strategy ideas, bind them to Instruments, create immutable Versions and move them deliberately through draft, published, deployed and archived states.</p>
@@ -110,48 +125,46 @@ export function HomePage() {
             </ul>
             <Link className="l-link" to="/marketplace">Browse the marketplace <ArrowRight size={14} aria-hidden="true" /></Link>
           </article>
-        </div>
         </Reveal>
       </section>
 
       {/* ── Capabilities ─────────────────────────────────────── */}
-      <section className="l-section l-wrap" aria-labelledby="cap-title">
-        <header className="l-head">
-          <p className="eyebrow">Platform</p>
-          <h2 id="cap-title">What you can do today.</h2>
-        </header>
-        <Reveal>
-        <ul className="l-grid" role="list">
-          {CAPABILITIES.map(c => (
-            <li key={c.title} className="l-cap">
-              <span className="l-cap-icon" aria-hidden="true">{c.icon}</span>
-              <h3>{c.title}</h3>
-              <p>{c.text}</p>
-            </li>
-          ))}
-        </ul>
+      <section className="l-section l-wrap" id="platform" aria-labelledby="cap-title">
+        <Head id="cap-title" eyebrow="Platform">What you can do today.</Head>
+        <Reveal stagger className="l-grid-wrap">
+          <ul className="l-grid" role="list">
+            {CAPABILITIES.map(c => (
+              <li key={c.title} id={c.id} className="l-cap-item">
+                <Link to={c.to} className="l-cap">
+                  <span className="l-cap-icon" aria-hidden="true">{c.icon}</span>
+                  <h3>{c.title}</h3>
+                  <p>{c.text}</p>
+                  <span className="l-cap-more" aria-hidden="true"><ArrowRight size={15} /></span>
+                </Link>
+              </li>
+            ))}
+          </ul>
         </Reveal>
       </section>
 
       {/* ── Workflow ─────────────────────────────────────────── */}
-      <section className="l-band" aria-labelledby="flow-title">
+      <section className="l-band l-band--glow" id="how-it-works" aria-labelledby="flow-title">
         <div className="l-wrap l-section">
-          <header className="l-head">
-            <p className="eyebrow">Workflow</p>
-            <h2 id="flow-title">From hypothesis to paper execution.</h2>
-          </header>
+          <Head id="flow-title" eyebrow="Workflow">From hypothesis to paper execution.</Head>
           <WorkflowExplorer />
         </div>
       </section>
 
+      {/* ── Product preview ──────────────────────────────────── */}
+      <section className="l-section l-wrap" id="preview" aria-labelledby="preview-title">
+        <Head id="preview-title" eyebrow="Inside the workspace">One place to see where a strategy stands.</Head>
+        <ProductPreview />
+      </section>
+
       {/* ── Trust & boundaries ───────────────────────────────── */}
       <section className="l-section l-wrap" aria-labelledby="trust-title">
-        <header className="l-head">
-          <p className="eyebrow">Transparency</p>
-          <h2 id="trust-title">Research infrastructure, clearly labelled.</h2>
-        </header>
-        <Reveal>
-        <div className="l-trust">
+        <Head id="trust-title" eyebrow="Transparency">Research infrastructure, clearly labelled.</Head>
+        <Reveal stagger className="l-trust">
           <div className="card">
             <h3>How results are presented</h3>
             <ul className="l-ticks">
@@ -168,22 +181,36 @@ export function HomePage() {
               <li><Minus size={14} aria-hidden="true" /> Nothing on the platform is investment advice.</li>
             </ul>
           </div>
-        </div>
+        </Reveal>
+      </section>
+
+      {/* ── FAQ ──────────────────────────────────────────────── */}
+      <section className="l-section l-wrap l-faq-section" id="faq" aria-labelledby="faq-title">
+        <Head id="faq-title" eyebrow="FAQ">Straight answers.</Head>
+        <Reveal stagger className="l-faq">
+          {FAQ.map(f => (
+            <details key={f.q}>
+              <summary>{f.q}</summary>
+              <p>{f.a}</p>
+            </details>
+          ))}
         </Reveal>
       </section>
 
       {/* ── CTA ──────────────────────────────────────────────── */}
-      <section className="l-wrap" aria-labelledby="cta-title">
-        <div className="l-cta">
-          <div>
-            <h2 id="cta-title">Build the strategy. Keep the evidence.</h2>
-            <p>Create an account to start your first strategy, or explore the instrument master first.</p>
+      <section className="l-wrap" id="get-started" aria-labelledby="cta-title">
+        <Reveal>
+          <div className="l-cta gb">
+            <div>
+              <h2 id="cta-title">Build the strategy. Keep the evidence.</h2>
+              <p>Create an account to start your first strategy, or explore the instrument master first.</p>
+            </div>
+            <div className="l-actions">
+              <Link className="btn btn-lg btn-cta" to="/register">Create account</Link>
+              <Link className="btn btn-lg btn-secondary" to="/instruments">Explore instruments</Link>
+            </div>
           </div>
-          <div className="l-actions">
-            <Link className="btn btn-lg" to="/register">Create account</Link>
-            <Link className="btn btn-lg btn-secondary" to="/instruments">Explore instruments</Link>
-          </div>
-        </div>
+        </Reveal>
       </section>
     </div>
   );
