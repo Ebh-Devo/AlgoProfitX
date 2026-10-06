@@ -1,9 +1,11 @@
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
 import { LogOut, Menu, X } from "lucide-react";
 
 import { useAuth } from "../auth/auth-context";
 import { CREATOR_ROLE, hasRole, INVESTOR_ROLE } from "../auth/roles";
 import { Brand } from "./layout/Brand";
+import { PUBLIC_NAV, PublicNav } from "./layout/PublicNav";
 import { SiteFooter } from "./layout/SiteFooter";
 import { useDrawer } from "./layout/useDrawer";
 
@@ -16,6 +18,15 @@ export function AppShell() {
   const investor = hasRole(user, INVESTOR_ROLE);
   const { open, setOpen, toggleRef, drawerRef } = useDrawer(location.pathname);
   const isLanding = location.pathname === "/";
+  const [scrolled, setScrolled] = useState(false);
+
+  /* The landing header floats over the hero and picks up a surface once the page scrolls. */
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 12);
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
 
   const endSession = async () => {
     try { await logout(); } finally { navigate("/"); }
@@ -39,10 +50,12 @@ export function AppShell() {
   return (
     <div className={`app-shell ${isLanding ? "is-landing" : ""}`}>
       <a className="skip-link" href="#main-content">Skip to content</a>
-      <header className="site-header">
+      <header className={`site-header${scrolled ? " is-scrolled" : ""}`}>
         <div className="site-header-inner">
           <Brand />
-          <nav className="site-nav-desktop" aria-label="Primary navigation">{links}</nav>
+          {isAuthenticated
+            ? <nav className="site-nav-desktop" aria-label="Primary navigation">{links}</nav>
+            : <PublicNav />}
 
           <div className="header-actions">
             {isAuthenticated ? (
@@ -62,7 +75,7 @@ export function AppShell() {
             ) : (
               <>
                 <NavLink className="header-link" to="/login">Log in</NavLink>
-                <Link className="btn btn-sm" to="/register">Create account</Link>
+                <Link className="btn btn-sm btn-cta" to="/register">Get Started</Link>
               </>
             )}
             <button
@@ -88,10 +101,22 @@ export function AppShell() {
         className={`site-drawer ${open ? "is-open" : ""}`}
         aria-label="Mobile navigation"
         aria-hidden={!open}
+        onClick={e => { if ((e.target as HTMLElement).closest("a")) setOpen(false); }}
         {...(open ? { role: "dialog", "aria-modal": "true" } : {})}
       >
         <div className="site-drawer-links">
-          {links}
+          {isAuthenticated ? links : (
+            <>
+              {PUBLIC_NAV.map(entry => entry.children ? (
+                <div className="site-drawer-group" key={entry.label} role="group" aria-label={entry.label}>
+                  <p>{entry.label}</p>
+                  {entry.children.map(c => c.to
+                    ? <Link key={c.label} to={c.to}>{c.label}<small>{c.description}</small></Link>
+                    : <span key={c.label} className="is-soon" aria-disabled="true">{c.label}<em>Coming soon</em></span>)}
+                </div>
+              ) : <Link key={entry.label} to={entry.to!}>{entry.label}</Link>)}
+            </>
+          )}
           <hr />
           {isAuthenticated ? (
             <>
@@ -101,7 +126,7 @@ export function AppShell() {
           ) : (
             <>
               <NavLink to="/login">Log in</NavLink>
-              <NavLink to="/register">Create account</NavLink>
+              <Link className="btn btn-cta site-drawer-cta" to="/register">Get Started</Link>
             </>
           )}
         </div>
