@@ -39,7 +39,7 @@
 
 /* ── Header (public) ─────────────────────────────────────────── */
 .is-landing .site-header { background: transparent; border-bottom-color: transparent; backdrop-filter: none; transition: background-color var(--dur-slow) var(--ease), border-color var(--dur-slow) var(--ease); }
-.is-landing .site-header.is-scrolled { background: color-mix(in srgb, var(--color-canvas) 82%, transparent); border-bottom-color: var(--border); backdrop-filter: blur(16px) saturate(1.2); }
+.is-landing .site-header.is-scrolled { background: color-mix(in srgb, var(--color-canvas) 94%, transparent); border-bottom-color: var(--border); backdrop-filter: blur(16px) saturate(1.2); }
 .pnav { flex: 1; }
 .pnav ul { display: flex; align-items: center; gap: 2px; margin: 0; padding: 0; list-style: none; }
 .pnav-item { position: relative; }
@@ -103,7 +103,7 @@
 .hv-node rect { fill: var(--color-surface); stroke: var(--color-border-strong); stroke-width: 1.5; transition: stroke var(--dur-slow) var(--ease), fill var(--dur-slow) var(--ease); }
 .hv-node { cursor: default; }
 .hv-n { fill: var(--faint); font-family: var(--font-mono); font-size: 10px; }
-.hv-label { fill: var(--text-2); font-size: 15px; font-weight: 600; transition: fill var(--dur-slow) var(--ease); }
+.hv-label { fill: var(--text-2); font-size: 14px; font-weight: 600; transition: fill var(--dur-slow) var(--ease); }
 .hv-dot { fill: var(--color-border-strong); transition: fill var(--dur-slow) var(--ease); }
 .hv-node.is-done rect { stroke: color-mix(in srgb, var(--l-a) 55%, var(--color-border-strong)); }
 .hv-node.is-done .hv-dot { fill: var(--l-a); }

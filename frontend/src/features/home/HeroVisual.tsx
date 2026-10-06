@@ -4,18 +4,18 @@ interface HeroNode { id: string; label: string; caption: string; x: number; y: n
 
 /** Conceptual workflow. Positions form a snake: top row left→right, then bottom row right→left. */
 const NODES: HeroNode[] = [
-  { id: "create", label: "Create", caption: "Define a strategy as a draft.", x: 20, y: 40 },
-  { id: "research", label: "Research", caption: "Freeze an Instrument and configuration as an immutable Version.", x: 185, y: 40 },
-  { id: "backtest", label: "Backtest", caption: "Run a deterministic historical simulation.", x: 350, y: 40 },
-  { id: "publish", label: "Publish", caption: "List a strategy in the marketplace.", x: 350, y: 236 },
-  { id: "allocate", label: "Allocate", caption: "Pin an allocation intent to a specific Version.", x: 185, y: 236 },
-  { id: "execute", label: "Paper execute", caption: "Observe simulated outcomes. No broker orders.", x: 20, y: 236 },
+  { id: "create", label: "Create", caption: "Define a strategy as a draft.", x: 10, y: 40 },
+  { id: "research", label: "Research", caption: "Freeze an Instrument and configuration as an immutable Version.", x: 175, y: 40 },
+  { id: "backtest", label: "Backtest", caption: "Run a deterministic historical simulation.", x: 340, y: 40 },
+  { id: "publish", label: "Publish", caption: "List a strategy in the marketplace.", x: 340, y: 236 },
+  { id: "allocate", label: "Allocate", caption: "Pin an allocation intent to a specific Version.", x: 175, y: 236 },
+  { id: "execute", label: "Paper execute", caption: "Observe simulated outcomes. No broker orders.", x: 10, y: 236 },
 ];
 
-const W = 110;
+const W = 130;
 const H = 44;
 /** Connector i links node i to node i+1. */
-const LINKS = ["M130 62 H185", "M295 62 H350", "M405 84 V236", "M350 258 H295", "M185 258 H130"];
+const LINKS = ["M140 62 H175", "M305 62 H340", "M405 84 V236", "M340 258 H305", "M175 258 H140"];
 
 const TICK_MS = 2200;
 

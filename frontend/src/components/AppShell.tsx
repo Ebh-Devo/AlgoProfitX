@@ -20,6 +20,14 @@ export function AppShell() {
   const isLanding = location.pathname === "/";
   const [scrolled, setScrolled] = useState(false);
 
+  /* Public pages own the tab title; the workspace shell sets its own on entry. */
+  useEffect(() => {
+    const section = location.pathname.split("/").filter(Boolean)[0];
+    document.title = section
+      ? `${section.charAt(0).toUpperCase()}${section.slice(1)} · AlgoProfitX`
+      : "AlgoProfitX — Testable Strategy Research";
+  }, [location.pathname]);
+
   /* The landing header floats over the hero and picks up a surface once the page scrolls. */
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 12);
