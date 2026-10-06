@@ -3,10 +3,11 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
   Archive,
   ArrowLeft,
+  ArrowRight,
   CheckCircle2,
   CircleDashed,
   Globe,
@@ -16,6 +17,7 @@ import {
   Search,
   Store,
   Trash2,
+  X,
 } from "lucide-react";
 import { ApiError } from "../../api/client";
 import { strategiesApi } from "../../api/strategies";
@@ -30,12 +32,15 @@ import {
   ConfirmDialog,
   FilterChips,
   Input,
+  NextStep,
   PageHeader,
+  RefreshIndicator,
   SectionHeader,
   SkeletonGroup,
   SkeletonRows,
   Skeleton,
   StatusBadge,
+  useToast,
   type ActionMenuItem,
 } from "../../components/ui";
 
@@ -264,6 +269,7 @@ function LifecycleSteps({ strategy }: { strategy?: Strategy }) {
 /* ── Strategy list page ───────────────────────────────────────── */
 type StatusFilter = "all" | Strategy["status"];
 type SortKey = "updated" | "created" | "name";
+const STATUS_VALUES: StatusFilter[] = ["all", "draft", "published", "deployed", "archived"];
 
 const SORTERS: Record<SortKey, (a: Strategy, b: Strategy) => number> = {
   updated: (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime(),
@@ -271,7 +277,17 @@ const SORTERS: Record<SortKey, (a: Strategy, b: Strategy) => number> = {
   name: (a, b) => a.name.localeCompare(b.name),
 };
 
+/** One honest hint per row, derived only from fields the list API returns (no backtest status there). */
+export function rowNextAction(item: Strategy): { label: string; to: string } | null {
+  const detail = `/creator/strategies/${item.id}`;
+  if (item.status === "draft" && !item.current_version_id) return { label: "Add a Version", to: detail };
+  if (item.status === "draft") return { label: "Backtest or publish", to: detail };
+  if ((item.status === "published" || item.status === "deployed") && item.is_public) return { label: "View in marketplace", to: `/marketplace/${item.slug}` };
+  return null;
+}
+
 function StrategyRow({ item }: { item: Strategy }) {
+  const next = rowNextAction(item);
   const menu: ActionMenuItem[] = [{ label: "Open details", to: `/creator/strategies/${item.id}` }];
   if (item.is_public && (item.status === "published" || item.status === "deployed")) {
     menu.push({ label: "View in Marketplace", to: `/marketplace/${item.slug}`, icon: <Store size={14} aria-hidden="true" /> });
@@ -283,6 +299,7 @@ function StrategyRow({ item }: { item: Strategy }) {
           <Link to={`/creator/strategies/${item.id}`}>{item.name}</Link>
           <small>{item.slug}</small>
           {item.description && <p>{item.description}</p>}
+          {next && <Link className="row-next" to={next.to} aria-label={`${next.label}: ${item.name}`}>{next.label} <ArrowRight size={12} aria-hidden="true" /></Link>}
         </div>
       </td>
       <td data-label="Status"><StatusBadge status={item.status} /></td>
@@ -304,9 +321,22 @@ export function StrategyListPage() {
     queryKey: queryKeys.strategies,
     queryFn: strategiesApi.list,
   });
-  const [search, setSearch] = useState("");
-  const [status, setStatus] = useState<StatusFilter>("all");
-  const [sort, setSort] = useState<SortKey>("updated");
+  /* Filters live in the URL so they survive navigating to a strategy and back. */
+  const [params, setParams] = useSearchParams();
+  const search = params.get("q") ?? "";
+  const rawStatus = params.get("status");
+  const status: StatusFilter = STATUS_VALUES.includes(rawStatus as StatusFilter) ? (rawStatus as StatusFilter) : "all";
+  const rawSort = params.get("sort");
+  const sort: SortKey = rawSort === "created" || rawSort === "name" ? rawSort : "updated";
+  const setParam = (key: string, value: string, fallback: string) =>
+    setParams(prev => {
+      const next = new URLSearchParams(prev);
+      if (value === fallback || value === "") next.delete(key); else next.set(key, value);
+      return next;
+    }, { replace: true });
+  const setSearch = (value: string) => setParam("q", value, "");
+  const setStatus = (value: StatusFilter) => setParam("status", value, "all");
+  const setSort = (value: SortKey) => setParam("sort", value, "updated");
 
   const all = query.data;
   const counts = useMemo(() => {
@@ -329,12 +359,20 @@ export function StrategyListPage() {
     </Link>
   );
 
+  const refreshing = query.isFetching && !query.isLoading;
   const header = (
     <PageHeader
       eyebrow="Creator workspace"
       title="Strategies"
       description="Create a draft, add immutable Versions, backtest them, then publish."
-      actions={createAction}
+      actions={
+        <>
+          {query.isSuccess && (
+            <RefreshIndicator refreshing={refreshing} stale={query.isRefetchError && !refreshing} updatedAt={query.dataUpdatedAt} onRefresh={() => void query.refetch()} />
+          )}
+          {createAction}
+        </>
+      }
     />
   );
 
@@ -358,7 +396,7 @@ export function StrategyListPage() {
   }
 
   const filtering = search.trim() !== "" || status !== "all";
-  const clearFilters = () => { setSearch(""); setStatus("all"); };
+  const clearFilters = () => setParams(prev => { const next = new URLSearchParams(prev); next.delete("q"); next.delete("status"); return next; }, { replace: true });
 
   return (
     <div>
@@ -384,6 +422,11 @@ export function StrategyListPage() {
                 value={search}
                 onChange={e => setSearch(e.target.value)}
                 iconLeft={<Search size={15} />}
+                iconRight={search ? (
+                  <button type="button" className="input-clear" aria-label="Clear search" onClick={() => setSearch("")}>
+                    <X size={14} aria-hidden="true" />
+                  </button>
+                ) : undefined}
               />
             </div>
             <FilterChips<StatusFilter>
@@ -421,8 +464,8 @@ export function StrategyListPage() {
               Try a different search term or status.
             </EmptyState>
           ) : (
-            <div className="table-wrap is-stacked">
-              <table className="data-table is-stacked">
+            <div className="table-wrap is-stacked data-region" aria-busy={refreshing || undefined}>
+              <table className="data-table is-stacked" key={`${status}-${sort}`}>
                 <caption className="visually-hidden">Your strategies</caption>
                 <thead>
                   <tr>
@@ -450,6 +493,7 @@ export function StrategyListPage() {
 export function StrategyNewPage() {
   const navigate = useNavigate();
   const client = useQueryClient();
+  const toast = useToast();
 
   return (
     <div>
@@ -471,6 +515,7 @@ export function StrategyNewPage() {
           };
           const result = await strategiesApi.create(data);
           await client.invalidateQueries({ queryKey: queryKeys.strategies });
+          toast.success("Strategy created", `${result.name} is a draft. Add a Version next.`);
           navigate(`/creator/strategies/${result.id}`);
         }}
         aside={
@@ -524,6 +569,7 @@ export function StrategyEditPage() {
   const { strategyId = "" } = useParams();
   const navigate = useNavigate();
   const client = useQueryClient();
+  const toast = useToast();
 
   const query = useQuery({
     queryKey: queryKeys.strategy(strategyId),
@@ -573,6 +619,7 @@ export function StrategyEditPage() {
           await strategiesApi.update(strategyId, data);
           await client.invalidateQueries({ queryKey: queryKeys.strategy(strategyId) });
           await client.invalidateQueries({ queryKey: queryKeys.strategies });
+          toast.success("Changes saved");
           navigate(`/creator/strategies/${strategyId}`);
         }}
         aside={
@@ -603,6 +650,7 @@ function parseObject(raw: string, label: string): Record<string, unknown> {
 
 function VersionCreator({ strategyId, onClose }: { strategyId: string; onClose: () => void }) {
   const client = useQueryClient();
+  const toast = useToast();
   const navigate = useNavigate();
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -632,6 +680,7 @@ function VersionCreator({ strategyId, onClose }: { strategyId: string; onClose: 
         backtest_configuration: parseObject(backtest, "Backtest configuration"),
       }),
     onSuccess: async (newVersion) => {
+      toast.success(`Version ${newVersion.version_number} created`, "It is immutable. You can now backtest it.");
       onClose();
       await client.invalidateQueries({ queryKey: queryKeys.versions(strategyId) });
       navigate(`/creator/strategies/${strategyId}/versions/${newVersion.id}`);
@@ -835,10 +884,17 @@ const ACTION_COPY: Record<LifecycleAction, { label: string; pending: string }> =
   archive: { label: "Archive", pending: "Archiving…" },
 };
 
+const LIFECYCLE_DONE: Record<LifecycleAction, string> = {
+  publish: "Strategy published",
+  deploy: "Strategy deployed",
+  archive: "Strategy archived",
+};
+
 export function StrategyDetailPage() {
   const { strategyId = "" } = useParams();
   const navigate = useNavigate();
   const client = useQueryClient();
+  const toast = useToast();
   const [confirm, setConfirm] = useState<"archive" | "delete" | null>(null);
   const [creatingVersion, setCreatingVersion] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -856,10 +912,11 @@ export function StrategyDetailPage() {
 
   const lifecycle = useMutation({
     mutationFn: (action: LifecycleAction) => strategiesApi.lifecycle(strategyId, action),
-    onSuccess: async () => {
+    onSuccess: async (_data, action) => {
       setActionError(null);
       setDialogError(null);
       setConfirm(null);
+      toast.success(LIFECYCLE_DONE[action]);
       await Promise.all([
         client.invalidateQueries({ queryKey: queryKeys.strategy(strategyId) }),
         client.invalidateQueries({ queryKey: queryKeys.strategies }),
@@ -869,7 +926,7 @@ export function StrategyDetailPage() {
     onError: (reason, action) => {
       const message = errorMessage(reason, "Lifecycle transition failed.");
       if (action === "archive") setDialogError(message);
-      else setActionError(message);
+      else { setActionError(message); toast.error("Couldn't complete the action", message); }
     },
   });
 
@@ -877,6 +934,7 @@ export function StrategyDetailPage() {
     mutationFn: () => strategiesApi.delete(strategyId),
     onSuccess: async () => {
       await client.invalidateQueries({ queryKey: queryKeys.strategies });
+      toast.success("Strategy deleted");
       navigate("/creator/strategies");
     },
     onError: (reason) => setDialogError(errorMessage(reason, "Unable to delete strategy.")),
@@ -943,11 +1001,34 @@ export function StrategyDetailPage() {
           <Alert variant="error">{actionError}</Alert>
         </div>
       )}
-      {strategy.status === "draft" && versions.isSuccess && versionCount === 0 && !actionError && (
-        <div style={{ marginBottom: "var(--space-5)" }}>
-          <Alert variant="info">A draft needs at least one Version before it can be published.</Alert>
-        </div>
-      )}
+      {versions.isSuccess && (() => {
+        const latest = [...(versions.data ?? [])].sort((a, b) => b.version_number - a.version_number)[0];
+        if (strategy.status === "archived") return null;
+        let step: { context: string; title: string; text: string; action: React.ReactNode } | null = null;
+        if (strategy.status === "draft" && versionCount === 0) {
+          step = {
+            context: "Draft · no Version yet",
+            title: "Next: create a Version",
+            text: "A draft needs at least one Version before it can be backtested or published.",
+            action: null,
+          };
+        } else if (strategy.status === "draft" && latest) {
+          step = {
+            context: `Draft · ${versionCount} ${versionCount === 1 ? "Version" : "Versions"}`,
+            title: "Next: backtest a Version",
+            text: "Run a backtest on a Version, then publish when you are ready.",
+            action: <Link className="btn btn-primary btn-sm" to={`/creator/strategies/${strategy.id}/versions/${latest.id}`}>Open latest Version <ArrowRight size={14} aria-hidden="true" /></Link>,
+          };
+        } else if (strategy.is_public && (strategy.status === "published" || strategy.status === "deployed")) {
+          step = {
+            context: strategy.status === "deployed" ? "Deployed" : "Published",
+            title: "Inspect how it appears in the marketplace",
+            text: "Public strategies are discoverable without exposing the private configuration.",
+            action: <Link className="btn btn-secondary btn-sm" to={`/marketplace/${strategy.slug}`}><Store size={14} aria-hidden="true" /> View listing</Link>,
+          };
+        }
+        return step ? <div style={{ marginBottom: "var(--space-5)" }}><NextStep {...step} /></div> : null;
+      })()}
 
       <div className="detail-layout">
         <div className="detail-main">

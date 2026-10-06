@@ -6,6 +6,7 @@ import {
   CheckCircle2,
   Globe,
   Info,
+  AlertTriangle,
   ListChecks,
   PenLine,
   PlayCircle,
@@ -26,7 +27,9 @@ import type { Allocation, ExecutionIntent, Strategy } from "../../api/types";
 import { EmptyState, ErrorPanel } from "../../components/PageState";
 import {
   ActivityFeed,
+  NextStep,
   PageHeader,
+  RefreshIndicator,
   SectionHeader,
   SkeletonGroup,
   SkeletonRows,
@@ -258,6 +261,126 @@ function QuickActions({ creator, investor }: { creator: boolean; investor: boole
   );
 }
 
+/* ── What needs attention / what to do next (derived only from real fields) ── */
+export interface AttentionItem { key: string; to: string; label: string; detail: string }
+
+export function buildAttention(strategies: Strategy[], intents: ExecutionIntent[]): AttentionItem[] {
+  const items: AttentionItem[] = [];
+  const failed = intents.filter(e => e.status === "failed");
+  if (failed.length) {
+    items.push({
+      key: "failed-executions",
+      to: failed.length === 1 ? `/investor/execution-intents/${failed[0].id}` : "/investor/execution-intents",
+      label: `${failed.length} failed paper ${failed.length === 1 ? "execution" : "executions"}`,
+      detail: "Inspect what went wrong",
+    });
+  }
+  const active = intents.filter(e => e.status === "pending" || e.status === "running");
+  if (active.length) {
+    items.push({
+      key: "active-executions",
+      to: "/investor/execution-intents",
+      label: `${active.length} ${active.length === 1 ? "execution" : "executions"} in progress`,
+      detail: "Review current status",
+    });
+  }
+  const unversioned = strategies.filter(s => s.status === "draft" && !s.current_version_id);
+  if (unversioned.length) {
+    items.push({
+      key: "drafts-without-version",
+      to: unversioned.length === 1 ? `/creator/strategies/${unversioned[0].id}` : "/creator/strategies",
+      label: `${unversioned.length} ${unversioned.length === 1 ? "draft has" : "drafts have"} no Version`,
+      detail: "A Version is required to backtest or publish",
+    });
+  }
+  return items;
+}
+
+type Stage = "create" | "version" | "publish" | "allocate" | "execute";
+
+interface NextStepModel { stage: Stage; context: string; title: string; text: string; action: { to: string; label: string } }
+
+export function pickNextStep(
+  creator: boolean,
+  investor: boolean,
+  strategies: Strategy[],
+  allocations: Allocation[],
+  intents: ExecutionIntent[],
+): NextStepModel | null {
+  if (creator) {
+    /* With no strategies the empty state already carries the "create" call to action. */
+    const unversioned = strategies.find(s => s.status === "draft" && !s.current_version_id);
+    if (unversioned) {
+      return { stage: "version", context: `Draft · ${unversioned.name}`, title: "Continue building: add a Version", text: "A Version pins an instrument and configuration so it can be backtested and published.", action: { to: `/creator/strategies/${unversioned.id}`, label: "Open strategy" } };
+    }
+    const draft = strategies.find(s => s.status === "draft");
+    if (draft) {
+      return { stage: "publish", context: `Draft · ${draft.name}`, title: "Review, backtest or publish", text: "This draft has a Version. Open it to inspect backtests or publish it.", action: { to: `/creator/strategies/${draft.id}`, label: "Open strategy" } };
+    }
+  }
+  if (investor) {
+    const failed = intents.find(e => e.status === "failed");
+    if (failed) {
+      return { stage: "execute", context: `Failed · ${failed.strategy_name}`, title: "Inspect the failed paper execution", text: "Open it to see what happened before creating another.", action: { to: `/investor/execution-intents/${failed.id}`, label: "Review execution" } };
+    }
+    if (allocations.length === 0) {
+      return { stage: "allocate", context: "No allocations yet", title: "Find a strategy to allocate to", text: "Browse published strategies and pin an allocation to a specific Version.", action: { to: "/marketplace", label: "Browse marketplace" } };
+    }
+    if (intents.length === 0) {
+      return { stage: "execute", context: "Allocation without an execution intent", title: "Create an execution intent", text: "Run an allocation in paper mode. No orders are placed with a broker.", action: { to: "/investor/allocations", label: "Go to allocations" } };
+    }
+  }
+  if (creator && strategies.some(s => s.status === "published" || s.status === "deployed")) {
+    return { stage: "publish", context: "Published strategies", title: "See how your strategies appear", text: "Public strategies are listed in the marketplace.", action: { to: "/marketplace", label: "View marketplace" } };
+  }
+  return null;
+}
+
+function WorkflowPosition({ creator, investor, strategies, allocations, intents, stage }: {
+  creator: boolean; investor: boolean; strategies?: Strategy[]; allocations?: Allocation[]; intents?: ExecutionIntent[]; stage?: Stage;
+}) {
+  const steps: { key: Stage; name: string; value: number | undefined; hint: string }[] = [];
+  if (creator) {
+    steps.push({ key: "create", name: "Drafts", value: strategies && countBy(strategies, s => s.status === "draft"), hint: "strategies" });
+    steps.push({ key: "publish", name: "Published", value: strategies && countBy(strategies, s => s.status === "published" || s.status === "deployed"), hint: "incl. deployed" });
+  }
+  if (investor) {
+    steps.push({ key: "allocate", name: "Allocations", value: allocations && countBy(allocations, a => a.status === "active"), hint: "active" });
+    steps.push({ key: "execute", name: "Paper executions", value: intents?.length, hint: "intents" });
+  }
+  const current = stage === "version" ? "create" : stage;
+  return (
+    <ol className="flow-track" aria-label="Where you are in the workflow">
+      {steps.map(s => (
+        <li key={s.key} className={s.key === current ? "is-active" : undefined} aria-current={s.key === current ? "step" : undefined}>
+          <span className="flow-name">{s.name}</span>
+          <span className="flow-count">{s.value ?? "—"}</span>
+          <span className="flow-hint">{s.hint}</span>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+function AttentionPanel({ items }: { items: AttentionItem[] }) {
+  if (items.length === 0) return null;
+  return (
+    <section className="panel" aria-labelledby="dash-attention">
+      <div className="panel-head"><SectionHeader id="dash-attention" title="Needs attention" count={items.length} /></div>
+      <ul className="attention-list">
+        {items.map(i => (
+          <li key={i.key}>
+            <Link className="attention-item" to={i.to}>
+              <span><AlertTriangle size={13} aria-hidden="true" className="attention-icon" />{i.label}<small>{i.detail}</small></span>
+              <ArrowRight size={14} aria-hidden="true" />
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 /* ── Queries (enabled per role) ──────────────────────────────── */
 function useStrategiesQuery(enabled: boolean) {
   return useQuery({ queryKey: queryKeys.strategies, queryFn: strategiesApi.list, enabled });
@@ -283,12 +406,9 @@ export function DashboardPage() {
 
   if (isLoading) {
     return (
-      <div className="skeleton-page">
-        <SkeletonGroup label="Loading your dashboard…">
-          <span className="skeleton" style={{ width: "40%", height: "2rem" }} />
-          <span className="skeleton" style={{ width: "60%", height: "0.875rem" }} />
-        </SkeletonGroup>
-        <SkeletonStats label="Loading summary…" />
+      <div className="page-stack">
+        <PageHeader eyebrow="Workspace" title="Dashboard" description="Where your strategies and simulated executions stand right now." />
+        <SkeletonStats label="Loading your dashboard…" />
       </div>
     );
   }
@@ -298,6 +418,16 @@ export function DashboardPage() {
   const activityErrored = strategies.isError || allocations.isError || intents.isError;
   const activity = buildActivity(strategies.data ?? [], allocations.data ?? [], intents.data ?? []);
 
+  const enabled = [creator && strategies, investor && allocations, investor && intents].filter(Boolean) as (typeof strategies)[];
+  const refreshing = enabled.some(q => q.isFetching && !q.isLoading);
+  const refreshFailed = enabled.some(q => q.isRefetchError);
+  const updatedAt = Math.max(0, ...enabled.map(q => q.dataUpdatedAt));
+  const refreshAll = () => { enabled.forEach(q => void q.refetch()); };
+  const settled = enabled.length > 0 && enabled.every(q => q.isSuccess);
+
+  const attention = buildAttention(strategies.data ?? [], intents.data ?? []);
+  const next = settled ? pickNextStep(creator, investor, strategies.data ?? [], allocations.data ?? [], intents.data ?? []) : null;
+
   return (
     <div className="page-stack">
       <PageHeader
@@ -306,6 +436,7 @@ export function DashboardPage() {
         description="Where your strategies and simulated executions stand right now."
         actions={
           <>
+            {hasRoleAccess && <RefreshIndicator refreshing={refreshing} stale={refreshFailed && !refreshing} updatedAt={updatedAt} onRefresh={refreshAll} />}
             {creator ? (
               <Link className="btn btn-primary" to="/creator/strategies/new">
                 <PlusCircle size={15} aria-hidden="true" /> New strategy
@@ -328,8 +459,19 @@ export function DashboardPage() {
         </EmptyState>
       )}
 
+      {next && (
+        <NextStep
+          context={next.context}
+          title={next.title}
+          tone={attention.some(a => a.key === "failed-executions") ? "attention" : "default"}
+          action={<Link className="btn btn-primary" to={next.action.to}>{next.action.label} <ArrowRight size={15} aria-hidden="true" /></Link>}
+        >
+          {next.text}
+        </NextStep>
+      )}
+
       {hasRoleAccess && (
-        <div className="dash-stats">
+        <div className="dash-stats data-region" aria-busy={refreshing || undefined}>
           {creator && (
             <div>
               <h2 className="dash-stats-label">Strategy status</h2>
@@ -359,13 +501,18 @@ export function DashboardPage() {
         </div>
       )}
 
+      {hasRoleAccess && settled && (
+        <WorkflowPosition creator={creator} investor={investor} strategies={strategies.data} allocations={allocations.data} intents={intents.data} stage={next?.stage} />
+      )}
+
       {hasRoleAccess && (
-        <div className="dash-grid">
+        <div className="dash-grid data-region" aria-busy={refreshing || undefined}>
           <div className="dash-main">
             {creator && <StrategyOverview query={strategies} />}
             {investor && <ExecutionOverview query={intents} />}
           </div>
           <div className="dash-side">
+            <AttentionPanel items={attention} />
             <RecentActivity loading={activityLoading} errored={activityErrored} entries={activity} />
             <QuickActions creator={creator} investor={investor} />
           </div>
