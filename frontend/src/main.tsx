@@ -7,6 +7,7 @@ import { AuthProvider } from "./auth/auth-context";
 import { router } from "./app/router";
 import { AppErrorBoundary } from "./components/AppErrorBoundary";
 import { ToastProvider } from "./components/ui";
+import { ThemeProvider } from "./components/theme/ThemeProvider";
 import "./styles/tokens.css";
 import "./styles/global.css";
 import "./styles/components.css";
@@ -25,5 +26,5 @@ import "./styles/research.css";
 const queryClient = new QueryClient({ defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } } });
 
 createRoot(document.getElementById("root")!).render(
-  <StrictMode><AppErrorBoundary><QueryClientProvider client={queryClient}><AuthProvider><ToastProvider><RouterProvider router={router} /></ToastProvider></AuthProvider></QueryClientProvider></AppErrorBoundary></StrictMode>,
+  <StrictMode><AppErrorBoundary><ThemeProvider><QueryClientProvider client={queryClient}><AuthProvider><ToastProvider><RouterProvider router={router} /></ToastProvider></AuthProvider></QueryClientProvider></ThemeProvider></AppErrorBoundary></StrictMode>,
 );

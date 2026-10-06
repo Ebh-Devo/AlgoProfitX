@@ -25,7 +25,8 @@ describe("AccountMenu", () => {
     expect(trigger).toHaveAttribute("aria-expanded", "false");
     fireEvent.click(trigger);
     expect(trigger).toHaveAttribute("aria-expanded", "true");
-    const [first, second] = screen.getAllByRole("menuitem");
+    const [first] = screen.getAllByRole("menuitem");
+    const second = screen.getByRole("menuitemradio", { name: /system/i });
     expect(first).toHaveFocus();
     fireEvent.keyDown(document, { key: "ArrowDown" });
     expect(second).toHaveFocus();
