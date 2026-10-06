@@ -544,7 +544,10 @@ function DetailSkeleton({ label }: { label: string }) {
         <Skeleton width="40%" height="2rem" />
         <Skeleton width="60%" />
       </SkeletonGroup>
-      <div className="panel"><SkeletonRows rows={3} label="Loading content…" /></div>
+      <div className="detail-layout">
+        <div className="detail-main"><div className="panel"><SkeletonRows rows={3} label="Loading content…" /></div></div>
+        <div className="detail-side"><div className="panel"><SkeletonRows rows={4} label="Loading overview…" /></div></div>
+      </div>
     </div>
   );
 }
@@ -926,7 +929,7 @@ export function StrategyDetailPage() {
     onError: (reason, action) => {
       const message = errorMessage(reason, "Lifecycle transition failed.");
       if (action === "archive") setDialogError(message);
-      else { setActionError(message); toast.error("Couldn't complete the action", message); }
+      else setActionError(message);
     },
   });
 
@@ -1027,7 +1030,7 @@ export function StrategyDetailPage() {
             action: <Link className="btn btn-secondary btn-sm" to={`/marketplace/${strategy.slug}`}><Store size={14} aria-hidden="true" /> View listing</Link>,
           };
         }
-        return step ? <div style={{ marginBottom: "var(--space-5)" }}><NextStep {...step} /></div> : null;
+        return step ? <div style={{ marginBottom: "var(--space-5)" }}><NextStep context={step.context} title={step.title} action={step.action}>{step.text}</NextStep></div> : null;
       })()}
 
       <div className="detail-layout">

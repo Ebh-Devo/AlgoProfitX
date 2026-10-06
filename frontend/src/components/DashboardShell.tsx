@@ -50,7 +50,9 @@ export function DashboardShell() {
   const here = crumbs[crumbs.length - 1]?.label ?? "Dashboard";
 
   /* Keep the tab title and screen-reader context in step with client-side navigation. */
-  useEffect(() => { document.title = `${here} · AlgoProfitX`; }, [here]);
+  const generic = ["Details", "Version", "Backtest", "Edit"].includes(here);
+  const title = [here, ...(generic && crumbs.length > 2 ? [crumbs[crumbs.length - 2].label] : []), "AlgoProfitX"].join(" · ");
+  useEffect(() => { document.title = title; }, [title]);
 
   const groups: NavGroup[] = [
     { label: "Overview", items: [{ to: "/app", label: "Dashboard", icon: <LayoutDashboard size={17} />, end: true }] },

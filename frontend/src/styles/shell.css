@@ -135,6 +135,9 @@
   .site-footer-nav { justify-content: flex-start; }
 }
 @media (max-width: 520px) {
-  .crumbs li:not(:last-child):not(:first-child) { display: none; }
+  .crumbs li:not(:last-child) { display: none; }
+  .crumbs li:last-child::before { content: none; }
+  .crumbs { min-width: 0; }
+  .crumbs [aria-current] { display: block; overflow: hidden; text-overflow: ellipsis; }
   .header-actions .btn-sm { display: none; }
 }

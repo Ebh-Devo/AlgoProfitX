@@ -336,26 +336,18 @@ export function pickNextStep(
   return null;
 }
 
-function WorkflowPosition({ creator, investor, strategies, allocations, intents, stage }: {
-  creator: boolean; investor: boolean; strategies?: Strategy[]; allocations?: Allocation[]; intents?: ExecutionIntent[]; stage?: Stage;
-}) {
-  const steps: { key: Stage; name: string; value: number | undefined; hint: string }[] = [];
-  if (creator) {
-    steps.push({ key: "create", name: "Drafts", value: strategies && countBy(strategies, s => s.status === "draft"), hint: "strategies" });
-    steps.push({ key: "publish", name: "Published", value: strategies && countBy(strategies, s => s.status === "published" || s.status === "deployed"), hint: "incl. deployed" });
-  }
-  if (investor) {
-    steps.push({ key: "allocate", name: "Allocations", value: allocations && countBy(allocations, a => a.status === "active"), hint: "active" });
-    steps.push({ key: "execute", name: "Paper executions", value: intents?.length, hint: "intents" });
-  }
-  const current = stage === "version" ? "create" : stage;
+/** Where the suggested next step sits in the creator → investor workflow. Position only; counts live in the summaries above. */
+function WorkflowPosition({ creator, investor, stage }: { creator: boolean; investor: boolean; stage?: Stage }) {
+  const steps: { key: Stage; name: string }[] = [
+    ...(creator ? [{ key: "create" as const, name: "Draft" }, { key: "version" as const, name: "Version" }, { key: "publish" as const, name: "Publish" }] : []),
+    ...(investor ? [{ key: "allocate" as const, name: "Allocate" }, { key: "execute" as const, name: "Paper execution" }] : []),
+  ];
   return (
     <ol className="flow-track" aria-label="Where you are in the workflow">
-      {steps.map(s => (
-        <li key={s.key} className={s.key === current ? "is-active" : undefined} aria-current={s.key === current ? "step" : undefined}>
-          <span className="flow-name">{s.name}</span>
-          <span className="flow-count">{s.value ?? "—"}</span>
-          <span className="flow-hint">{s.hint}</span>
+      {steps.map((s, i) => (
+        <li key={s.key} className={s.key === stage ? "is-active" : undefined} aria-current={s.key === stage ? "step" : undefined}>
+          <span className="flow-n" aria-hidden="true">{String(i + 1).padStart(2, "0")}</span>
+          <span className="flow-name">{s.name}{s.key === stage && <span className="visually-hidden"> (suggested next)</span>}</span>
         </li>
       ))}
     </ol>
@@ -502,7 +494,7 @@ export function DashboardPage() {
       )}
 
       {hasRoleAccess && settled && (
-        <WorkflowPosition creator={creator} investor={investor} strategies={strategies.data} allocations={allocations.data} intents={intents.data} stage={next?.stage} />
+        <WorkflowPosition creator={creator} investor={investor} stage={next?.stage} />
       )}
 
       {hasRoleAccess && (
