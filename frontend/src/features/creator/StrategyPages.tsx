@@ -1198,7 +1198,7 @@ export function StrategyVersionPage() {
         </div>
 
         <Suspense fallback={<SkeletonRows label="Loading Backtests…" rows={3} />}>
-          <VersionBacktests strategyId={strategyId} versionId={versionId} />
+          <VersionBacktests strategyId={strategyId} versionId={versionId} strategyName={strategyName} version={query.data} />
         </Suspense>
       </div>
     </div>

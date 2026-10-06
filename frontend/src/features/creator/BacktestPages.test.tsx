@@ -81,7 +81,7 @@ describe("Version Backtests", () => {
   it("renders empty and populated lists", async () => {
     api.listBacktests.mockResolvedValueOnce([]);
     const first = view(<VersionBacktests strategyId="s1" versionId="v1" />);
-    expect(await screen.findByText(/No Backtests/)).toBeInTheDocument();
+    expect(await screen.findByText("No backtests yet")).toBeInTheDocument();
     first.unmount();
     api.listBacktests.mockResolvedValueOnce([queued]);
     view(<VersionBacktests strategyId="s1" versionId="v1" />);
@@ -92,9 +92,8 @@ describe("Version Backtests", () => {
     api.listBacktests.mockResolvedValue([]);
     api.createBacktest.mockResolvedValue(queued);
     view(<VersionBacktests strategyId="s1" versionId="v1" />);
-    await userEvent.click(await screen.findByRole("button", { name: "Create Backtest" }));
-    await userEvent.type(screen.getByLabelText(/Market data reference/), "synthetic-snapshot");
-    await userEvent.click(screen.getByRole("button", { name: "Create Backtest" }));
+    await userEvent.type(await screen.findByLabelText(/Market data reference/), "synthetic-snapshot");
+    await userEvent.click(screen.getByRole("button", { name: "Run Backtest" }));
     await waitFor(() => expect(api.createBacktest).toHaveBeenCalledWith("s1", "v1", { market_data_reference: "synthetic-snapshot" }));
   });
 
