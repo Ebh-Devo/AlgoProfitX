@@ -27,7 +27,13 @@ class UnknownIndicatorVersionError(LookupError):
 
 
 class IndicatorCatalog:
-    """Read-only lookup over indicator specs, keyed by ``(name, version)``."""
+    """Read-only lookup over indicator specs, keyed by ``(name, version)``.
+
+    Immutable after construction: attributes cannot be assigned or deleted, and the specs
+    are held as a tuple of frozen dataclasses.
+    """
+
+    __slots__ = ("_specs",)
 
     def __init__(self, specs: Iterable[IndicatorSpec]):
         by_key: dict[tuple[str, int], IndicatorSpec] = {}
@@ -36,7 +42,13 @@ class IndicatorCatalog:
             if key in by_key:
                 raise ValueError(f"duplicate indicator {spec.key}")
             by_key[key] = spec
-        self._specs = tuple(by_key[key] for key in sorted(by_key))
+        object.__setattr__(self, "_specs", tuple(by_key[key] for key in sorted(by_key)))
+
+    def __setattr__(self, name: str, value: object) -> None:
+        raise AttributeError(f"{type(self).__name__} is immutable")
+
+    def __delattr__(self, name: str) -> None:
+        raise AttributeError(f"{type(self).__name__} is immutable")
 
     def get(self, name: str, version: int) -> IndicatorSpec:
         for spec in self._specs:
@@ -67,5 +79,6 @@ DEFAULT_CATALOG = IndicatorCatalog(
     [
         IndicatorSpec("ema", 1, (_PERIOD,), _VALUE),
         IndicatorSpec("rsi", 1, (_PERIOD,), _VALUE),
+        IndicatorSpec("sma", 1, (_PERIOD,), _VALUE),
     ]
 )

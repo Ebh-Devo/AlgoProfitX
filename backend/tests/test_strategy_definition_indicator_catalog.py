@@ -18,7 +18,7 @@ from tests.test_strategy_definition_v2 import document, ema, rsi
 
 
 def test_registered_indicators_are_retrievable_and_versioned():
-    for name in ("ema", "rsi"):
+    for name in ("ema", "rsi", "sma"):
         spec = DEFAULT_CATALOG.get(name, 1)
         assert (spec.name, spec.version, spec.key) == (name, 1, f"{name}@1")
         assert DEFAULT_CATALOG.has(name, 1)
@@ -28,7 +28,7 @@ def test_registered_indicators_are_retrievable_and_versioned():
 
 
 def test_only_needed_indicators_are_registered():
-    assert [spec.key for spec in DEFAULT_CATALOG.all()] == ["ema@1", "rsi@1"]
+    assert [spec.key for spec in DEFAULT_CATALOG.all()] == ["ema@1", "rsi@1", "sma@1"]
 
 
 def test_lookup_and_enumeration_are_deterministic():
@@ -51,6 +51,27 @@ def test_duplicate_registration_rejected():
     spec = DEFAULT_CATALOG.get("ema", 1)
     with pytest.raises(ValueError):
         IndicatorCatalog([spec, spec])
+
+
+def test_sma_v1_is_registered():
+    spec = DEFAULT_CATALOG.get("sma", 1)
+    assert spec.key == "sma@1" and [o.name for o in spec.outputs] == ["value"]
+    (period,) = spec.params
+    assert (period.type, period.required, period.minimum, period.maximum) == ("integer", True, 1, 5000)
+
+
+def test_catalog_cannot_be_mutated_after_construction():
+    specs_before = DEFAULT_CATALOG.all()
+    with pytest.raises(AttributeError):
+        DEFAULT_CATALOG._specs = ()  # type: ignore[misc]
+    with pytest.raises(AttributeError):
+        DEFAULT_CATALOG.extra = 1  # type: ignore[attr-defined]
+    with pytest.raises(AttributeError):
+        del DEFAULT_CATALOG._specs
+    with pytest.raises(TypeError):
+        DEFAULT_CATALOG.all()[0] = DEFAULT_CATALOG.all()[1]  # type: ignore[index]
+    assert DEFAULT_CATALOG.all() == specs_before
+    assert DEFAULT_CATALOG.get("ema", 1) is specs_before[0]
 
 
 def test_catalog_cannot_be_mutated_through_returned_objects():
