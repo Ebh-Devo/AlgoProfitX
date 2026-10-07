@@ -89,6 +89,7 @@ Verified against `dev` @ `e020da4`.
 10. **Simplicity wins where the future is cheap to add.** Reserve grammar slots (documented, validator-rejected); do not build engines for them.
 11. **Do not explode the database.** One JSONB document per version. Relational tables remain for entities.
 12. **AI is a client of the validator**, never a source of truth (§20).
+13. **The governing invariant.** A V2 canonical strategy definition is **deterministic, serializable, environment-independent, broker-independent, and replayable.** Concretely: it contains no capital amount, fill model, broker field, order type, runtime state, or hidden default; the same definition + dataset + engine/catalog versions always yields the same result; and anything that would break one of these properties belongs in environment/runtime configuration (e.g. `leg_failure_policy`, `fill_model`, costs), never in the definition. Any proposed field must pass this test.
 
 ---
 
@@ -126,13 +127,13 @@ Everything is strict: unknown keys are a validation error on write (an ignored k
 | **Position state** | **Never in the definition.** Runtime state, persisted by the runtime (§14) | |
 | **Execution** | **Never in the definition.** No order types, no broker fields. Fill model, costs, slippage are environment config | |
 | **Risk management** | Per-position **risk exits** (stop/target/trailing) are *intent* → in the definition. **Account-level** risk (max drawdown, kill switch, margin) is environment/allocation config | |
-| **Capital / sizing amount** | Relative sizing (`percent_of_allocation`, `lots`, `shares`) is intent → definition. **Capital itself** (`initial_capital`, allocation notional) is environment | |
+| **Capital / sizing amount** | Quantity (`shares` in v2.0; `contracts` reserved) is intent → definition. **Capital itself** (`initial_capital`, allocation notional) is environment | |
 | **Backtest range, costs, fill model, adjustment policy** | `backtest_configuration` | |
 
 Two notes against the brief's framing:
 
 * **Timeframe belongs to the definition**, not `backtest_configuration` (where V1 reads it today). `EMA(9)` on `1d` and on `5m` are different strategies. Back-compat: for V2 the definition is authoritative; the service must reject a `backtest_configuration.timeframe` that disagrees.
-* **Sizing is intent.** V1's implicit "100% of capital / price" becomes an explicit `percent_of_allocation: 100`, so paper and backtest cannot silently diverge on sizing.
+* **Sizing is intent, and the primitive is quantity.** V1's implicit "100% of capital ÷ price" is capital-dependent, fractional and environment-coupled; a V2 definition instead states an explicit **quantity** (shares / contracts), so it stays environment-independent and replayable. Higher-level sizing (percent of allocation, risk-based) is a *later, explicit* layer. See §7.3.
 
 ### 5.4 Document identity
 
@@ -243,15 +244,19 @@ Why `moneyness` signed steps: "OTM call" and "OTM put" are on opposite sides of 
 
 ```jsonc
 Sizing =
-  { "unit": "percent_of_allocation", "value": 100 }   // v2.0 (V1 equivalent)
-| { "unit": "lots",   "value": 1 }                    // reserved for derivatives
-| { "unit": "shares", "value": 50 }
-| { "unit": "match_position", "position": "core", "ratio": 1 }   // hedge sizing
+  { "unit": "shares", "value": 50 }                  // v2.0 - the ONLY authorable unit; REQUIRED, no default
+| { "unit": "contracts", "value": 1 }               // reserved (derivatives; lots x lot size resolved by runtime)
+| { "unit": "match_position", "position": "core", "ratio": 1 }   // reserved - hedge sizing
+// Not authorable in V2 documents (validator rejects):
+//   { "unit": "percent_of_allocation", "value": 100 }  - produced ONLY by the V1 adapter, in memory,
+//   to reproduce V1's all-in sizing (parity, section 13.2)
 ```
+
+**V2.0 sizing decision (review #32):** one deterministic model — an explicit quantity, always present, never defaulted. Anything richer (percent of allocation, volatility/risk-based, notional) is a later, explicit sizing unit that compiles *down to* quantity at order-planning time; adding one is additive. How an allocation's notional maps to a quantity for a strategy that declares a fixed quantity (cap, reject, or scale) is an **allocation/execution-policy** question, not a definition question.
 
 A leg's `quantity` is a multiplier on the position's sizing (default 1), e.g. a 1:2 ratio spread. Rounding to lot/tick is **runtime**, using instrument metadata — not the definition.
 
-> **Risk flagged:** short option legs have unbounded loss and need a *margin* model. Sizing in `percent_of_allocation` is meaningless for them without margin rules. Short-option support is therefore gated on a margin/capital model, not on the schema (§22).
+> **Risk flagged:** short option legs have unbounded loss and need a *margin* model. Quantity alone does not bound their risk, and capital-based sizing is meaningless for them without margin rules. Short-option support is therefore gated on a margin/capital model, not on the schema (§22).
 
 ---
 
@@ -442,6 +447,8 @@ Stops/targets are *intent* but need **price-level** semantics (touch within a ba
 | `underlying_price` | price of the underlying (primary or named) vs its price at the entry fill; direction given by `direction: "against" \| "favour"` | options structures | reserved |
 | `net_premium` | net debit/credit paid/received at entry vs current net mark (e.g. "stop at 2× credit received") | spreads, short premium | reserved |
 
+**Implementation obligation (review #32): in V2.0 only `leg_price` is implemented.** The other rows document *meaning only*; they create no implementation obligation, the validator rejects them via capabilities, and they may be refined before first implementation without a schema bump.
+
 Direction ("loss side" for stops, "profit side" for targets) is derived from the basis variable and the side of the position, never from the sign of `value`. A `risk` entry whose `basis` is not valid for the position's legs (e.g. `leg_price` naming a missing leg, `position_pnl_pct` on one leg is allowed but redundant) is a layer-3 validation error.
 
 Tie-break when both are touched in one bar and finer data is unavailable: **stop first** (conservative). Documented, not configurable in v2.0. Time/bars-based exits are ordinary conditions once the `position` operand exists.
@@ -525,7 +532,7 @@ Rules of the road:
 ### 13.1 Rules
 
 * V1 versions are **immutable historical artifacts. They are never rewritten**, not even to "migrate" them.
-* A V2 document carries `schema_version: 2`. **A document with no `schema_version` is V1.** No DB column or migration is needed for this.
+* A V2 document carries `schema_version: 2`. **A document with no `schema_version` is V1.** The version discriminator exists **in both places** (decision, review #32): self-describing in the JSON (`schema_version`) *and* as an explicit column on `StrategyVersion` for persistence/query visibility. Historical rows are backfilled by a **data-only step that records the version (1) without touching `configuration`**; the JSON of V1 versions is never rewritten. Column and JSON must agree — checked on write; a mismatch is a layer-1 error. The column is introduced in the phase that wires V2 into the API (Phase 6), not in Phase 1.
 * A single entry point — `load_definition(configuration) -> CanonicalDefinition` — dispatches on `schema_version`:
   * `2` → parse + validate.
   * *absent* → **V1 adapter**: lifts the V1 document, *in memory only*, into the canonical model (one `main` position with a `buy`/`sell` leg from `entry.action`, an entry rule `cross` on two `ema` indicators, optionally an exit rule `close`). All legacy defaulting (`buy`/`above`…) lives in this adapter and nowhere else.
@@ -533,7 +540,7 @@ Rules of the road:
 
 ### 13.2 Fill-model parity
 
-V1 results assume "fill at the signal bar's close". The V1 adapter therefore tags lifted definitions with `fill_model: "same_bar_close"` *in the loaded model* (environment default for V1 only). New V2 backtests default to `next_bar_open` (§17). **Parity requirement:** the V2 engine, given a lifted V1 document, `same_bar_close`, and the V1 fixtures, must reproduce `EmaCrossoverReferenceEngine` output exactly. The parity fixture locks down, for every fixture: **trade count; per-trade side, quantity, entry/exit price and pnl; signal timestamp and fill timestamp (equal under `same_bar_close`, asserted as such); exit reason (`rule:exit` vs end-of-data); final equity; and the full equity-curve strings.** Where a V1 concept does not map (e.g. V1 has no exit reason; end-of-data close is an engine artefact), the mapping is written into the fixture, not left implicit. Signal/fill timestamps are added as *additive* V2 result fields so V1 consumers are unaffected. This is the single most important regression test for the migration, and the gate for retiring the V1 engines.
+V1 results assume "fill at the signal bar's close". The V1 adapter therefore tags lifted definitions with `fill_model: "same_bar_close"` *in the loaded model* (environment default for V1 only). V2 backtests state their fill model **explicitly** in `backtest_configuration` (`fill_model` is required — no hidden engine default); the V2.0 creator writes `next_bar_open`. Note this is a deliberate change of convention, **not** the current one: V1 is `same_bar_close`. **Parity requirement:** the V2 engine, given a lifted V1 document, `same_bar_close`, and the V1 fixtures, must reproduce `EmaCrossoverReferenceEngine` output exactly. The parity fixture locks down, for every fixture: **trade count; per-trade side, quantity, entry/exit price and pnl; signal timestamp and fill timestamp (equal under `same_bar_close`, asserted as such); exit reason (`rule:exit` vs end-of-data); final equity; and the full equity-curve strings.** Where a V1 concept does not map (e.g. V1 has no exit reason; end-of-data close is an engine artefact), the mapping is written into the fixture, not left implicit. Signal/fill timestamps are added as *additive* V2 result fields so V1 consumers are unaffected. This is the single most important regression test for the migration, and the gate for retiring the V1 engines.
 
 ### 13.3 Evolution within V2
 
@@ -544,7 +551,7 @@ V1 results assume "fill at the signal bar's close". The V1 adapter therefore tag
 
 ### 13.4 API
 
-`StrategyVersionCreateRequest.configuration` dispatches on `schema_version`: absent ⇒ **reject for new versions once V2 is enabled** (V1 documents remain *readable and runnable*, but new V1-shaped versions are no longer created) — a product decision, flagged in §22. The version response remains `configuration: dict` (no breaking API change).
+`StrategyVersionCreateRequest.configuration` dispatches on `schema_version`. **Decision (review #32):** all existing V1 versions are preserved forever and never migrated. An explicit **cutoff** for *creating* new V1-shaped versions is introduced only once the V2 creator flow is production-ready; until then both are accepted. The cutoff is a dated product decision, not a schema change. The version response remains `configuration: dict` (no breaking API change).
 
 ---
 
@@ -640,7 +647,7 @@ Only ledger state may answer "is the position open?". The rule engine's precondi
 
 `partially_open` / `partially_closed` are not separate statuses: they are `opening`/`closing` (orders still working) or `degraded` (nothing working, ratios broken). The ledger always records **per-leg** quantities, so an incomplete set is representable exactly; position-level P&L is always the sum over legs.
 
-**Partial-failure policy.** What to do on `degraded` is an **execution policy**, not strategy intent, and lives in environment configuration (`leg_failure_policy`):
+**Partial-failure policy.** What to do on `degraded` is an **execution policy**, not strategy intent. `leg_failure_policy` is **runtime/execution configuration** (environment config for backtest/paper, adapter config for live): it is **not part of the portable canonical strategy definition**, never appears in `StrategyVersion.configuration`, and changing it never changes a version's identity or hash. The strategy states which position it wants; the environment decides how to recover from a failed leg.
 * `unwind` *(default)* — submit closing orders for the filled legs; position returns to `flat`; the run records `open_failed: leg_rejected`. Rules may re-fire next bar subject to `limits`.
 * `retry(n)` — re-submit the missing legs up to `n` times with the same intent id, then `unwind`.
 * `hold_and_alert` — leave `degraded`; only `close` is accepted; surfaced to the user (live-only in practice).
@@ -745,7 +752,7 @@ The canonical semantics every environment must implement:
 2. **Evaluation.** `evaluation: "bar_close"`: rules are evaluated when bar *t* is **complete**, using only data with timestamp ≤ *t*. "Current" = bar *t*; "previous" = bar *t−1* of the **same timeframe**. Intrabar/tick evaluation is reserved, not specified.
 3. **Signal vs execution timestamp.** A signal is generated at `t_signal` (= close of bar *t*). Execution happens at a later or equal instant per the **fill model**, recorded separately in every trade (`signal_ts`, `fill_ts`).
 4. **Fill models** (environment config, not definition):
-   * `next_bar_open` — **V2 default.** Order is submitted after bar *t* closes, fills at bar *t+1*'s open (+ slippage/costs). No lookahead; matches what a live system can do.
+   * `next_bar_open` — **the value the V2.0 creator writes; never an implicit default** (`fill_model` is required in V2 backtest configuration). Order is submitted after bar *t* closes, fills at bar *t+1*'s open (+ slippage/costs). No lookahead; matches what a live system can do.
    * `same_bar_close` — fills at bar *t*'s close. Exists *only* for V1 parity (§13.2) and for explicitly modelled market-on-close execution. V1 uses this implicitly today; its results are optimistic relative to `next_bar_open`.
    * Risk exits use price-level fills (stop/target price, with gap-through using the open).
 5. **Lookahead prevention.** Indicator at bar *t* may not read bar >*t*. Higher-timeframe values come only from the last *completed* HTF bar. Resolver data (strikes, lot sizes) is point-in-time. Enforced by tests that truncate the series and assert earlier outputs are unchanged.
@@ -780,7 +787,7 @@ K(x)    =  {"kind":"constant","value":x}
   "positions": {
     "main": { "role": "core", "hedges": null,
       "legs": [ { "id": "stock", "instrument": {"kind":"primary"}, "side": "buy", "quantity": 1 } ],
-      "sizing": { "unit": "percent_of_allocation", "value": 100 } }
+      "sizing": { "unit": "shares", "value": 10 } }
   },
   "rules": [
     { "id": "enter", "when": { "kind":"cross","dir":"above","left": EMA(3), "right": EMA(9) },
@@ -868,7 +875,7 @@ Case 7 with `"strike": {"mode":"moneyness","steps":2}` on **both** legs (2 steps
 "positions": {
   "core":  { "role":"core", "hedges":null,
              "legs":[{"id":"stock","side":"buy","quantity":1,"instrument":{"kind":"primary"}}],
-             "sizing":{"unit":"percent_of_allocation","value":100} },
+             "sizing":{"unit":"shares","value":100} },
   "floor": { "role":"hedge", "hedges":"core",
              "legs":[{"id":"put","side":"buy","quantity":1,
                       "instrument":{"kind":"option","underlying":{"kind":"primary"},"option_type":"put",
@@ -1007,7 +1014,7 @@ For this document and for the first implementation phases:
 |---|---|
 | **Over-engineering.** The grammar is ahead of the vocabulary. | v2.0 *implements* ≈ single position, single leg, `all/any/not/compare/cross/edge`, `ema/sma/rsi`, `open/close`, bar-close evaluation. Everything else is *reserved and validator-rejected*. Rule of thumb: reserve a slot only if retrofitting it would be a breaking change (three-valued logic, explicit side/ops, leg/positions, `schema_version`, explicit-only storage). |
 | **Reserved ≠ designed.** Reserved nodes may be wrong when finally built. | They are additive; `schema_version` is the escape hatch. Prefer fewer reserved nodes: the ones listed are those whose *absence* would distort other decisions (`position` operand, `replace`, selectors). |
-| **Fill-model change alters results.** `next_bar_open` default ≠ V1's `same_bar_close`. | Lifted V1 stays `same_bar_close`; parity test; document that V2 backtests are not directly comparable with V1 numbers. |
+| **Fill-model change alters results.** `next_bar_open` ≠ V1's `same_bar_close`. | Lifted V1 stays `same_bar_close`; parity test; document that V2 backtests are not directly comparable with V1 numbers. |
 | **Rule conflict resolution surprises users.** | Deterministic rules (§11.3); per-op `skipped` events surfaced in results; attribution by rule id. |
 | **Short-option risk/margin.** Unbounded loss; sizing undefined without margin. | Gate on a margin capability; refuse in paper/live until modelled. |
 | **Point-in-time options data** (lot-size revisions, expiries, chain history) may not be obtainable cheaply. | Out of scope; options remain `capability: unsupported` until the data exists. The definition does not depend on it. |
@@ -1032,15 +1039,19 @@ For this document and for the first implementation phases:
 10. **Inline indicator operands** rather than a declared indicator registry (§9.2) — a judgement call; either is additive to switch later via named references.
 11. **Do not grow `strategy_rules.py`** (agreed): new package, e.g. `app/strategy_definition/{schema,catalog,validation,v1_adapter,capabilities}`; `strategy_rules.py` is frozen and retired with the V1 engine.
 
-### Open architectural questions (for reviewers)
+### Decisions on the previously open questions (review #32)
 
-1. Disable *creation* of V1-shaped versions at V2 launch, or allow both indefinitely?
-2. Persist `definition_schema_version` as a column (for marketplace filtering/capability badges) or keep it derived? Recommendation: derive now, add the column only if a query needs it.
-3. Is `percent_of_allocation: 100` the right default sizing semantics for paper/live allocations (vs. lot-rounded notional)?
-4. Should `next_bar_open` really be the V2 default, given only daily synthetic data exists today (open == close in the synthetic fixture)?
-5. ~~Long and short in one strategy?~~ **Resolved (review #32):** the definition allows multiple named positions; V2.0 runtimes allow at most one active `core` position (+ attached hedges), expressed as capabilities (§6.2). Not a schema restriction.
-6. Where does the describer live (backend-generated vs shared library)?
-7. Marketplace: how are capability gaps surfaced to investors ("backtest only")?
+1. **V1 creation cutoff** — preserve all existing V1 versions forever; never migrate historical JSON; introduce an explicit cutoff for *new* V1-shaped creation only once the V2 creator flow is production-ready (§13.4).
+2. **Schema-version discriminator** — both: `schema_version` inside the JSON (self-describing) **and** an explicit `StrategyVersion` column (persistence/query visibility); data-only backfill, JSON untouched (§13.1).
+3. **Default sizing** — no implicit default. V2.0 has one deterministic model: explicit **quantity** (`shares`), required; richer sizing is a later explicit layer that compiles to quantity (§7.3).
+4. **Execution timing** — explicit in runtime configuration (`fill_model` required for V2 backtests), never a hidden engine default; the V2.0 creator writes `next_bar_open`, a deliberate change from V1's `same_bar_close` (§13.2, §17).
+5. **Long and short in one strategy** — expressible (multiple named positions); runnable only with `positions.multiple_core` (§6.2).
+6. **Describer** — human-readable descriptions are *derived* from the canonical definition and never stored as a source of truth; the UI/presentation layer owns the first implementation (§19).
+7. **Marketplace capability badges** — not an architectural blocker; derive later from validated requirements/capabilities, never from hand-maintained metadata (§12, §15).
+
+### Remaining open items
+
+None that block the architecture. Phase-level details (e.g. the exact quantity-to-allocation mapping policy) are decided in the phase that needs them.
 
 ---
 
@@ -1051,12 +1062,12 @@ Each phase is a small, isolated PR; none changes behaviour for existing V1 versi
 | Phase | Deliverable | Behavior change |
 |---|---|---|
 | **0** | This document reviewed and accepted; open questions resolved. | none |
-| **1** | `app/strategy_definition/` package: pydantic schema (v2), **V1 adapter**, `load_definition`, JSON Schema export. Pure; not wired anywhere. + golden tests lifting V1 fixtures. | none |
+| **1** | **Deliberately boring.** `app/strategy_definition/` package: schema types, loader/validator boundary (`load_definition`), **V1 adapter**, JSON Schema export, + golden parity fixtures lifting V1 documents. Pure; not wired into any service or API. **No** creator UI changes, **no** new trading capabilities, **no** DB column. | none |
 | **2** | Indicator catalog (`ema@1`, `sma@1`, `rsi@1`) with Decimal reference implementations; warm-up; **parity tests vs `_ema`** in both existing engines. | none |
 | **3** | Condition evaluator (3-valued, `compare/cross/edge/all/any/not`). Pure unit tests incl. warm-up and `not` safety. | none |
 | **4** | Semantic + position validators (L2/L3) and `required_capabilities`. | none |
 | **5** | Strategy runtime for **single position/leg, `open`/`close`, `bar_close`**, the OrderIntent/event contract (§14.4), simulated execution + ledger, behind the `BacktestEngine` Protocol. **Parity gate:** reproduces `EmaCrossoverReferenceEngine` on V1 fixtures under `same_bar_close`. | none (opt-in engine) |
-| **6** | Backtest service selects engine by `schema_version`; V2 versions creatable via API (feature-flagged); `next_bar_open` default; capability check L4. | V2 backtests available |
+| **6** | Backtest service selects engine by `schema_version`; V2 versions creatable via API (feature-flagged); explicit required `fill_model` (creator writes `next_bar_open`); `definition_schema_version` column; capability check L4. | V2 backtests available |
 | **7** | Frontend: catalog endpoint, V2 builder (simple mode → condition builder), describer. | UI |
 | **8** | `risk` block (with `basis`); `increase`/`reduce`; persisted position state (needed here). | richer backtests |
 | **9** | Paper adapter on the shared runtime with persisted state + capability manifest; retire `EmaCrossoverPaperAdapter`. | paper supports V2 |
