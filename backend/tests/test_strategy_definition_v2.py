@@ -146,16 +146,6 @@ def test_explicit_timeframe_and_nested_indicator_source():
     assert definition.rules[0].when.right.source.name == "rsi"
 
 
-def test_no_catalog_knowledge_in_loader():
-    doc = document()
-    doc["rules"][0]["when"] = {
-        "kind": "compare", "op": "gt",
-        "left": {**ema(3), "name": "made_up_indicator", "output": "anything"},
-        "right": {"kind": "constant", "value": 1},
-    }
-    assert load_v2_definition(doc).rules[0].when.left.name == "made_up_indicator"
-
-
 # --- invalid documents -------------------------------------------------------------------
 
 

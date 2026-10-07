@@ -1,9 +1,9 @@
 """The V2 loader: raw stored document -> typed StrategyDefinition, or structured errors.
 
-This validates *structure and cross-references* only (spec §12 layers 1 and the
-environment-free parts of 2/3). It knows nothing about which indicators exist or what any
-environment can run: indicator semantics belong to the catalog (a later phase) and
-capability checks to the capability layer. Errors are collected across independent
+This validates *structure and cross-references* (spec §12 layers 1 and the
+environment-free parts of 2/3), plus indicator references against the indicator catalog
+(known name@version, params, output). It knows nothing about what any environment can run:
+that belongs to the capability layer. Errors are collected across independent
 objects; an object with missing or unknown fields is reported and its children are not
 examined, so one mistake does not cascade into noise. Nothing here is defaulted: every semantically
 relevant value must be present in the stored document.
@@ -14,6 +14,12 @@ from decimal import Decimal, InvalidOperation
 from typing import Any, Iterable
 
 from app.strategy_definition.errors import StrategyDefinitionError, ValidationIssue
+from app.strategy_definition.indicators import (
+    DEFAULT_CATALOG,
+    IndicatorCatalog,
+    UnknownIndicatorError,
+    UnknownIndicatorVersionError,
+)
 from app.strategy_definition.schema import (
     SCHEMA_ID,
     SCHEMA_VERSION,
@@ -60,7 +66,8 @@ _PARAM_TYPES = (int, float, str)
 
 
 class _Context:
-    def __init__(self) -> None:
+    def __init__(self, catalog: IndicatorCatalog = DEFAULT_CATALOG) -> None:
+        self.catalog = catalog
         self.issues: list[ValidationIssue] = []
         self.ids: dict[str, str] = {}
 
@@ -247,9 +254,41 @@ def _indicator(ctx: _Context, node: dict, path: str, depth: int) -> IndicatorRef
     if not isinstance(output, str) or not NAME_PATTERN.fullmatch(output):
         ctx.error(_join(path, "output"), "invalid_indicator", "output must be a lowercase identifier")
         ok = False
+    if ok and not _check_catalog(ctx, path, name, version, params, output):
+        ok = False
     if not ok or timeframe is None:
         return None
     return IndicatorRef(name, version, dict(params), source, timeframe, output)
+
+
+def _check_catalog(
+    ctx: _Context, path: str, name: str, version: int, params: dict, output: str
+) -> bool:
+    """Validate an already well-formed indicator reference against the catalog."""
+    try:
+        spec = ctx.catalog.get(name, version)
+    except UnknownIndicatorError as exc:
+        ctx.error(_join(path, "name"), "unknown_indicator", str(exc))
+        return False
+    except UnknownIndicatorVersionError as exc:
+        ctx.error(_join(path, "version"), "unknown_indicator_version", str(exc))
+        return False
+    ok = True
+    for violation in spec.validate_params(params):
+        param_path = _join(path, "params")
+        if violation.param is not None:
+            param_path = _join(param_path, violation.param)
+        ctx.error(param_path, violation.code, violation.message)
+        ok = False
+    if not spec.has_output(output):
+        names = ", ".join(o.name for o in spec.outputs)
+        ctx.error(
+            _join(path, "output"),
+            "unknown_output",
+            f"{spec.key} has no output {output!r} (outputs: {names})",
+        )
+        ok = False
+    return ok
 
 
 def _is_series(operand: Operand) -> bool:
@@ -573,9 +612,11 @@ def _limits(ctx: _Context, node: Any, path: str) -> RuleLimits | None:
 # --- Entry point -------------------------------------------------------------------------
 
 
-def load_v2_definition(document: Any) -> StrategyDefinition:
+def load_v2_definition(
+    document: Any, *, catalog: IndicatorCatalog = DEFAULT_CATALOG
+) -> StrategyDefinition:
     """Load a stored V2 document, or raise ``StrategyDefinitionError`` listing every issue."""
-    ctx = _Context()
+    ctx = _Context(catalog)
     definition = _load(ctx, document)
     if ctx.issues or definition is None:
         raise StrategyDefinitionError(ctx.issues)
