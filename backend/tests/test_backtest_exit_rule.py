@@ -10,6 +10,10 @@ from app.schemas.strategy import StrategyVersionCreateRequest
 
 ENTRY = {"type": "ema_crossover", "fast_period": 3, "slow_period": 9}
 EXIT = {"type": "ema_crossover", "direction": "below", "fast_period": 3, "slow_period": 9}
+LONG_ENTRY = {**ENTRY, "action": "buy", "direction": "above"}
+LONG_EXIT = {**EXIT, "action": "sell"}
+SHORT_ENTRY = {**ENTRY, "action": "sell", "direction": "below"}
+SHORT_EXIT = {**EXIT, "action": "buy", "direction": "above"}
 CAPITAL = {"initial_capital": 50000}
 
 
@@ -61,7 +65,7 @@ def test_exit_without_cross_holds_to_end():
 @pytest.mark.parametrize(
     "bad",
     [
-        {"type": "ema_crossover", "direction": "above", "fast_period": 3, "slow_period": 9},
+        {"type": "ema_crossover", "direction": "sideways", "fast_period": 3, "slow_period": 9},
         {"type": "ema_crossover", "direction": "below", "fast_period": 9, "slow_period": 9},
         {"type": "ema_crossover", "direction": "below", "fast_period": 0, "slow_period": 9},
         {"type": "ema_crossover", "direction": "below", "fast_period": "x", "slow_period": 9},
@@ -84,3 +88,117 @@ def test_entry_only_and_valid_exit_configurations_validate():
         StrategyVersionCreateRequest(
             instrument_id="00000000-0000-0000-0000-000000000001", configuration=cfg
         )
+
+
+# ── Buy/sell actions ────────────────────────────────────────────────────────────
+
+# Rises (long entry cross up), falls (long exit / short entry cross down), rises again
+# (short exit cross up). Deterministic.
+ZIGZAG = (
+    [100 - i for i in range(15)]
+    + [86 + 2 * i for i in range(15)]
+    + [114 - 3 * i for i in range(15)]
+    + [69 + 3 * i for i in range(15)]
+)
+
+
+def run_zigzag(configuration):
+    return engine.run(configuration, CAPITAL, candles(ZIGZAG))
+
+
+def test_long_buy_then_sell_matches_existing_behaviour():
+    explicit = run_zigzag({"entry": LONG_ENTRY, "exit": LONG_EXIT})
+    legacy = run_zigzag({"entry": ENTRY, "exit": EXIT})
+    assert explicit.trades == legacy.trades
+    assert explicit.equity_curve == legacy.equity_curve
+    trade = explicit.trades[0]
+    assert trade["side"] == "long"
+    entry_price, exit_price = Decimal(trade["entry_price"]), Decimal(trade["exit_price"])
+    assert Decimal(trade["pnl"]) > 0
+    assert abs(Decimal(trade["pnl"]) - Decimal(trade["quantity"]) * (exit_price - entry_price)) < Decimal("0.0001")
+
+
+def test_short_sell_then_buy_profits_when_price_falls():
+    result = run_zigzag({"entry": SHORT_ENTRY, "exit": SHORT_EXIT})
+    trade = result.trades[0]
+    assert trade["side"] == "short"
+    entry_price, exit_price = Decimal(trade["entry_price"]), Decimal(trade["exit_price"])
+    assert exit_price < entry_price
+    quantity = Decimal(trade["quantity"])
+    expected = quantity * (entry_price - exit_price)
+    assert Decimal(trade["pnl"]) > 0
+    assert abs(Decimal(trade["pnl"]) - expected) < Decimal("0.0001")
+    assert abs(result.final_equity - (Decimal(50000) + expected)) < Decimal("0.0001")
+    # Equity moves opposite to price while the short is open and is flat after the exit.
+    points = {p["timestamp"]: Decimal(p["equity"]) for p in result.equity_curve}
+    assert points[trade["entry_timestamp"]] == Decimal(50000)
+    tail = [v for t, v in points.items() if t >= trade["exit_timestamp"]]
+    assert len(set(tail)) == 1
+
+
+def test_short_loses_when_price_rises():
+    closes = [100 - i for i in range(15)] + [86 + 2 * i for i in range(15)]
+    # Short entry on a cross *above* (mean-reversion style) then no exit: price keeps rising.
+    config = {"entry": {**SHORT_ENTRY, "direction": "above"}}
+    result = engine.run(config, CAPITAL, candles(closes))
+    trade = result.trades[0]
+    assert trade["side"] == "short"
+    assert Decimal(trade["exit_price"]) > Decimal(trade["entry_price"])
+    assert Decimal(trade["pnl"]) < 0
+    assert result.final_equity < Decimal(50000)
+
+
+def test_entry_only_short_holds_to_final_candle():
+    result = run_zigzag({"entry": SHORT_ENTRY})
+    assert result.trades[0]["exit_timestamp"] == candles(ZIGZAG)[-1].timestamp.isoformat()
+
+
+@pytest.mark.parametrize("action", ["BUY", "hold", "", None, 1])
+def test_invalid_actions_are_rejected(action):
+    for cfg in (
+        {"entry": {**ENTRY, "action": action}},
+        {"entry": LONG_ENTRY, "exit": {**LONG_EXIT, "action": action}},
+    ):
+        with pytest.raises(BacktestExecutionError):
+            run_zigzag(cfg)
+        with pytest.raises(ValidationError):
+            StrategyVersionCreateRequest(
+                instrument_id="00000000-0000-0000-0000-000000000001", configuration=cfg
+            )
+
+
+@pytest.mark.parametrize(
+    "cfg",
+    [
+        {"entry": LONG_ENTRY, "exit": {**LONG_EXIT, "action": "buy"}},
+        {"entry": SHORT_ENTRY, "exit": {**SHORT_EXIT, "action": "sell"}},
+        {"entry": ENTRY, "exit": {**EXIT, "action": "buy"}},
+    ],
+)
+def test_exit_must_take_the_opposite_side(cfg):
+    with pytest.raises(BacktestExecutionError):
+        run_zigzag(cfg)
+    with pytest.raises(ValidationError):
+        StrategyVersionCreateRequest(
+            instrument_id="00000000-0000-0000-0000-000000000001", configuration=cfg
+        )
+
+
+def test_buy_sell_and_legacy_configurations_validate():
+    for cfg in (
+        {"entry": ENTRY},
+        {"entry": ENTRY, "exit": EXIT},
+        {"entry": LONG_ENTRY, "exit": LONG_EXIT},
+        {"entry": SHORT_ENTRY, "exit": SHORT_EXIT},
+        {"entry": SHORT_ENTRY},
+    ):
+        StrategyVersionCreateRequest(
+            instrument_id="00000000-0000-0000-0000-000000000001", configuration=cfg
+        )
+
+
+def test_schema_does_not_depend_on_a_concrete_engine():
+    import app.schemas.strategy as schema
+
+    source = open(schema.__file__, encoding="utf-8").read()
+    assert "backtesting" not in source

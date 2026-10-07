@@ -27,8 +27,9 @@ import type { Strategy, StrategyCreateRequest, StrategyUpdateRequest } from "../
 import { formatCurrency } from "../../lib/format";
 import { AlgorithmSummary, StartingCapitalSummary, TechnicalDetails } from "./ConfigViews";
 import {
-  DEFAULT_CAPITAL, DEFAULT_EMA_RULE, DEFAULT_EXIT_RULE, STRATEGY_TYPE_LABEL, buildBacktestConfiguration, buildConfiguration, describeEntry, describeExit,
-  parseCapital, validateCapital, validateEmaRule, type EmaRuleErrors, type EmaRuleInput,
+  ACTIONS, ACTION_LABEL, DEFAULT_CAPITAL, DEFAULT_EMA_RULE, DEFAULT_EXIT_RULE, DIRECTIONS, STRATEGY_TYPE_LABEL, buildBacktestConfiguration, buildConfiguration, describeEntry, describeExit,
+  parseCapital, usualDirection, validateCapital, validateEmaRule, validateExitAction,
+  type CrossDirection, type EmaRuleErrors, type EmaRuleInput, type RuleAction,
 } from "./strategyConfig";
 import { EmptyState, ErrorPanel } from "../../components/PageState";
 import {
@@ -614,6 +615,7 @@ function VersionCreator({ strategyId, onClose }: { strategyId: string; onClose: 
   const [rule, setRule] = useState<EmaRuleInput>(DEFAULT_EMA_RULE);
   const [exitRule, setExitRule] = useState<EmaRuleInput>(DEFAULT_EXIT_RULE);
   const [exitErrors, setExitErrors] = useState<EmaRuleErrors>({});
+  const [exitActionError, setExitActionError] = useState<string | null>(null);
   const [capital, setCapital] = useState(DEFAULT_CAPITAL);
   const [error, setError] = useState<string | null>(null);
   const [ruleErrors, setRuleErrors] = useState<EmaRuleErrors>({});
@@ -651,6 +653,7 @@ function VersionCreator({ strategyId, onClose }: { strategyId: string; onClose: 
     setError(null);
     setRuleErrors({});
     setExitErrors({});
+    setExitActionError(null);
     setCapitalError(null);
 
     let valid = true;
@@ -669,6 +672,12 @@ function VersionCreator({ strategyId, onClose }: { strategyId: string; onClose: 
     const nextExitErrors = validateEmaRule(exitRule);
     if (nextExitErrors.shortTerm || nextExitErrors.longTerm) {
       setExitErrors(nextExitErrors);
+      valid = false;
+    }
+
+    const nextExitActionError = validateExitAction(rule, exitRule);
+    if (nextExitActionError) {
+      setExitActionError(nextExitActionError);
       valid = false;
     }
 
@@ -775,43 +784,75 @@ function VersionCreator({ strategyId, onClose }: { strategyId: string; onClose: 
         </div>
         <div className="form-section-body">
           {([
-            { id: "entry", title: "Entry rule", lead: "Buy when the", cross: "crosses above", value: rule, set: setRule, errors: ruleErrors,
-              explain: "EMA (exponential moving average) is a smoothed average price. The strategy buys when the shorter-term trend moves above the longer-term trend." },
-            { id: "exit", title: "Exit rule", lead: "Sell when the", cross: "crosses below", value: exitRule, set: setExitRule, errors: exitErrors,
-              explain: "The strategy sells when the shorter-term trend falls back below the longer-term trend." },
-          ] as const).map((r) => (
-            <div key={r.id} className="rule-block">
-              <h4 className="form-label">{r.title}</h4>
-              <div className="rule-sentence" role="group" aria-label={r.title}>
-                <span className="rule-lead">{r.lead}</span>
-                <input
-                  className={`input${r.errors.shortTerm ? " has-error" : ""}`}
-                  type="text"
-                  inputMode="numeric"
-                  aria-label={r.id === "exit" ? "Exit short-term EMA (days)" : "Short-term EMA (days)"}
-                  aria-invalid={r.errors.shortTerm ? true : undefined}
-                  aria-describedby={r.errors.shortTerm ? `${r.id}-ema-short-error` : undefined}
-                  value={r.value.shortTerm}
-                  onChange={(e) => r.set({ ...r.value, shortTerm: e.target.value })}
-                />
-                <span>day EMA {r.cross} the</span>
-                <input
-                  className={`input${r.errors.longTerm ? " has-error" : ""}`}
-                  type="text"
-                  inputMode="numeric"
-                  aria-label={r.id === "exit" ? "Exit long-term EMA (days)" : "Long-term EMA (days)"}
-                  aria-invalid={r.errors.longTerm ? true : undefined}
-                  aria-describedby={r.errors.longTerm ? `${r.id}-ema-long-error` : undefined}
-                  value={r.value.longTerm}
-                  onChange={(e) => r.set({ ...r.value, longTerm: e.target.value })}
-                />
-                <span>day EMA.</span>
+            { id: "entry", title: "Entry rule", value: rule, set: setRule, errors: ruleErrors, actionError: null as string | null,
+              intro: "EMA (exponential moving average) is a smoothed average price. " },
+            { id: "exit", title: "Exit rule", value: exitRule, set: setExitRule, errors: exitErrors, actionError: exitActionError, intro: "" },
+          ] as const).map((r) => {
+            const pretty = r.id === "exit" ? "Exit" : "Entry";
+            const verb = r.value.action === "buy" ? "buys" : "sells";
+            return (
+              <div key={r.id} className="rule-block">
+                <h4 className="form-label">{r.title}</h4>
+                <div className="form-field">
+                  <label className="form-label" htmlFor={`${r.id}-action`}>Action</label>
+                  <select
+                    id={`${r.id}-action`}
+                    className="input rule-select"
+                    aria-label={`${pretty} action`}
+                    aria-invalid={r.actionError ? true : undefined}
+                    aria-describedby={r.actionError ? `${r.id}-action-error` : undefined}
+                    value={r.value.action}
+                    onChange={(e) => {
+                      const action = e.target.value as RuleAction;
+                      r.set({ ...r.value, action, direction: usualDirection(action) });
+                    }}
+                  >
+                    {ACTIONS.map((a) => <option key={a} value={a}>{ACTION_LABEL[a]}</option>)}
+                  </select>
+                  {r.actionError && <p className="field-error" role="alert" id={`${r.id}-action-error`}>{r.actionError}</p>}
+                </div>
+                <div className="rule-sentence" role="group" aria-label={r.title}>
+                  <span className="rule-lead">{ACTION_LABEL[r.value.action]} when the</span>
+                  <input
+                    className={`input${r.errors.shortTerm ? " has-error" : ""}`}
+                    type="text"
+                    inputMode="numeric"
+                    aria-label={r.id === "exit" ? "Exit short-term EMA (days)" : "Short-term EMA (days)"}
+                    aria-invalid={r.errors.shortTerm ? true : undefined}
+                    aria-describedby={r.errors.shortTerm ? `${r.id}-ema-short-error` : undefined}
+                    value={r.value.shortTerm}
+                    onChange={(e) => r.set({ ...r.value, shortTerm: e.target.value })}
+                  />
+                  <span>day EMA crosses</span>
+                  <select
+                    className="input rule-select"
+                    aria-label={`${pretty} crossover direction`}
+                    value={r.value.direction}
+                    onChange={(e) => r.set({ ...r.value, direction: e.target.value as CrossDirection })}
+                  >
+                    {DIRECTIONS.map((d) => <option key={d} value={d}>{d}</option>)}
+                  </select>
+                  <span>the</span>
+                  <input
+                    className={`input${r.errors.longTerm ? " has-error" : ""}`}
+                    type="text"
+                    inputMode="numeric"
+                    aria-label={r.id === "exit" ? "Exit long-term EMA (days)" : "Long-term EMA (days)"}
+                    aria-invalid={r.errors.longTerm ? true : undefined}
+                    aria-describedby={r.errors.longTerm ? `${r.id}-ema-long-error` : undefined}
+                    value={r.value.longTerm}
+                    onChange={(e) => r.set({ ...r.value, longTerm: e.target.value })}
+                  />
+                  <span>day EMA.</span>
+                </div>
+                {r.errors.shortTerm && <p className="field-error" role="alert" id={`${r.id}-ema-short-error`}>{r.errors.shortTerm}</p>}
+                {r.errors.longTerm && <p className="field-error" role="alert" id={`${r.id}-ema-long-error`}>{r.errors.longTerm}</p>}
+                <p className="rule-explain">
+                  {r.intro}The strategy {verb} when the shorter-term trend moves {r.value.direction} the longer-term trend.
+                </p>
               </div>
-              {r.errors.shortTerm && <p className="field-error" role="alert" id={`${r.id}-ema-short-error`}>{r.errors.shortTerm}</p>}
-              {r.errors.longTerm && <p className="field-error" role="alert" id={`${r.id}-ema-long-error`}>{r.errors.longTerm}</p>}
-              <p className="rule-explain">{r.explain}</p>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </fieldset>
 
@@ -867,14 +908,14 @@ function VersionCreator({ strategyId, onClose }: { strategyId: string; onClose: 
               <dt>Entry</dt>
               <dd>
                 {Object.keys(validateEmaRule(rule)).length === 0
-                  ? describeEntry({ fast: Number(rule.shortTerm), slow: Number(rule.longTerm) })
+                  ? describeEntry({ action: rule.action, direction: rule.direction, fast: Number(rule.shortTerm), slow: Number(rule.longTerm) })
                   : "Complete the entry rule above"}
               </dd>
               <dt>Exit</dt>
               <dd>
-                {Object.keys(validateEmaRule(exitRule)).length === 0
-                  ? describeExit({ fast: Number(exitRule.shortTerm), slow: Number(exitRule.longTerm) })
-                  : "Complete the exit rule above"}
+                {Object.keys(validateEmaRule(exitRule)).length > 0
+                  ? "Complete the exit rule above"
+                  : validateExitAction(rule, exitRule) ?? describeExit({ action: exitRule.action, direction: exitRule.direction, fast: Number(exitRule.shortTerm), slow: Number(exitRule.longTerm) })}
               </dd>
               <dt>Starting Capital</dt>
               <dd>

@@ -4,10 +4,9 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from app.backtesting.contracts import BacktestExecutionError
-from app.backtesting.reference import exit_periods
 from app.models.strategy import StrategyStatus
 from app.schemas.instrument import InstrumentResponse
+from app.strategy_rules import StrategyRuleError, validate_rule_configuration
 
 
 class StrategyCreateRequest(BaseModel):
@@ -66,13 +65,11 @@ class StrategyVersionCreateRequest(BaseModel):
 
     @field_validator("configuration")
     @classmethod
-    def _validate_exit_rule(cls, value: dict[str, Any]) -> dict[str, Any]:
-        # The exit rule is optional; entry-only configurations stay valid.
-        if "exit" in value:
-            try:
-                exit_periods(value)
-            except BacktestExecutionError as exc:
-                raise ValueError(str(exc)) from exc
+    def _validate_rules(cls, value: dict[str, Any]) -> dict[str, Any]:
+        try:
+            validate_rule_configuration(value)
+        except StrategyRuleError as exc:
+            raise ValueError(str(exc)) from exc
         return value
 
 

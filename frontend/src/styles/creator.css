@@ -16,7 +16,7 @@
 /* Human-friendly strategy configuration */
 .rule-block+.rule-block{margin-top:var(--s5,1.5rem);padding-top:var(--s5,1.5rem);border-top:1px solid var(--border)}
 .rule-sentence{display:flex;flex-wrap:wrap;align-items:center;gap:var(--s3);font-size:var(--md,1rem)}
-.rule-sentence .input{width:5.5rem}
+.rule-sentence .input{width:5.5rem}.rule-sentence .input.rule-select,.rule-block .form-field .rule-select{width:auto;min-width:6.5rem}.rule-block .form-field{margin-bottom:var(--s3)}
 .rule-sentence .rule-lead{font-weight:600}
 .rule-explain{margin:var(--s3) 0 0;padding-top:var(--s3);border-top:1px solid var(--border);color:var(--muted)}
 .rule-group{display:flex;flex-direction:column;gap:var(--s2)}

@@ -6,7 +6,7 @@
  */
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import type { ReactNode } from "react";
 import { ApiError } from "../../api/client";
@@ -289,6 +289,52 @@ describe("Create Version", () => {
     await waitFor(() => screen.getByRole("option", { name: /NIFTY 50 Index/ }));
   }
 
+  it("defaults to Buy entry and Sell exit with selectable actions", async () => {
+    await openCreatorWithInstruments();
+    expect(screen.getByLabelText("Entry action")).toHaveValue("buy");
+    expect(screen.getByLabelText("Exit action")).toHaveValue("sell");
+    expect(screen.getByLabelText("Entry crossover direction")).toHaveValue("above");
+    expect(screen.getByLabelText("Exit crossover direction")).toHaveValue("below");
+    expect(within(screen.getByLabelText("Entry action")).getAllByRole("option").map((o) => o.textContent)).toEqual(["Buy", "Sell"]);
+    expect(within(screen.getByLabelText("Exit action")).getAllByRole("option").map((o) => o.textContent)).toEqual(["Buy", "Sell"]);
+  });
+
+  it("builds a short strategy: Entry Sell on a cross below, Exit Buy on a cross above", async () => {
+    await openCreatorWithInstruments();
+    await userEvent.selectOptions(screen.getByLabelText("Instrument"), "i1");
+    await userEvent.selectOptions(screen.getByLabelText("Entry action"), "sell");
+    expect(screen.getByLabelText("Entry crossover direction")).toHaveValue("below");
+    await userEvent.selectOptions(screen.getByLabelText("Exit action"), "buy");
+    expect(screen.getByLabelText("Exit crossover direction")).toHaveValue("above");
+    expect(screen.getByText("Sell when the 3-day EMA crosses below the 9-day EMA.")).toBeInTheDocument();
+    expect(screen.getByText("Buy when the 3-day EMA crosses above the 9-day EMA.")).toBeInTheDocument();
+    api.createVersion.mockResolvedValue(version1);
+    api.getVersion.mockResolvedValue(version1);
+    await userEvent.click(screen.getByRole("button", { name: "Create Version" }));
+    await waitFor(() =>
+      expect(api.createVersion).toHaveBeenCalledWith(
+        "s1",
+        expect.objectContaining({
+          configuration: {
+            entry: { type: "ema_crossover", action: "sell", direction: "below", fast_period: 3, slow_period: 9 },
+            exit: { type: "ema_crossover", action: "buy", direction: "above", fast_period: 3, slow_period: 9 },
+          },
+        })
+      )
+    );
+  });
+
+  it("lets the action and condition vary independently and rejects an exit on the same side", async () => {
+    await openCreatorWithInstruments();
+    await userEvent.selectOptions(screen.getByLabelText("Instrument"), "i1");
+    await userEvent.selectOptions(screen.getByLabelText("Entry crossover direction"), "below");
+    expect(screen.getByText("Buy when the 3-day EMA crosses below the 9-day EMA.")).toBeInTheDocument();
+    await userEvent.selectOptions(screen.getByLabelText("Exit action"), "buy");
+    await userEvent.click(screen.getByRole("button", { name: "Create Version" }));
+    expect((await screen.findAllByText(/exit must be the opposite of the entry/)).length).toBeGreaterThan(0);
+    expect(api.createVersion).not.toHaveBeenCalled();
+  });
+
   it("blocks creation and explains an invalid exit rule", async () => {
     await openCreatorWithInstruments();
     await userEvent.selectOptions(screen.getByLabelText("Instrument"), "i1");
@@ -377,8 +423,8 @@ describe("Create Version", () => {
         expect.objectContaining({
           instrument_id: "i1",
           configuration: {
-            entry: { type: "ema_crossover", fast_period: 5, slow_period: 21 },
-            exit: { type: "ema_crossover", direction: "below", fast_period: 3, slow_period: 9 },
+            entry: { type: "ema_crossover", action: "buy", direction: "above", fast_period: 5, slow_period: 21 },
+            exit: { type: "ema_crossover", action: "sell", direction: "below", fast_period: 3, slow_period: 9 },
           },
           backtest_configuration: { initial_capital: 100000 },
         })

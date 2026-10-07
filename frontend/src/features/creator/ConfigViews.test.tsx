@@ -12,6 +12,19 @@ describe("AlgorithmSummary", () => {
     expect(screen.getByText("Sell when the 3-day EMA crosses below the 9-day EMA.")).toBeInTheDocument();
   });
 
+  it("renders a short configuration with its selected actions", () => {
+    render(
+      <AlgorithmSummary
+        configuration={{
+          entry: { ...entry, action: "sell", direction: "below" },
+          exit: { ...entry, action: "buy", direction: "above" },
+        }}
+      />,
+    );
+    expect(screen.getByText("Sell when the 3-day EMA crosses below the 9-day EMA.")).toBeInTheDocument();
+    expect(screen.getByText("Buy when the 3-day EMA crosses above the 9-day EMA.")).toBeInTheDocument();
+  });
+
   it("renders an entry-only (older) configuration without inventing an exit", () => {
     render(<AlgorithmSummary configuration={{ entry }} />);
     expect(screen.getByText("Buy when the 3-day EMA crosses above the 9-day EMA.")).toBeInTheDocument();

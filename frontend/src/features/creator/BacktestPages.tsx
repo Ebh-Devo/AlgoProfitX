@@ -138,7 +138,7 @@ export function VersionBacktests({ strategyId, versionId, strategyName, version 
             <div>
               <span className="research-label">Engine</span>
               <strong>Reference backtest engine</strong>
-              <p>A single long-only EMA crossover reference run. Not a general strategy engine.</p>
+              <p>A single-position EMA crossover reference run, long or short. Not a general strategy engine.</p>
             </div>
             <div>
               <span className="research-label">Market data</span>
