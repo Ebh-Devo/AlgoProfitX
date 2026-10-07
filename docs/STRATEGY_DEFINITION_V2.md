@@ -178,7 +178,9 @@ Reject `position_structure ∈ {single_leg, multi_leg, hedged}`.
 | Spread / condor / custom | N legs; mixed sides |
 | Protective put | **2 positions**: `core` (long equity) and `hedge` (long put, `role: hedge`, `hedges: "core"`) |
 
-**Atomicity rule:** an operation on a position applies to *all* its legs as one unit (all-or-nothing intent; the execution adapter decides how to achieve it — basket order, legging-in, etc.). Operations on a *subset* of legs (roll one side, close one wing) use an optional `legs: [...]` selector on the op, reserved for later (§10).
+**Atomicity rule:** an operation on a position applies to *all* its legs as one **intent**. Atomicity of the *intent* is a strategy-level guarantee; atomicity of *execution* is **not** — a basket or legging-in can end with CALL filled and PUT rejected. The canonical consequence is that position status is **not binary**: see §14.4 (state layers, incomplete leg sets, partial-failure policy). Operations on a *subset* of legs (roll one side, close one wing) use an optional `legs: [...]` selector on the op, reserved for later (§10).
+
+**Active-position invariant (V2.0 restriction).** A definition may declare multiple named positions (the model is expressive now), but V2.0 *runtimes* restrict which can be active simultaneously: at most **one `core` position active at a time**, plus any number of `hedge` positions attached to it. This is declared as capabilities (`positions.multiple_core`, `positions.hedge`) — so the restriction lives in the capability manifest, not in the schema, and lifting it later is not a schema change. Portfolio-level orchestration across independent core positions is an explicit non-goal. Long-and-short in one strategy is therefore expressible (two `core` positions) but **not runnable** until `positions.multiple_core` exists.
 
 `template` expansion is a UI/authoring concern: choosing "Long Straddle" in the builder **writes the expanded legs**. The validator may check that a declared `template` matches its legs (warning), but the runtime ignores it.
 
@@ -407,7 +409,14 @@ Amount = { "unit": "fraction_of_open", "value": 0.5 }      // 50% of what is cur
 * `side` on a leg means **opening direction**: `buy` = long exposure, `sell` = short exposure. The runtime derives the order side: `open`/`increase` ⇒ leg side; `close`/`reduce` ⇒ opposite of leg side. The V1 "exit must be opposite of entry" check disappears — it cannot be violated because exits carry no side.
 * **Hedge** is not an op. It is `open` on a position with `role: "hedge"` / `hedges: <id>`, plus a rule. This keeps the op set minimal.
 * An op's optional `legs: [ids]` narrows it to a subset of legs (reserved; whole position by default).
-* **Op preconditions are enforced by the position state machine** (§14): `open` requires *flat*; `close`/`reduce`/`increase` require *open*. An op whose precondition fails is **skipped and recorded** (`skipped: already_open`), not an error — the same condition legitimately recurs while a position is held. That makes `edge`/`limits` the tools for "only once", not guards on every rule.
+* **`increase` / `reduce` invariants** (stated now, implemented later):
+  1. A position has one **effective size** `S` in its sizing unit and **fixed leg ratios** (`leg.quantity` multipliers) set at `open`. `increase`/`reduce` change `S`; they never change ratios and never re-resolve contracts (§7.2).
+  2. `fraction_of_open` is always a fraction of the **current** effective size at *evaluation time*, not of the original. After `open 100`, `reduce 0.5` → 50, `increase +50` → 100, `reduce 0.5` → 50. Repeated operations compose multiplicatively on the current size.
+  3. `sizing_unit` amounts are absolute in the position's sizing unit and are added to / subtracted from `S`.
+  4. After rounding to lot/tick the planner may be unable to honour the ratios exactly; the policy is **round each leg down to a whole lot and preserve ratios, else skip the op with `skipped: below_lot`**.
+  5. `reduce` to ≤ 0 is equivalent to `close`; `reduce` can never flip direction.
+  6. `limits.max_fires_per_position` counters are reset when the position returns to `flat`.
+* **Op preconditions are evaluated against the ledger-derived position status** (§14.4): `open` requires `flat`; `close`/`reduce`/`increase` require `open` (or `degraded`, see §14.4). A position that is `opening`/`closing` accepts no new operation. An op whose precondition fails is **skipped and recorded** (`skipped: already_open` / `already_opening`), not an error. An `open` *operation* is **intent**; it does not mean the position *is* open until fills say so — the same condition legitimately recurs while a position is held. That makes `edge`/`limits` the tools for "only once", not guards on every rule.
 * **Execution atomicity of `then`:** actions in one rule's `then` list are an ordered group evaluated against one snapshot.
 
 ### 10.4 Risk exits (Cases 14)
@@ -416,12 +425,24 @@ Stops/targets are *intent* but need **price-level** semantics (touch within a ba
 
 ```jsonc
 "risk": {
-  "stop_loss":   { "kind": "percent_from_entry", "value": 2.0 },
-  "take_profit": { "kind": "percent_from_entry", "value": 5.0 },
-  "trailing":    { "kind": "percent", "value": 1.5 }          // reserved
+  "stop_loss":   { "kind": "percent", "value": 2.0, "basis": { "kind": "leg_price", "leg": "stock" } },
+  "take_profit": { "kind": "percent", "value": 5.0, "basis": { "kind": "leg_price", "leg": "stock" } },
+  "trailing":    { "kind": "percent", "value": 1.5, "basis": { ... } }   // reserved
 }
 // reaction is always: close the position; exit reason recorded as stop_loss/take_profit
 ```
+
+**The trigger reference (`basis`) is part of the canonical meaning and is mandatory** — "percent from entry" is meaningless for a multi-leg position without saying *entry of what*. The bases:
+
+| `basis.kind` | Trigger variable | Valid for | v2.0 |
+|---|---|---|---|
+| `leg_price` (`leg`) | price of one named leg vs that leg's entry fill price (long: falls below; short: rises above) | any position, typically single-leg | **yes** (the V1-equivalent case) |
+| `position_pnl_pct` | position unrealised P&L (all legs, marked to market, **net of entry costs**) ÷ **entry gross value** (Σ over legs of \|entry price × quantity × multiplier\|; for net-credit positions this is the gross premium, not the net credit) | multi-leg | reserved |
+| `position_pnl_amount` | same P&L, absolute currency amount (`value` is currency) | multi-leg | reserved |
+| `underlying_price` | price of the underlying (primary or named) vs its price at the entry fill; direction given by `direction: "against" \| "favour"` | options structures | reserved |
+| `net_premium` | net debit/credit paid/received at entry vs current net mark (e.g. "stop at 2× credit received") | spreads, short premium | reserved |
+
+Direction ("loss side" for stops, "profit side" for targets) is derived from the basis variable and the side of the position, never from the sign of `value`. A `risk` entry whose `basis` is not valid for the position's legs (e.g. `leg_price` naming a missing leg, `position_pnl_pct` on one leg is allowed but redundant) is a layer-3 validation error.
 
 Tie-break when both are touched in one bar and finer data is unavailable: **stop first** (conservative). Documented, not configurable in v2.0. Time/bars-based exits are ordinary conditions once the `position` operand exists.
 
@@ -443,13 +464,18 @@ Rule = {
 }
 ```
 
-A "phase/event" field (`phase: "entry"`) was considered and **rejected**: it adds a second source of truth for what the actions already say, and a lifecycle enum (`entry|monitor|adjust|exit`) bakes today's imagination into the schema. The *position state machine* is the lifecycle; rules are transitions.
+A "phase/event" field (`phase: "entry"`) was considered and **rejected**: it adds a second source of truth for what the actions already say, and a lifecycle enum (`entry|monitor|adjust|exit`) bakes today's imagination into the schema. The ledger-derived *position status* (§14.4) is the lifecycle; rules express intent to transition it.
+
+Rules express **intent**; they do not assert that a position *is* in a state. The lifecycle below is the **ledger-derived position status** (§14.4), driven by fills:
 
 ```
-          open            increase / reduce (state: open)
- FLAT ───────────► OPEN ◄──────────────────┐
-  ▲                 │ └───────────────────────┘
-  └──── close ──────┘   (reduce to zero ≡ close)
+        open intent        all legs filled
+ FLAT ─────────────► OPENING ─────────────► OPEN ◄──── increase / reduce (filled) ───┐
+  ▲                     │ some legs failed     │ └──────────────────────────────────────┘
+  │                     ▼                      │ close intent
+  │                 DEGRADED ◄─ (incomplete    ▼
+  │                     │        leg set)   CLOSING ──(some legs unfilled)──► DEGRADED
+  └──── all legs flat ──┴────────────────────┘
 ```
 
 ### 11.2 UI projection (derived, never stored)
@@ -507,7 +533,7 @@ Rules of the road:
 
 ### 13.2 Fill-model parity
 
-V1 results assume "fill at the signal bar's close". The V1 adapter therefore tags lifted definitions with `fill_model: "same_bar_close"` *in the loaded model* (environment default for V1 only). New V2 backtests default to `next_bar_open` (§17). **Parity requirement:** the V2 engine, given a lifted V1 document, `same_bar_close`, and the V1 fixtures, must reproduce `EmaCrossoverReferenceEngine` output exactly (trades, equity curve strings). That is the single most important regression test for the migration.
+V1 results assume "fill at the signal bar's close". The V1 adapter therefore tags lifted definitions with `fill_model: "same_bar_close"` *in the loaded model* (environment default for V1 only). New V2 backtests default to `next_bar_open` (§17). **Parity requirement:** the V2 engine, given a lifted V1 document, `same_bar_close`, and the V1 fixtures, must reproduce `EmaCrossoverReferenceEngine` output exactly. The parity fixture locks down, for every fixture: **trade count; per-trade side, quantity, entry/exit price and pnl; signal timestamp and fill timestamp (equal under `same_bar_close`, asserted as such); exit reason (`rule:exit` vs end-of-data); final equity; and the full equity-curve strings.** Where a V1 concept does not map (e.g. V1 has no exit reason; end-of-data close is an engine artefact), the mapping is written into the fixture, not left implicit. Signal/fill timestamps are added as *additive* V2 result fields so V1 consumers are unaffected. This is the single most important regression test for the migration, and the gate for retiring the V1 engines.
 
 ### 13.3 Evolution within V2
 
@@ -530,7 +556,7 @@ The proposal's `Indicator Engine → Condition Evaluator → Position Manager �
 
 * **Missing: Order Planner / Instrument Resolver.** Turning "open the straddle" into concrete contract orders (resolve strikes/expiries, derive sides, round to lots/ticks, apply sizing) is neither condition evaluation nor position tracking nor fills. It is where multi-leg complexity lands.
 * **Missing: persisted position/session state.** Scaling, partial exits, stops and live trading require memory across bars *and across process restarts*. The current paper adapter has none.
-* **Conflated: "Position Manager".** Split into the **state machine** (what transitions are legal; pure) and the **ledger** (what is actually held at what cost; fed by fills).
+* **Conflated: "Position Manager".** Split into the **status machine** (what transitions are legal; pure, reads ledger status) and the **ledger** (what is actually held at what cost; fed only by fill events) — see §14.4.
 * **Indicator Engine is a library**, not a pipeline stage: a pure, cached function of the series.
 
 ### 14.2 Proposed decomposition
@@ -568,7 +594,7 @@ flowchart LR
 | **Order planner** | intents → order intents: resolve legs, size, derive sides, lot/tick rounding | yes (given resolver) | no (resolver backed by data) |
 | **Execution adapter** | order intents → fills (+ costs, slippage) | I/O | **yes**: simulated / paper / broker |
 | **Ledger** | fills → positions, cash, realised/unrealised P&L, equity curve | yes | no |
-| **Position/session state** | serialisable runtime state; deterministic order-intent IDs | storage | persisted in paper/live, in-memory in backtest |
+| **Position/session state** | three layers — intent, order, ledger (§14.4); serialisable; deterministic order-intent IDs | storage | persisted in paper/live, in-memory in backtest |
 | **Orchestrator** | steps the loop; backtest = iterate history, paper/live = on each bar close | — | **yes** |
 
 Properties this buys:
@@ -590,6 +616,68 @@ BacktestService
 
 The existing `BacktestEngine` Protocol (`run(configuration, backtest_configuration, candles)`) can remain the *outer* seam: a `StrategyRuntimeEngine` implements it, so the service/API change is minimal. Result gets additive fields (per-trade `exit_reason`, per-leg detail, `engine_version`), keeping the V1 `trades`/`equity_curve` shape for the single-position case.
 
+### 14.4 State layers, incomplete positions, and the order-intent contract
+
+**Three distinct state layers** (conflating them is what makes "open" ambiguous):
+
+| Layer | Owner | Meaning | Mutated by |
+|---|---|---|---|
+| **Intent state** (desired) | rule engine | what the strategy currently *wants*: per position, `desired ∈ {flat, open(size S)}` and the op that produced it | rule evaluation |
+| **Order state** (working) | execution adapter | order intents and their lifecycle: `created → submitted → acknowledged → partially_filled → filled \| rejected \| cancelled \| expired` | adapter events |
+| **Ledger state** (actual) | ledger | what is *filled and held*: per-leg quantity, average price, costs; derived position **status** | fills only |
+
+Only ledger state may answer "is the position open?". The rule engine's preconditions (§10.3) read **status**, not intent.
+
+**Position status** (derived from per-leg filled quantity vs. target):
+
+| Status | Definition |
+|---|---|
+| `flat` | every leg filled quantity = 0 and no working open/increase orders |
+| `opening` | an open/increase intent has working orders |
+| `open` | all legs at target size within tolerance, no working orders |
+| `degraded` | **incomplete leg set**: legs' filled quantities do not match fixed leg ratios and nothing is working (e.g. CALL filled, PUT rejected) |
+| `closing` | a close/reduce intent has working orders |
+
+`partially_open` / `partially_closed` are not separate statuses: they are `opening`/`closing` (orders still working) or `degraded` (nothing working, ratios broken). The ledger always records **per-leg** quantities, so an incomplete set is representable exactly; position-level P&L is always the sum over legs.
+
+**Partial-failure policy.** What to do on `degraded` is an **execution policy**, not strategy intent, and lives in environment configuration (`leg_failure_policy`):
+* `unwind` *(default)* — submit closing orders for the filled legs; position returns to `flat`; the run records `open_failed: leg_rejected`. Rules may re-fire next bar subject to `limits`.
+* `retry(n)` — re-submit the missing legs up to `n` times with the same intent id, then `unwind`.
+* `hold_and_alert` — leave `degraded`; only `close` is accepted; surfaced to the user (live-only in practice).
+
+Backtest simulation assumes complete fills unless its fill model injects rejects; the **status machine and ledger are the same code** in every environment, so behaviour on partial fills is specified once.
+
+**Order-intent contract (the seam all environments share).** The order planner emits, and every execution adapter consumes, exactly:
+
+```jsonc
+OrderIntent = {
+  "intent_id":  "<hash(strategy_version_id, rule_id|risk_id, bar_ts, op_index, leg_id)>",  // deterministic
+  "group_id":   "<hash(... op_index)>",          // legs of one operation share a group (basket)
+  "position":   "main", "leg": "call", "op": "open",
+  "contract":   ResolvedContract,                 // §16 — broker-agnostic
+  "side": "buy" | "sell", "quantity": "50",       // derived by the planner (§10.1)
+  "constraints": { "time_in_force": "bar", "limit_price": null, "reference_price": "..." },
+  "group_policy": "all_or_unwind"                 // from leg_failure_policy
+}
+```
+
+Adapters return a stream of **events** against `intent_id`:
+
+```jsonc
+{ "intent_id": "...", "type": "accepted" | "rejected" | "partial_fill" | "filled" | "cancelled" | "expired",
+  "filled_qty": "...", "price": "...", "fees": "...", "ts": "<UTC>", "reason": "<code>" }
+```
+
+Contract rules:
+1. **Idempotency:** an adapter must treat a repeated `intent_id` as the same order (no double submit). Replaying a bar after a crash regenerates identical ids.
+2. **Retries** reuse `intent_id` with an incrementing `attempt`; the ledger de-duplicates events by `(intent_id, event_seq)`.
+3. **Ledger is fed only by events**, never by intents. Backtest's simulated execution emits the same event types.
+4. **Reconciliation** (live): periodically compare the ledger to broker positions; a mismatch produces a `reconciliation_diff` event, moves the position to `degraded`, and is never silently overwritten. The reconciliation interface is part of the adapter contract, defined now (empty in backtest/paper).
+5. **No broker field** appears in `OrderIntent`; broker ids are mapped inside the live adapter and stored only in the adapter's own records.
+6. **Rejects and partial fills are first-class events**, not exceptions.
+
+This contract is the single boundary replacing V1's duplicated backtest/paper interpretation: backtest, paper and live differ *only* in who produces the events.
+
 ---
 
 ## 15. Paper / live execution boundary
@@ -604,7 +692,25 @@ The existing `BacktestEngine` Protocol (`run(configuration, backtest_configurati
   "features": ["leg.instrument.primary", "op.open", "op.close", "short_sell", "indicator.ema@1"] }
 ```
 
-Allocation/deploy checks `required ⊆ provided`. Today's matrix, expressed as capabilities rather than code branches:
+**Capabilities are compound.** A capability name may stand for several prerequisites across *different layers*. Each capability declares its prerequisites, and the checker expands them transitively before the subset test. Three layers of provision are kept distinct so a failure says *which* is missing:
+
+| Layer | Provided by | Examples |
+|---|---|---|
+| **Implementation** (code) | the runtime | `indicator.vwap@1`, `op.reduce`, `risk.basis.leg_price` |
+| **Data** | market-data / reference-data providers for the run | `data.intraday_bars`, `data.session_anchor`, `data.option_chain`, `data.option_prices`, `data.lot_size_history` |
+| **Environment** | execution/accounting environment | `short_sell`, `margin.short_options`, `multi_leg.basket`, `positions.hedge` |
+
+```jsonc
+"capability_graph": {
+  "indicator.vwap@1": ["data.intraday_bars", "data.session_anchor"],
+  "leg.instrument.option": ["resolver.option", "data.option_chain", "data.option_prices", "data.lot_size_history"],
+  "leg.side.sell+option":  ["margin.short_options"]
+}
+```
+
+The result of the check is the set of **unsatisfied leaves** grouped by layer (e.g. "missing data: `data.intraday_bars`") — which is what the UI can show ("backtest unavailable: needs intraday data" vs "paper unavailable: execution not supported").
+
+Allocation/deploy checks `required ⊆ provided` after expansion. Today's matrix, expressed as capabilities rather than code branches:
 
 | | Backtest (V2 engine, phase 2) | Paper (today) | Live |
 |---|---|---|---|
@@ -814,8 +920,8 @@ Hedge is an independent position with its own sizing and lifecycle; it can be ro
 
 ```jsonc
 "positions": { "main": { ...,
-  "risk": { "stop_loss":{"kind":"percent_from_entry","value":2.0},
-            "take_profit":{"kind":"percent_from_entry","value":5.0} } } },
+  "risk": { "stop_loss":  {"kind":"percent","value":2.0,"basis":{"kind":"leg_price","leg":"stock"}},
+            "take_profit":{"kind":"percent","value":5.0,"basis":{"kind":"leg_price","leg":"stock"}} } } },
 "rules": [
   { "id":"enter","when":A,"then":[{"op":"open","position":"main"}] },
   { "id":"tech_exit","when":<EMA cross below>,"then":[{"op":"close","position":"main"}] }
@@ -932,7 +1038,7 @@ For this document and for the first implementation phases:
 2. Persist `definition_schema_version` as a column (for marketplace filtering/capability badges) or keep it derived? Recommendation: derive now, add the column only if a query needs it.
 3. Is `percent_of_allocation: 100` the right default sizing semantics for paper/live allocations (vs. lot-rounded notional)?
 4. Should `next_bar_open` really be the V2 default, given only daily synthetic data exists today (open == close in the synthetic fixture)?
-5. Does the product want long **and** short positions in one strategy (two positions with mutual-exclusion guards) or one-direction-per-strategy at v2.0?
+5. ~~Long and short in one strategy?~~ **Resolved (review #32):** the definition allows multiple named positions; V2.0 runtimes allow at most one active `core` position (+ attached hedges), expressed as capabilities (§6.2). Not a schema restriction.
 6. Where does the describer live (backend-generated vs shared library)?
 7. Marketplace: how are capability gaps surfaced to investors ("backtest only")?
 
@@ -949,10 +1055,10 @@ Each phase is a small, isolated PR; none changes behaviour for existing V1 versi
 | **2** | Indicator catalog (`ema@1`, `sma@1`, `rsi@1`) with Decimal reference implementations; warm-up; **parity tests vs `_ema`** in both existing engines. | none |
 | **3** | Condition evaluator (3-valued, `compare/cross/edge/all/any/not`). Pure unit tests incl. warm-up and `not` safety. | none |
 | **4** | Semantic + position validators (L2/L3) and `required_capabilities`. | none |
-| **5** | Strategy runtime for **single position/leg, `open`/`close`, `bar_close`**, simulated execution + ledger, behind the `BacktestEngine` Protocol. **Parity gate:** reproduces `EmaCrossoverReferenceEngine` on V1 fixtures under `same_bar_close`. | none (opt-in engine) |
+| **5** | Strategy runtime for **single position/leg, `open`/`close`, `bar_close`**, the OrderIntent/event contract (§14.4), simulated execution + ledger, behind the `BacktestEngine` Protocol. **Parity gate:** reproduces `EmaCrossoverReferenceEngine` on V1 fixtures under `same_bar_close`. | none (opt-in engine) |
 | **6** | Backtest service selects engine by `schema_version`; V2 versions creatable via API (feature-flagged); `next_bar_open` default; capability check L4. | V2 backtests available |
 | **7** | Frontend: catalog endpoint, V2 builder (simple mode → condition builder), describer. | UI |
-| **8** | `risk` block; `increase`/`reduce`; persisted position state (needed here). | richer backtests |
+| **8** | `risk` block (with `basis`); `increase`/`reduce`; persisted position state (needed here). | richer backtests |
 | **9** | Paper adapter on the shared runtime with persisted state + capability manifest; retire `EmaCrossoverPaperAdapter`. | paper supports V2 |
 | **10+** | Intraday data → VWAP/Bollinger; then (separately designed) contract master, resolver, margin, options/multi-leg; then live adapter. | per feature |
 
