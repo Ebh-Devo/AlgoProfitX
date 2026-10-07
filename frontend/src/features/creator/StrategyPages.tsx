@@ -805,9 +805,17 @@ function VersionCreator({ strategyId, onClose }: { strategyId: string; onClose: 
                     onChange={(e) => {
                       const action = e.target.value as RuleAction;
                       r.set({ ...r.value, action, direction: usualDirection(action) });
+                      if (r.id === "entry") {
+                        // V1 holds one position, so the exit always takes the opposite side.
+                        const closing: RuleAction = action === "buy" ? "sell" : "buy";
+                        setExitRule({ ...exitRule, action: closing, direction: usualDirection(closing) });
+                        setExitActionError(null);
+                      }
                     }}
                   >
-                    {ACTIONS.map((a) => <option key={a} value={a}>{ACTION_LABEL[a]}</option>)}
+                    {ACTIONS.map((a) => (
+                      <option key={a} value={a} disabled={r.id === "exit" && a === rule.action}>{ACTION_LABEL[a]}</option>
+                    ))}
                   </select>
                   {r.actionError && <p className="field-error" role="alert" id={`${r.id}-action-error`}>{r.actionError}</p>}
                 </div>

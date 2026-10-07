@@ -304,7 +304,7 @@ describe("Create Version", () => {
     await userEvent.selectOptions(screen.getByLabelText("Instrument"), "i1");
     await userEvent.selectOptions(screen.getByLabelText("Entry action"), "sell");
     expect(screen.getByLabelText("Entry crossover direction")).toHaveValue("below");
-    await userEvent.selectOptions(screen.getByLabelText("Exit action"), "buy");
+    expect(screen.getByLabelText("Exit action")).toHaveValue("buy");
     expect(screen.getByLabelText("Exit crossover direction")).toHaveValue("above");
     expect(screen.getByText("Sell when the 3-day EMA crosses below the 9-day EMA.")).toBeInTheDocument();
     expect(screen.getByText("Buy when the 3-day EMA crosses above the 9-day EMA.")).toBeInTheDocument();
@@ -324,15 +324,27 @@ describe("Create Version", () => {
     );
   });
 
-  it("lets the action and condition vary independently and rejects an exit on the same side", async () => {
+  it("keeps the exit on the opposite side of the entry", async () => {
     await openCreatorWithInstruments();
-    await userEvent.selectOptions(screen.getByLabelText("Instrument"), "i1");
+    const exitOption = (name: string) => within(screen.getByLabelText("Exit action")).getByRole("option", { name }) as HTMLOptionElement;
+    // Entry Buy: Exit defaults to Sell and Buy cannot be chosen.
+    expect(screen.getByLabelText("Exit action")).toHaveValue("sell");
+    expect(exitOption("Buy").disabled).toBe(true);
+    expect(exitOption("Sell").disabled).toBe(false);
+    // Entry Sell: Exit flips to Buy and Sell cannot be chosen.
+    await userEvent.selectOptions(screen.getByLabelText("Entry action"), "sell");
+    expect(screen.getByLabelText("Exit action")).toHaveValue("buy");
+    expect(exitOption("Sell").disabled).toBe(true);
+    expect(exitOption("Buy").disabled).toBe(false);
+    // And back again.
+    await userEvent.selectOptions(screen.getByLabelText("Entry action"), "buy");
+    expect(screen.getByLabelText("Exit action")).toHaveValue("sell");
+  });
+
+  it("lets the crossover direction vary independently of the action", async () => {
+    await openCreatorWithInstruments();
     await userEvent.selectOptions(screen.getByLabelText("Entry crossover direction"), "below");
     expect(screen.getByText("Buy when the 3-day EMA crosses below the 9-day EMA.")).toBeInTheDocument();
-    await userEvent.selectOptions(screen.getByLabelText("Exit action"), "buy");
-    await userEvent.click(screen.getByRole("button", { name: "Create Version" }));
-    expect((await screen.findAllByText(/exit must be the opposite of the entry/)).length).toBeGreaterThan(0);
-    expect(api.createVersion).not.toHaveBeenCalled();
   });
 
   it("blocks creation and explains an invalid exit rule", async () => {
