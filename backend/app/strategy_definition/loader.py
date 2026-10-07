@@ -47,6 +47,9 @@ from app.strategy_definition.schema import (
 ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 TIMEFRAME_PATTERN = re.compile(r"^[1-9][0-9]*[mhdw]$")
 NAME_PATTERN = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
+# Decimal strings accepted for numeric fields (JSON numbers are always accepted).
+DECIMAL_PATTERN = re.compile(r"^-?([0-9]+(\.[0-9]*)?|\.[0-9]+)([eE][+-]?[0-9]+)?$")
+POSITIVE_DECIMAL_PATTERN = re.compile(r"^([0-9]+(\.[0-9]*)?|\.[0-9]+)([eE][+-]?[0-9]+)?$")
 
 # Bounds nesting of conditions and indicator sources (spec §22: bound depth).
 MAX_DEPTH = 16
@@ -138,15 +141,21 @@ def _discriminator(
 
 
 def _slug(ctx: _Context, value: Any, path: str) -> str | None:
-    if not isinstance(value, str) or not ID_PATTERN.match(value):
+    if not isinstance(value, str) or not ID_PATTERN.fullmatch(value):
         ctx.error(path, "invalid_id", "must be a slug: lowercase letters, digits, '_' or '-'")
         return None
     return value
 
 
-def _decimal(ctx: _Context, value: Any, path: str, code: str = "invalid_number") -> Decimal | None:
-    """Parse a JSON number or numeric string to a finite Decimal (never via binary float)."""
+def _decimal(
+    ctx: _Context, value: Any, path: str, code: str = "invalid_number", signed: bool = True
+) -> Decimal | None:
+    """Parse a JSON number or plain decimal string to a finite Decimal (never via float)."""
     if isinstance(value, bool) or not isinstance(value, (int, float, str)):
+        ctx.error(path, code, "must be a number")
+        return None
+    pattern = DECIMAL_PATTERN if signed else POSITIVE_DECIMAL_PATTERN
+    if isinstance(value, str) and not pattern.fullmatch(value):
         ctx.error(path, code, "must be a number")
         return None
     try:
@@ -161,7 +170,7 @@ def _decimal(ctx: _Context, value: Any, path: str, code: str = "invalid_number")
 
 
 def _positive(ctx: _Context, value: Any, path: str, code: str) -> Decimal | None:
-    parsed = _decimal(ctx, value, path, code)
+    parsed = _decimal(ctx, value, path, code, signed=False)
     if parsed is not None and parsed <= 0:
         ctx.error(path, code, "must be greater than zero")
         return None
@@ -169,7 +178,7 @@ def _positive(ctx: _Context, value: Any, path: str, code: str) -> Decimal | None
 
 
 def _timeframe(ctx: _Context, value: Any, path: str) -> str | None:
-    if not isinstance(value, str) or not TIMEFRAME_PATTERN.match(value):
+    if not isinstance(value, str) or not TIMEFRAME_PATTERN.fullmatch(value):
         ctx.error(path, "invalid_timeframe", "must look like 5m, 1h, 1d or 1w")
         return None
     return value
@@ -206,7 +215,7 @@ def _indicator(ctx: _Context, node: dict, path: str, depth: int) -> IndicatorRef
         return None
     ok = True
     name = node["name"]
-    if not isinstance(name, str) or not NAME_PATTERN.match(name):
+    if not isinstance(name, str) or not NAME_PATTERN.fullmatch(name):
         ctx.error(_join(path, "name"), "invalid_indicator", "name must be a lowercase identifier")
         ok = False
     version = node["version"]
@@ -219,7 +228,7 @@ def _indicator(ctx: _Context, node: dict, path: str, depth: int) -> IndicatorRef
         ok = False
     else:
         for key, value in params.items():
-            if not isinstance(key, str) or not NAME_PATTERN.match(key):
+            if not isinstance(key, str) or not NAME_PATTERN.fullmatch(key):
                 ctx.error(_join(path, "params"), "invalid_indicator", f"invalid param name {key!r}")
                 ok = False
             elif isinstance(value, bool) or not isinstance(value, _PARAM_TYPES):
@@ -235,7 +244,7 @@ def _indicator(ctx: _Context, node: dict, path: str, depth: int) -> IndicatorRef
         ok = ok and source is not None
     timeframe = _timeframe(ctx, node["timeframe"], _join(path, "timeframe"))
     output = node["output"]
-    if not isinstance(output, str) or not NAME_PATTERN.match(output):
+    if not isinstance(output, str) or not NAME_PATTERN.fullmatch(output):
         ctx.error(_join(path, "output"), "invalid_indicator", "output must be a lowercase identifier")
         ok = False
     if not ok or timeframe is None:
