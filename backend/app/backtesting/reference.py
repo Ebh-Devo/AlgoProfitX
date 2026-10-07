@@ -10,6 +10,12 @@ from app.backtesting.contracts import (
     MarketDataBatch,
 )
 from app.instrument_identity import is_synthetic_equity_symbol
+from app.strategy_rules import (
+    StrategyRuleError,
+    parse_entry_rule,
+    parse_exit_rule,
+    require_closing_action,
+)
 
 
 class SyntheticMarketDataProvider:
@@ -100,7 +106,11 @@ class SyntheticMarketDataProvider:
 
 
 class EmaCrossoverReferenceEngine:
-    """A one-long-trade EMA crossover reference, not a general strategy engine."""
+    """A single-position EMA crossover reference, not a general strategy engine.
+
+    V1 is intentionally limited: one entry rule, an optional exit rule, one trade. The entry
+    action sets the side (buy opens a long, sell opens a short); the exit closes it.
+    """
 
     identifier = "ema-crossover-reference-v1"
 
@@ -114,13 +124,36 @@ class EmaCrossoverReferenceEngine:
         candles: Sequence[Candle],
     ) -> BacktestExecutionResult:
         self._validate_candles(candles)
-        fast_period, slow_period = self._periods(configuration)
+        try:
+            entry_rule = parse_entry_rule(configuration)
+            exit_rule = parse_exit_rule(configuration)
+            if exit_rule is not None:
+                require_closing_action(entry_rule.action, exit_rule.action)
+        except StrategyRuleError as exc:
+            raise BacktestExecutionError(str(exc)) from exc
         initial_capital = self._initial_capital(backtest_configuration)
+        sign = Decimal("1") if entry_rule.action == "buy" else Decimal("-1")
 
         closes = [candle.close for candle in candles]
-        fast_ema = self._ema(closes, fast_period)
-        slow_ema = self._ema(closes, slow_period)
-        entry_index = self._entry_index(fast_ema, slow_ema)
+        entry_index = self._cross_index(
+            self._ema(closes, entry_rule.fast_period),
+            self._ema(closes, entry_rule.slow_period),
+            entry_rule.direction,
+            1,
+        )
+
+        # Optional exit rule: the first cross after entry. Entry-only configurations hold
+        # to the final candle.
+        exit_index = len(candles) - 1
+        if entry_index is not None and exit_rule is not None:
+            crossed = self._cross_index(
+                self._ema(closes, exit_rule.fast_period),
+                self._ema(closes, exit_rule.slow_period),
+                exit_rule.direction,
+                entry_index + 1,
+            )
+            if crossed is not None:
+                exit_index = crossed
 
         quantity = Decimal("0")
         entry_price: Decimal | None = None
@@ -128,13 +161,17 @@ class EmaCrossoverReferenceEngine:
             entry_price = candles[entry_index].close
             quantity = initial_capital / entry_price
 
+        def equity_at(price: Decimal) -> Decimal:
+            # Long gains when price rises, short when it falls: sign * (price - entry).
+            return initial_capital + sign * quantity * (price - entry_price)
+
         equity_curve = tuple(
             {
                 "timestamp": candle.timestamp.isoformat(),
                 "equity": self._decimal_string(
                     initial_capital
                     if entry_index is None or index < entry_index
-                    else quantity * candle.close
+                    else equity_at(candles[min(index, exit_index)].close)
                 ),
             }
             for index, candle in enumerate(candles)
@@ -143,18 +180,18 @@ class EmaCrossoverReferenceEngine:
         final_equity = (
             initial_capital
             if entry_index is None
-            else quantity * candles[-1].close
+            else equity_at(candles[exit_index].close)
         )
         trades: tuple[dict[str, str], ...] = ()
         if entry_index is not None and entry_price is not None:
             trades = (
                 {
-                    "side": "long",
+                    "side": "long" if sign > 0 else "short",
                     "entry_timestamp": candles[entry_index].timestamp.isoformat(),
-                    "exit_timestamp": candles[-1].timestamp.isoformat(),
+                    "exit_timestamp": candles[exit_index].timestamp.isoformat(),
                     "quantity": self._decimal_string(quantity),
                     "entry_price": self._decimal_string(entry_price),
-                    "exit_price": self._decimal_string(candles[-1].close),
+                    "exit_price": self._decimal_string(candles[exit_index].close),
                     "pnl": self._decimal_string(final_equity - initial_capital),
                 },
             )
@@ -184,22 +221,6 @@ class EmaCrossoverReferenceEngine:
             previous_timestamp = candle.timestamp
 
     @staticmethod
-    def _periods(configuration: dict) -> tuple[int, int]:
-        entry = configuration.get("entry")
-        if not isinstance(entry, dict) or entry.get("type") != "ema_crossover":
-            raise BacktestExecutionError(
-                "Reference engine supports only entry.type=ema_crossover"
-            )
-        try:
-            fast_period = int(entry["fast_period"])
-            slow_period = int(entry["slow_period"])
-        except (KeyError, TypeError, ValueError) as exc:
-            raise BacktestExecutionError("EMA periods must be positive integers") from exc
-        if fast_period <= 0 or slow_period <= fast_period:
-            raise BacktestExecutionError("EMA periods must satisfy 0 < fast < slow")
-        return fast_period, slow_period
-
-    @staticmethod
     def _initial_capital(backtest_configuration: dict) -> Decimal:
         try:
             value = Decimal(str(backtest_configuration["initial_capital"]))
@@ -226,23 +247,28 @@ class EmaCrossoverReferenceEngine:
         return tuple(values)
 
     @staticmethod
-    def _entry_index(
+    def _cross_index(
         fast_ema: Sequence[Decimal | None],
         slow_ema: Sequence[Decimal | None],
+        direction: str,
+        start: int,
     ) -> int | None:
-        for index in range(1, len(fast_ema)):
+        """First index >= start where the fast EMA crosses the slow EMA in `direction`."""
+        for index in range(max(start, 1), len(fast_ema)):
             previous_fast = fast_ema[index - 1]
             previous_slow = slow_ema[index - 1]
             current_fast = fast_ema[index]
             current_slow = slow_ema[index]
             if (
-                previous_fast is not None
-                and previous_slow is not None
-                and current_fast is not None
-                and current_slow is not None
-                and previous_fast <= previous_slow
-                and current_fast > current_slow
+                previous_fast is None
+                or previous_slow is None
+                or current_fast is None
+                or current_slow is None
             ):
+                continue
+            if direction == "above" and previous_fast <= previous_slow and current_fast > current_slow:
+                return index
+            if direction == "below" and previous_fast >= previous_slow and current_fast < current_slow:
                 return index
         return None
 

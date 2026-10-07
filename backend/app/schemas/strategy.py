@@ -2,10 +2,11 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.models.strategy import StrategyStatus
 from app.schemas.instrument import InstrumentResponse
+from app.strategy_rules import StrategyRuleError, validate_rule_configuration
 
 
 class StrategyCreateRequest(BaseModel):
@@ -61,6 +62,15 @@ class StrategyVersionCreateRequest(BaseModel):
     backtest_configuration: dict[str, Any] = Field(
         default_factory=dict
     )
+
+    @field_validator("configuration")
+    @classmethod
+    def _validate_rules(cls, value: dict[str, Any]) -> dict[str, Any]:
+        try:
+            validate_rule_configuration(value)
+        except StrategyRuleError as exc:
+            raise ValueError(str(exc)) from exc
+        return value
 
 
 class StrategyVersionResponse(BaseModel):

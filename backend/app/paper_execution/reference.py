@@ -232,6 +232,13 @@ class EmaCrossoverPaperAdapter:
                 "invalid_strategy_configuration",
                 "Paper reference adapter supports only entry.type=ema_crossover",
             )
+        # Paper execution only models a buy on an upward cross; refuse sell-side entries
+        # rather than silently executing them as buys.
+        if entry.get("action", "buy") != "buy" or entry.get("direction", "above") != "above":
+            raise PaperExecutionError(
+                "invalid_strategy_configuration",
+                "Paper reference adapter supports only a buy entry on a cross above",
+            )
         try:
             fast_period = int(entry["fast_period"])
             slow_period = int(entry["slow_period"])
