@@ -8,12 +8,11 @@ from app.strategy_definition.capabilities import (
     CapabilityGraphCycleError,
     CapabilityLayer,
     CapabilityRequirements,
-    build_capability_graph,
+    CapabilitySpec,
+    direct_capabilities,
     layer_of,
     required_capabilities,
 )
-from app.strategy_definition.indicators import IndicatorCatalog, IndicatorSpec, OutputSpec, ParamSpec
-from app.strategy_definition.indicators.catalog import DEFAULT_CATALOG
 from app.strategy_definition.schema import (
     Amount,
     CompareCondition,
@@ -118,60 +117,91 @@ def test_layers_are_separated():
         CapabilityRequirements({"mystery.feature"})
 
 
-def test_transitive_expansion():
-    graph = CapabilityGraph(
-        {
-            "indicator.vwap@1": ["data.intraday_bars", "data.session_anchor"],
-            "data.session_anchor": ["data.intraday_bars"],
-            "leg.instrument.option": ["resolver.option", "data.option_chain"],
-            "resolver.option": ["data.option_prices"],
-        }
-    )
-    expanded = graph.expand(CapabilityRequirements({"indicator.vwap@1", "leg.instrument.option", "op.open"}))
+def spec(name, *prerequisites):
+    return CapabilitySpec(name, frozenset(prerequisites))
+
+
+VWAP_LIKE = [
+    spec("indicator.anchored@1", "data.intraday_bars", "data.session_anchor"),
+    spec("data.session_anchor", "data.intraday_bars"),
+    spec("leg.instrument.option", "resolver.option", "data.option_chain"),
+    spec("resolver.option", "data.option_prices"),
+]
+
+
+def test_transitive_expansion_multi_level():
+    graph = CapabilityGraph(VWAP_LIKE)
+    expanded = graph.expand(CapabilityRequirements({"indicator.anchored@1", "leg.instrument.option", "op.open"}))
     assert expanded.sorted() == (
         "data.intraday_bars",
         "data.option_chain",
         "data.option_prices",
         "data.session_anchor",
-        "indicator.vwap@1",
+        "indicator.anchored@1",
         "leg.instrument.option",
         "op.open",
         "resolver.option",
     )
     assert graph.expand(expanded) == expanded  # idempotent
     assert graph.prerequisites("op.open") == ()
-    assert graph.prerequisites("indicator.vwap@1") == ("data.intraday_bars", "data.session_anchor")
+    assert graph.prerequisites("indicator.anchored@1") == ("data.intraday_bars", "data.session_anchor")
+    assert CapabilitySpec("indicator.anchored@1").layer is CapabilityLayer.IMPLEMENTATION
 
 
-def test_graph_rejects_cycles_and_unknown_names_and_is_immutable():
+def test_expansion_is_deterministic_and_deduplicated():
+    forward, backward = CapabilityGraph(VWAP_LIKE), CapabilityGraph(reversed(VWAP_LIKE))
+    seed = CapabilityRequirements({"indicator.anchored@1", "data.session_anchor", "data.intraday_bars"})
+    assert forward.expand(seed).sorted() == backward.expand(seed).sorted()
+    assert forward.expand(seed).sorted().count("data.intraday_bars") == 1
+    assert [forward.expand(seed).sorted() for _ in range(3)] == [forward.expand(seed).sorted()] * 3
+
+
+def test_graph_rejects_cycles_duplicates_unknown_names_and_is_immutable():
     with pytest.raises(CapabilityGraphCycleError) as info:
-        CapabilityGraph({"op.a": ["op.b"], "op.b": ["op.c"], "op.c": ["op.a"]})
+        CapabilityGraph([spec("op.a", "op.b"), spec("op.b", "op.c"), spec("op.c", "op.a")])
     assert info.value.cycle == ("op.a", "op.b", "op.c", "op.a")
     with pytest.raises(CapabilityGraphCycleError):
-        CapabilityGraph({"op.a": ["op.a"]})
+        CapabilityGraph([spec("op.a", "op.a")])
     with pytest.raises(ValueError):
-        CapabilityGraph({"op.a": ["bogus"]})
-    graph = CapabilityGraph({"op.a": ["data.x"]})
+        spec("op.a", "bogus")
+    with pytest.raises(ValueError):
+        CapabilityGraph([spec("op.a"), spec("op.a", "data.x")])
+    graph = CapabilityGraph([spec("op.a", "data.x")])
     with pytest.raises(AttributeError):
         graph._edges = {}
     with pytest.raises(TypeError):
-        graph._edges["op.z"] = ()
+        graph._edges["op.z"] = frozenset()
+    with pytest.raises(FrozenInstanceError):
+        CapabilitySpec("op.a").name = "op.b"
 
 
-def test_catalog_declares_its_own_requirements():
-    assert DEFAULT_CAPABILITY_GRAPH.prerequisites("indicator.ema@1") == ()
-    catalog = IndicatorCatalog(
-        [
-            *DEFAULT_CATALOG.all(),
-            IndicatorSpec("anchored", 1, (ParamSpec("period", "integer"),), (OutputSpec("value"),), anchor="session"),
-        ]
-    )
-    graph = build_capability_graph(catalog)
-    assert graph.prerequisites("indicator.anchored@1") == ("data.intraday_bars", "data.session_anchor")
+def test_required_capabilities_is_already_transitive():
+    """Callers never need a separate .expand(): the canonical result is the full set."""
+    graph = CapabilityGraph(VWAP_LIKE)
     cond = CompareCondition("gt", CLOSE, ind("anchored", 5, "5m"))
-    required = required_capabilities(with_when(cond, timeframe="5m"))
-    assert "data.session_anchor" not in required
-    assert "data.session_anchor" in graph.expand(required)
+    definition = with_when(cond, timeframe="5m")
+    required = required_capabilities(definition, graph=graph)
+    assert {"indicator.anchored@1", "data.intraday_bars", "data.session_anchor"} <= required.required
+    assert required == graph.expand(required)  # nothing left to expand
+    provided = {"op.open", "op.close", "leg.instrument.primary", "leg.side.buy", "data.intraday_bars"}
+    assert required - provided >= {"data.session_anchor", "indicator.anchored@1"}
+    assert (required - required) == frozenset()
+
+
+def test_direct_and_transitive_remain_distinguishable():
+    graph = CapabilityGraph(VWAP_LIKE)
+    cond = CompareCondition("gt", CLOSE, ind("anchored", 5, "1d"))
+    definition = with_when(cond)
+    direct = direct_capabilities(definition)
+    assert "data.session_anchor" not in direct
+    assert "data.session_anchor" in required_capabilities(definition, graph=graph)
+    assert direct.required < required_capabilities(definition, graph=graph).required
+
+
+def test_default_graph_leaves_ema_rsi_sma_requirements_unchanged():
+    for name in ("ema", "rsi", "sma"):
+        definition = with_when(CompareCondition("gt", CLOSE, ind(name, 14)))
+        assert required_capabilities(definition) == direct_capabilities(definition)
 
 
 def test_constant_only_condition_adds_no_indicator_capability():

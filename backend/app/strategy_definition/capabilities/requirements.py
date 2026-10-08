@@ -6,6 +6,7 @@ Prerequisites beyond what is directly visible come from the capability graph.
 
 from typing import Any, Iterator
 
+from app.strategy_definition.capabilities.graph import DEFAULT_CAPABILITY_GRAPH, CapabilityGraph
 from app.strategy_definition.capabilities.model import CapabilityRequirements
 from app.strategy_definition.schema import (
     AllCondition,
@@ -20,8 +21,18 @@ from app.strategy_definition.schema import (
 from app.strategy_definition.timeframe import is_intraday
 
 
-def required_capabilities(definition: StrategyDefinition) -> CapabilityRequirements:
-    """The capabilities ``definition`` directly requires, deduplicated."""
+def required_capabilities(
+    definition: StrategyDefinition, *, graph: CapabilityGraph = DEFAULT_CAPABILITY_GRAPH
+) -> CapabilityRequirements:
+    """The canonical requirement set: direct capabilities plus every transitive prerequisite.
+
+    Safe to compare against an environment's provided capabilities as it stands.
+    """
+    return graph.expand(direct_capabilities(definition))
+
+
+def direct_capabilities(definition: StrategyDefinition) -> CapabilityRequirements:
+    """Only what walking ``definition`` yields, before prerequisite expansion (internal use)."""
     names: set[str] = set()
     if is_intraday(definition.timeframe):
         names.add("data.intraday_bars")

@@ -8,14 +8,14 @@ from app.strategy_definition.capabilities.graph import (
     DEFAULT_CAPABILITY_GRAPH,
     CapabilityGraph,
     CapabilityGraphCycleError,
-    build_capability_graph,
 )
 from app.strategy_definition.capabilities.model import (
     CapabilityLayer,
     CapabilityRequirements,
+    CapabilitySpec,
     layer_of,
 )
-from app.strategy_definition.capabilities.requirements import required_capabilities
+from app.strategy_definition.capabilities.requirements import direct_capabilities, required_capabilities
 
 __all__ = [
     "DEFAULT_CAPABILITY_GRAPH",
@@ -23,7 +23,8 @@ __all__ = [
     "CapabilityGraphCycleError",
     "CapabilityLayer",
     "CapabilityRequirements",
-    "build_capability_graph",
+    "CapabilitySpec",
+    "direct_capabilities",
     "layer_of",
     "required_capabilities",
 ]

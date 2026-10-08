@@ -3,8 +3,7 @@
 from types import MappingProxyType
 from typing import Iterable, Mapping
 
-from app.strategy_definition.capabilities.model import CapabilityRequirements, layer_of
-from app.strategy_definition.indicators import DEFAULT_CATALOG, IndicatorCatalog
+from app.strategy_definition.capabilities.model import CapabilityRequirements, CapabilitySpec
 
 
 class CapabilityGraphCycleError(ValueError):
@@ -16,18 +15,22 @@ class CapabilityGraphCycleError(ValueError):
 
 
 class CapabilityGraph:
-    """Immutable ``capability -> prerequisites`` edges. Acyclic and fully classified."""
+    """Immutable ``capability -> prerequisites`` relation, built from capability specs.
+
+    Acyclic and fully classified. The graph is the single owner of prerequisites: nothing
+    else (catalog metadata included) is inspected to decide what a capability needs.
+    """
 
     __slots__ = ("_edges",)
 
-    def __init__(self, edges: Mapping[str, Iterable[str]]):
-        normalized = {name: tuple(sorted(set(deps))) for name, deps in edges.items()}
-        for name, deps in normalized.items():
-            layer_of(name)
-            for dep in deps:
-                layer_of(dep)
-        _reject_cycles(normalized)
-        object.__setattr__(self, "_edges", MappingProxyType(dict(sorted(normalized.items()))))
+    def __init__(self, specs: Iterable[CapabilitySpec] = ()):
+        edges: dict[str, frozenset[str]] = {}
+        for spec in specs:
+            if spec.name in edges:
+                raise ValueError(f"duplicate capability {spec.name!r}")
+            edges[spec.name] = spec.prerequisites
+        _reject_cycles(edges)
+        object.__setattr__(self, "_edges", MappingProxyType(dict(sorted(edges.items()))))
 
     def __setattr__(self, name: str, value: object) -> None:
         raise AttributeError(f"{type(self).__name__} is immutable")
@@ -37,7 +40,7 @@ class CapabilityGraph:
 
     def prerequisites(self, name: str) -> tuple[str, ...]:
         """Direct prerequisites only, sorted."""
-        return self._edges.get(name, ())
+        return tuple(sorted(self._edges.get(name, ())))
 
     def expand(self, requirements: CapabilityRequirements) -> CapabilityRequirements:
         """The requirements plus every transitive prerequisite. Deterministic and idempotent."""
@@ -52,7 +55,7 @@ class CapabilityGraph:
         return CapabilityRequirements(seen)
 
 
-def _reject_cycles(edges: Mapping[str, tuple[str, ...]]) -> None:
+def _reject_cycles(edges: Mapping[str, frozenset[str]]) -> None:
     done: set[str] = set()
 
     def visit(name: str, trail: tuple[str, ...]) -> None:
@@ -60,7 +63,7 @@ def _reject_cycles(edges: Mapping[str, tuple[str, ...]]) -> None:
             raise CapabilityGraphCycleError(trail[trail.index(name) :] + (name,))
         if name in done:
             return
-        for dep in edges.get(name, ()):
+        for dep in sorted(edges.get(name, ())):
             visit(dep, trail + (name,))
         done.add(name)
 
@@ -68,15 +71,7 @@ def _reject_cycles(edges: Mapping[str, tuple[str, ...]]) -> None:
         visit(name, ())
 
 
-def build_capability_graph(catalog: IndicatorCatalog = DEFAULT_CATALOG) -> CapabilityGraph:
-    """Edges implied by the catalog: a session-anchored indicator needs intraday bars and the
-    session calendar. Nothing is hard-coded per indicator, so new catalog entries declare
-    their own requirements through their spec."""
-    edges: dict[str, tuple[str, ...]] = {}
-    for spec in catalog.all():
-        if spec.anchor == "session":
-            edges[f"indicator.{spec.key}"] = ("data.intraday_bars", "data.session_anchor")
-    return CapabilityGraph(edges)
-
-
-DEFAULT_CAPABILITY_GRAPH = build_capability_graph()
+# Capabilities that declare prerequisites. Empty today: no V2.0 catalog indicator needs
+# anything beyond its own name. Entries are added with the feature that introduces them, e.g.
+# CapabilitySpec("indicator.vwap@1", frozenset({"data.intraday_bars", "data.session_anchor"})).
+DEFAULT_CAPABILITY_GRAPH = CapabilityGraph()

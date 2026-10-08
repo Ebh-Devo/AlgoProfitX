@@ -6,7 +6,7 @@ what any environment provides.
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Iterable
+from typing import AbstractSet, Iterable
 
 
 class CapabilityLayer(str, Enum):
@@ -41,6 +41,24 @@ def layer_of(name: str) -> CapabilityLayer:
 
 
 @dataclass(frozen=True)
+class CapabilitySpec:
+    """A capability and the prerequisites it declares. The graph owns this relationship."""
+
+    name: str
+    prerequisites: frozenset[str] = frozenset()
+
+    def __post_init__(self) -> None:
+        layer_of(self.name)
+        for prerequisite in self.prerequisites:
+            layer_of(prerequisite)
+        object.__setattr__(self, "prerequisites", frozenset(self.prerequisites))
+
+    @property
+    def layer(self) -> CapabilityLayer:
+        return layer_of(self.name)
+
+
+@dataclass(frozen=True)
 class CapabilityRequirements:
     """An immutable set of required capability names."""
 
@@ -64,6 +82,12 @@ class CapabilityRequirements:
 
     def to_dict(self) -> dict[str, list[str]]:
         return {layer.value: list(names) for layer, names in self.by_layer().items()}
+
+    def __sub__(self, provided: "AbstractSet[str] | CapabilityRequirements") -> frozenset[str]:
+        """What is required but not provided: ``required_capabilities(d) - provided``."""
+        if isinstance(provided, CapabilityRequirements):
+            provided = provided.required
+        return self.required - frozenset(provided)
 
     def __contains__(self, name: object) -> bool:
         return name in self.required
