@@ -1,8 +1,8 @@
 """Strategy Definition V2: canonical model, V2 loader/validator and the V1 adapter.
 
-Phase 1 foundation (docs/STRATEGY_DEFINITION_V2.md §23). Pure and not wired into any
-service or API: future runtime consumers receive a ``CanonicalDefinition`` and never read raw
-V1 or V2 JSON.
+Phase 1 foundation (docs/STRATEGY_DEFINITION_V2.md §23). Services obtain a definition only via
+``app.strategy_definition.versioning`` (Phase 6, docs/STRATEGY_V2_VERSIONING.md), which selects the
+loader from the persisted ``definition_schema_version`` and never from the JSON's shape.
 """
 
 from app.strategy_definition.errors import StrategyDefinitionError, ValidationIssue

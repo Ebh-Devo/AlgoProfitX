@@ -1,4 +1,9 @@
-"""Version detection and the single entry point from a stored configuration."""
+"""Shape-based version detection and loading (Phase 1-5, offline use).
+
+Services must NOT use this: the persisted ``definition_schema_version`` is authoritative and is
+resolved in ``versioning.py``. This module remains for the engine's configuration-only entry
+points and the parity tests, which have no persisted version to consult.
+"""
 
 from typing import Any, Literal
 

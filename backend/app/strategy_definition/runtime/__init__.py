@@ -1,7 +1,8 @@
 """Strategy V2 runtime, Phase 5 (docs/STRATEGY_DEFINITION_V2.md §14).
 
 Single position, single leg, ``open``/``close``, ``bar_close``, simulated ``same_bar_close``
-execution. Pure and broker-independent; not wired into any service or API.
+execution. Pure and broker-independent. Phase 6 selects it from the backtest service for
+``definition_schema_version = 2`` only (docs/STRATEGY_V2_VERSIONING.md).
 
     rules -> operations -> conflicts -> planner -> OrderIntent
           -> execution adapter -> ExecutionEvent -> ledger -> status / P&L / equity

@@ -32,6 +32,17 @@ from app.models.strategy import StrategyVersion
 from app.market_calendar.contracts import CalendarError
 from app.market_calendar.reference import IndianReferenceTradingCalendar
 from app.schemas.backtest import BacktestCreateRequest
+from app.strategy_definition.errors import StrategyDefinitionError
+from app.strategy_definition.runtime.engine import StrategyRuntimeEngine
+from app.strategy_definition.runtime.environment import parse_environment
+from app.strategy_definition.runtime.errors import RuntimeSetupError
+from app.strategy_definition.versioning import (
+    LEGACY_SCHEMA_VERSION,
+    LoadedDefinition,
+    UnsupportedSchemaVersionError,
+    load_definition_for_version,
+    resolve_schema_version,
+)
 from app.instrument_identity import (
     LEGACY_SYNTHETIC_EQUITY_SYMBOL,
     is_synthetic_equity_symbol,
@@ -59,6 +70,7 @@ async def create_backtest(
         instrument_snapshot=instrument_snapshot,
         requested_by_user_id=requested_by_user_id,
         status=BacktestStatus.QUEUED,
+        definition_schema_version=_snapshot_schema_version(strategy_version),
         configuration_snapshot=deepcopy(strategy_version.configuration),
         backtest_configuration_snapshot=deepcopy(
             strategy_version.backtest_configuration
@@ -126,15 +138,26 @@ async def execute_backtest(
     try:
         configured_code = get_settings().market_data_provider
         provider = ProviderRegistry((SyntheticMarketDataProvider(),)).resolve(configured_code)
-        engine = EmaCrossoverReferenceEngine(provider.identifier)
+        # The persisted schema version alone selects the path. A V2 definition is loaded and
+        # fully validated here, before any market data is requested or any candle is read.
+        loaded = _load_versioned_definition(backtest)
         request = await _historical_request(session, backtest)
         dataset, candles = await _acquire_dataset(session, backtest, provider, request)
         await _attach_dataset(session, backtest_id, dataset)
-        result = engine.run(
-            backtest.configuration_snapshot,
-            backtest.backtest_configuration_snapshot,
-            candles,
-        )
+        if loaded is None:  # V1: the unchanged reference engine
+            result = EmaCrossoverReferenceEngine(provider.identifier).run(
+                backtest.configuration_snapshot,
+                backtest.backtest_configuration_snapshot,
+                candles,
+            )
+        else:  # V2: the Phase 5 runtime, over the already-loaded canonical definition
+            result = StrategyRuntimeEngine(
+                provider.identifier, str(backtest.strategy_version_id)
+            ).run_canonical(
+                loaded.canonical,
+                backtest.backtest_configuration_snapshot,
+                candles,
+            )
         if len(result.trades) > MAX_RESULT_TRADES:
             raise BacktestExecutionError("Backtest trade result exceeds its limit")
         if len(result.equity_curve) > MAX_RESULT_EQUITY_POINTS:
@@ -173,6 +196,49 @@ async def execute_backtest(
     metrics.increment("backtest.count", tags={"status": "completed"})
     metrics.observe("backtest.duration_ms", duration_ms, tags={"status": "completed"})
     return completed
+
+
+def _snapshot_schema_version(strategy_version: StrategyVersion) -> int:
+    """The version to snapshot. A missing value is a legacy V1 record; anything else is copied
+    verbatim so an unsupported value fails deterministically at execution, never silently as V1."""
+    value = getattr(strategy_version, "definition_schema_version", None)
+    return LEGACY_SCHEMA_VERSION if value is None else value
+
+
+def _load_versioned_definition(backtest: Backtest) -> LoadedDefinition | None:
+    """``None`` for V1 (the existing path, untouched); the validated V2 definition otherwise.
+
+    Order: resolve the persisted version, load, schema, semantic, capability, environment.
+    Failures are ``BacktestExecutionError`` with a stable code, raised before market data.
+    """
+    try:
+        version = resolve_schema_version(backtest.definition_schema_version)
+        if version == 1:
+            return None
+        loaded = load_definition_for_version(
+            version,
+            backtest.configuration_snapshot,
+            backtest.backtest_configuration_snapshot,
+        )
+        parse_environment(
+            loaded.canonical,
+            backtest.backtest_configuration_snapshot,
+            str(backtest.strategy_version_id),
+        )
+    except UnsupportedSchemaVersionError as exc:
+        raise BacktestExecutionError(str(exc), "strategy_definition_unsupported_version") from exc
+    except StrategyDefinitionError as exc:
+        raise BacktestExecutionError(str(exc), "strategy_definition_invalid") from exc
+    except RuntimeSetupError as exc:
+        codes = {issue.code for issue in exc.issues}
+        if "capability_missing" in codes:
+            code = "strategy_definition_unsupported_capability"
+        elif exc.issues:
+            code = "strategy_definition_invalid"
+        else:
+            code = "strategy_environment_invalid"
+        raise BacktestExecutionError(str(exc), code) from exc
+    return loaded
 
 
 async def _claim_queued_backtest(

@@ -15,6 +15,9 @@ from app.schemas.strategy import (
     StrategyVersionCreateRequest,
 )
 from app.instrument_identity import SYNTHETIC_EQUITY_ID, SYNTHETIC_EQUITY_SYMBOLS
+from app.strategy_definition.errors import StrategyDefinitionError
+from app.strategy_definition.runtime.errors import RuntimeSetupError
+from app.strategy_definition.versioning import load_definition_for_version
 
 
 ALLOWED_LIFECYCLE_TRANSITIONS = {
@@ -194,15 +197,79 @@ async def delete_strategy(
         ) from exc
 
 
+V1_SCHEMA_VERSION = 1
+V2_SCHEMA_VERSION = 2
+
+
 async def create_strategy_version(
     session: AsyncSession,
     strategy: Strategy,
     data: StrategyVersionCreateRequest,
 ) -> StrategyVersion:
+    """The public (V1) creation flow: always persists ``definition_schema_version = 1``.
+
+    A configuration carrying a V2 envelope is refused rather than stored as V1, where its
+    fields would be silently ignored. V2 versions are created with ``create_strategy_version_v2``.
+    """
+    if "schema" in data.configuration or "schema_version" in data.configuration:
+        raise StrategyVersionValidationError(
+            "V2 strategy definitions are not accepted by this endpoint"
+        )
+    return await _create_version(
+        session,
+        strategy,
+        data.instrument_id,
+        data.configuration,
+        data.backtest_configuration,
+        V1_SCHEMA_VERSION,
+    )
+
+
+async def create_strategy_version_v2(
+    session: AsyncSession,
+    strategy: Strategy,
+    *,
+    instrument_id: uuid.UUID,
+    configuration: dict,
+    backtest_configuration: dict,
+) -> StrategyVersion:
+    """Internal entry point (no public API yet): persist a V2 definition as version 2.
+
+    The document must pass schema and semantic validation before it is stored. Runtime
+    capabilities are checked when a backtest executes, not here, so a valid definition that
+    needs a future capability can still be saved.
+    """
+    try:
+        load_definition_for_version(
+            V2_SCHEMA_VERSION,
+            configuration,
+            backtest_configuration,
+            check_runtime_capabilities=False,
+        )
+    except (StrategyDefinitionError, RuntimeSetupError) as exc:
+        raise StrategyVersionValidationError(f"Invalid V2 definition: {exc}") from exc
+    return await _create_version(
+        session,
+        strategy,
+        instrument_id,
+        configuration,
+        backtest_configuration,
+        V2_SCHEMA_VERSION,
+    )
+
+
+async def _create_version(
+    session: AsyncSession,
+    strategy: Strategy,
+    instrument_id: uuid.UUID,
+    configuration: dict,
+    backtest_configuration: dict,
+    definition_schema_version: int,
+) -> StrategyVersion:
     instrument = await session.scalar(
         select(Instrument)
         .join(Exchange)
-        .where(Instrument.id == data.instrument_id)
+        .where(Instrument.id == instrument_id)
         .options(selectinload(Instrument.exchange))
     )
     if instrument is None:
@@ -212,7 +279,7 @@ async def create_strategy_version(
     if not instrument.exchange.is_active:
         raise StrategyVersionValidationError("Instrument Exchange is inactive")
 
-    legacy_identity = data.configuration.get("instrument")
+    legacy_identity = configuration.get("instrument")
     if legacy_identity is not None:
         matching_symbols = {
             instrument.canonical_symbol.casefold(),
@@ -244,8 +311,9 @@ async def create_strategy_version(
         strategy_id=strategy.id,
         instrument_id=instrument.id,
         version_number=version_number,
-        configuration=data.configuration,
-        backtest_configuration=data.backtest_configuration,
+        definition_schema_version=definition_schema_version,
+        configuration=configuration,
+        backtest_configuration=backtest_configuration,
     )
     version.instrument = instrument
     session.add(version)

@@ -1,8 +1,9 @@
 # Strategy V2 — Phase 5 runtime: implementation note
 
 Implements Phase 5 of [STRATEGY_DEFINITION_V2.md](STRATEGY_DEFINITION_V2.md) §23. Opt-in and
-unwired: no API, database, UI or backtest-service change; `EmaCrossoverReferenceEngine` is
-untouched and remains the parity oracle.
+at Phase 5: no API, database, UI or backtest-service change; `EmaCrossoverReferenceEngine` is
+untouched and remains the parity oracle. (Phase 6 wires it into the backtest service for
+version-2 definitions only — see [STRATEGY_V2_VERSIONING.md](STRATEGY_V2_VERSIONING.md).)
 
 ## Module boundary — `backend/app/strategy_definition/runtime/`
 
