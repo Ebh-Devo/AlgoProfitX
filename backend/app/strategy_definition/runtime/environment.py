@@ -26,8 +26,8 @@ class RuntimeEnvironment:
     fill_model: str
 
 
-def prepare_definition(canonical: CanonicalDefinition) -> StrategyDefinition:
-    """Validate (L2, L3) and capability-check a canonical definition; return it if runnable."""
+def validate_canonical(canonical: CanonicalDefinition) -> StrategyDefinition:
+    """Layers 2-3 only: raise ``RuntimeSetupError`` listing every semantic error."""
     issues = validate_definition(canonical.definition)
     errors = tuple(
         issue
@@ -41,8 +41,14 @@ def prepare_definition(canonical: CanonicalDefinition) -> StrategyDefinition:
             + "; ".join(f"{issue.path or '<root>'}: {issue.message}" for issue in errors),
             errors,
         )
-    check_capabilities(canonical.definition)
     return canonical.definition
+
+
+def prepare_definition(canonical: CanonicalDefinition) -> StrategyDefinition:
+    """Validate (L2, L3) and capability-check a canonical definition; return it if runnable."""
+    definition = validate_canonical(canonical)
+    check_capabilities(definition)
+    return definition
 
 
 def parse_environment(

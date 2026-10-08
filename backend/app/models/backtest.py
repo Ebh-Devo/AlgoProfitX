@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import CheckConstraint, DateTime, Enum, ForeignKey, String, Text
+from sqlalchemy import CheckConstraint, DateTime, Enum, ForeignKey, Integer, String, Text, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -78,6 +78,15 @@ class Backtest(Base):
         default=BacktestStatus.QUEUED,
         nullable=False,
         index=True,
+    )
+
+    # Snapshot of StrategyVersion.definition_schema_version taken with the configuration it
+    # selects the interpretation of; pre-existing rows read as 1.
+    definition_schema_version: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=1,
+        server_default=text("1"),
     )
 
     configuration_snapshot: Mapped[dict[str, Any]] = mapped_column(

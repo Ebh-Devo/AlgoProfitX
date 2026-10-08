@@ -3,7 +3,8 @@
     load canonical definition -> validate + capability check -> iterate ordered candles
       -> evaluate -> intents -> simulated execution -> ledger -> BacktestExecutionResult
 
-Opt-in and unwired: the backtest service still selects ``EmaCrossoverReferenceEngine``.
+Selected by the backtest service only for ``definition_schema_version = 2`` (Phase 6);
+V1 versions keep ``EmaCrossoverReferenceEngine``.
 """
 
 from dataclasses import dataclass
@@ -28,6 +29,7 @@ from app.strategy_definition.runtime.market import (
     validate_candles,
 )
 from app.strategy_definition.runtime.runtime import BarOutcome, StrategyRuntime
+from app.strategy_definition.schema import CanonicalDefinition
 
 QUANTUM = Decimal("0.00000001")  # the existing 8-dp output convention (spec §17.9)
 
@@ -78,6 +80,9 @@ class StrategyRuntimeEngine:
             run = self.run_detailed(configuration, backtest_configuration, candles)
         except (StrategyRuntimeError, StrategyDefinitionError, EvaluatorError) as exc:
             raise BacktestExecutionError(str(exc)) from exc
+        return self._result(run)
+
+    def _result(self, run: RuntimeRun) -> BacktestExecutionResult:
         initial = run.environment.initial_capital
         return BacktestExecutionResult(
             initial_capital=initial,
@@ -92,6 +97,22 @@ class StrategyRuntimeEngine:
             provider_identifier=self._provider_identifier,
         )
 
+    def run_canonical(
+        self,
+        canonical: CanonicalDefinition,
+        backtest_configuration: dict,
+        candles: Sequence[Candle],
+    ) -> BacktestExecutionResult:
+        """Run an already-loaded canonical definition (the service boundary's entry point).
+
+        The caller resolved the persisted schema version; this never re-reads stored JSON.
+        """
+        try:
+            run = self._execute(canonical, backtest_configuration, candles)
+        except (StrategyRuntimeError, StrategyDefinitionError, EvaluatorError) as exc:
+            raise BacktestExecutionError(str(exc)) from exc
+        return self._result(run)
+
     # --- The loop ---------------------------------------------------------------------------
 
     def run_detailed(
@@ -100,15 +121,24 @@ class StrategyRuntimeEngine:
         backtest_configuration: dict,
         candles: Sequence[Candle],
     ) -> RuntimeRun:
-        validate_candles(candles)
         try:
             canonical = load_definition(
                 configuration, v1_timeframe=backtest_configuration.get("timeframe", "1d")
             )
         except StrategyDefinitionError as exc:
             raise RuntimeSetupError(str(exc), exc.issues) from exc
+        return self._execute(canonical, backtest_configuration, candles)
+
+    def _execute(
+        self,
+        canonical: CanonicalDefinition,
+        backtest_configuration: dict,
+        candles: Sequence[Candle],
+    ) -> RuntimeRun:
+        # Definition and environment are gated before any candle is looked at.
         definition = prepare_definition(canonical)
         environment = parse_environment(canonical, backtest_configuration, self._strategy_version_id)
+        validate_candles(candles)
         indicators = compute_indicator_series(definition, candles)
         runtime = StrategyRuntime(definition, environment, adapter=self._adapter)
 

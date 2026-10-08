@@ -13,6 +13,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -158,6 +159,16 @@ class StrategyVersion(Base):
     version_number: Mapped[int] = mapped_column(
         Integer,
         nullable=False,
+    )
+
+    # Authoritative selector for how ``configuration`` is interpreted (1 = V1 compatibility
+    # adapter, 2 = V2 canonical/runtime). Rows that predate the column read as 1 via the
+    # server default; the JSON is never inspected to decide this (docs/STRATEGY_V2_VERSIONING.md).
+    definition_schema_version: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=1,
+        server_default=text("1"),
     )
 
     configuration: Mapped[dict[str, Any]] = mapped_column(
