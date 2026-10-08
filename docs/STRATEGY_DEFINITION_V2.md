@@ -1066,7 +1066,7 @@ Each phase is a small, isolated PR; none changes behaviour for existing V1 versi
 | **2** | Indicator catalog (`ema@1`, `sma@1`, `rsi@1`) with Decimal reference implementations; warm-up; **parity tests vs `_ema`** in both existing engines. | none |
 | **3** | Condition evaluator (3-valued, `compare/cross/edge/all/any/not`). Pure unit tests incl. warm-up and `not` safety. | none |
 | **4** | Semantic + position validators (L2/L3) and `required_capabilities`. | none |
-| **5** | Strategy runtime for **single position/leg, `open`/`close`, `bar_close`**, the OrderIntent/event contract (§14.4), simulated execution + ledger, behind the `BacktestEngine` Protocol. **Parity gate:** reproduces `EmaCrossoverReferenceEngine` on V1 fixtures under `same_bar_close`. | none (opt-in engine) |
+| **5** | Strategy runtime for **single position/leg, `open`/`close`, `bar_close`**, the OrderIntent/event contract (§14.4), simulated execution + ledger, behind the `BacktestEngine` Protocol. **Parity gate:** reproduces `EmaCrossoverReferenceEngine` on V1 fixtures under `same_bar_close`. | none (opt-in engine). **Implemented** — see [STRATEGY_RUNTIME_PHASE5.md](STRATEGY_RUNTIME_PHASE5.md). |
 | **6** | Backtest service selects engine by `schema_version`; V2 versions creatable via API (feature-flagged); explicit required `fill_model` (creator writes `next_bar_open`); `definition_schema_version` column; capability check L4. | V2 backtests available |
 | **7** | Frontend: catalog endpoint, V2 builder (simple mode → condition builder), describer. | UI |
 | **8** | `risk` block (with `basis`); `increase`/`reduce`; persisted position state (needed here). | richer backtests |
