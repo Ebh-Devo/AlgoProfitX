@@ -8,6 +8,9 @@ from dataclasses import dataclass
 from typing import Any, Literal, Mapping
 
 ParamType = Literal["integer"]
+Anchor = Literal["none", "session"]
+# Output unit meaning "inherits the unit of the indicator's source operand".
+SOURCE_UNIT = "source"
 
 
 @dataclass(frozen=True)
@@ -42,10 +45,15 @@ class ParamSpec:
 
 @dataclass(frozen=True)
 class OutputSpec:
-    """A named output of an indicator. ``value`` is the single output of simple indicators."""
+    """A named output of an indicator. ``value`` is the single output of simple indicators.
+
+    ``unit`` is the output's semantic unit, used to judge operand compatibility. The default
+    ``"source"`` means "same unit as the indicator's source series" (ema, sma).
+    """
 
     name: str
     description: str = ""
+    unit: str = SOURCE_UNIT
 
 
 @dataclass(frozen=True)
@@ -56,6 +64,8 @@ class IndicatorSpec:
     version: int
     params: tuple[ParamSpec, ...]
     outputs: tuple[OutputSpec, ...]
+    # ``session`` indicators reset per trading session: they need intraday bars (spec §17.7).
+    anchor: Anchor = "none"
 
     @property
     def key(self) -> str:

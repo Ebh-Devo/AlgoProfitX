@@ -71,6 +71,7 @@ class IndicatorCatalog:
 
 
 _VALUE = (OutputSpec("value", "the indicator's single output series"),)
+_OSCILLATOR = (OutputSpec("value", "RSI on a 0-100 scale", unit="oscillator"),)
 # Upper bound on lookback periods (spec §9.3: period in [1, 5000]).
 _PERIOD = ParamSpec("period", "integer", required=True, minimum=1, maximum=5000)
 
@@ -78,7 +79,7 @@ _PERIOD = ParamSpec("period", "integer", required=True, minimum=1, maximum=5000)
 DEFAULT_CATALOG = IndicatorCatalog(
     [
         IndicatorSpec("ema", 1, (_PERIOD,), _VALUE),
-        IndicatorSpec("rsi", 1, (_PERIOD,), _VALUE),
+        IndicatorSpec("rsi", 1, (_PERIOD,), _OSCILLATOR),
         IndicatorSpec("sma", 1, (_PERIOD,), _VALUE),
     ]
 )
