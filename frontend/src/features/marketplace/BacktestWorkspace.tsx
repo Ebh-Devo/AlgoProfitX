@@ -61,7 +61,7 @@ export function ProvenancePanel({ provenance }: { provenance: ProvenanceView | n
   const dataset = p ? (p.synthetic === true ? "Synthetic reference dataset" : p.synthetic === false ? "Historical market dataset" : null) : null;
   return (
     <section className="bt-card" aria-labelledby="bt-prov-title">
-      <SectionHeader id="bt-prov-title" title="Provenance & assumptions" description="Only facts supplied by a returned result or the strategy version are shown. Anything else is marked unavailable." />
+      <SectionHeader id="bt-prov-title" title="Provenance & assumptions" description={p ? "Only facts supplied by the returned result or the strategy version are shown. Anything else is marked unavailable." : "Provenance details are unavailable until a supported Backtest result is returned. No Backtest has been run."} />
       <dl className="details-list">
         <dt>Data source</dt><dd>{orUnavailable(p?.dataSource)}{dataset ? ` · ${dataset}` : ""}</dd>
         <dt>Timeframe</dt><dd>{orUnavailable(p?.timeframe)}</dd>
@@ -236,7 +236,8 @@ export function BacktestWorkspaceView({ strategy, execution, onRun }: WorkspaceV
               <legend>Fixed by strategy version</legend>
               <dl className="details-list">
                 <dt>Instrument &amp; rules</dt><dd>Defined by {version}; protected and not editable here.</dd>
-                <dt>Timeframe, fill model, fees, slippage</dt><dd>Set by the strategy version; shown under Provenance once a result exists.</dd>
+                <dt>Timeframe &amp; fill model</dt><dd>Shown when available. Not available for this strategy yet.</dd>
+                <dt>Fees &amp; slippage</dt><dd>Shown when the actual modelling assumptions are known. Not available yet.</dd>
               </dl>
             </fieldset>
             <p id={noteId} className="field-hint">{runnable ? "Running uses the capital above." : "The Run control is off until Backtests are supported for this strategy."}</p>

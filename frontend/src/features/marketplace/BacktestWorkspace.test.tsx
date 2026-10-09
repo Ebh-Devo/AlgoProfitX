@@ -58,7 +58,7 @@ describe("Marketplace profile", () => {
   it("shows the four sections and links to the Backtest workspace", async () => {
     api.getBySlug.mockResolvedValue(strategy);
     renderRoutes("/marketplace/trend-momentum");
-    for (const name of ["Strategy Metadata", "Verified Transparency", "Strategy Allocation", "Backtest & Performance"]) {
+    for (const name of ["Strategy Metadata", "Strategy Transparency", "Strategy Allocation", "Backtest & Performance"]) {
       expect(await screen.findByRole("heading", { name })).toBeInTheDocument();
     }
     expect(screen.getAllByText("Version 3").length).toBeGreaterThan(0);
@@ -88,6 +88,11 @@ describe("Backtest workspace (route)", () => {
     expect(screen.queryByTestId("equity-chart")).not.toBeInTheDocument();
     expect(screen.queryByText(/net profit/i)).not.toBeInTheDocument();
     expect(screen.getAllByText("Not available").length).toBe(7);
+    expect(screen.getByText(/unavailable until a supported backtest result is returned/i)).toBeInTheDocument();
+    expect(screen.getByText(/no backtest has been run/i)).toBeInTheDocument();
+    expect(screen.getByText(/shown when available\. not available for this strategy yet/i)).toBeInTheDocument();
+    expect(screen.getByText(/actual modelling assumptions are known/i)).toBeInTheDocument();
+    expect(screen.queryByText(/set by the strategy version/i)).not.toBeInTheDocument();
     expect(screen.getByText(/backtesting \(this page\)/i)).toBeInTheDocument();
     expect(screen.getByText("Paper trading")).toBeInTheDocument();
     expect(screen.getByText("Live trading")).toBeInTheDocument();

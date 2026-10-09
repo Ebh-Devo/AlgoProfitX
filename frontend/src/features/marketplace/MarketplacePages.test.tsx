@@ -116,7 +116,7 @@ describe("Marketplace pages", () => {
 
     expect(await screen.findByRole("heading", { name: "Trend Momentum" })).toBeInTheDocument();
     expect(screen.getByText(/does not include creator configuration/i)).toBeInTheDocument();
-    expect(screen.getByText("Verified Transparency")).toBeInTheDocument();
+    expect(screen.getByText("Strategy Transparency")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /marketplace/i })).toBeInTheDocument();
   });
 

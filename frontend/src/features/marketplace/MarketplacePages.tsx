@@ -341,7 +341,7 @@ export function MarketplaceDetailPage() {
         <Card variant="elevated">
           <CardHeader>
             <p className="eyebrow">Research context</p>
-            <h2>Verified Transparency</h2>
+            <h2>Strategy Transparency</h2>
           </CardHeader>
           <CardBody>
             <p>
