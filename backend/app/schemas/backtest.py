@@ -20,6 +20,7 @@ class BacktestResponse(BaseModel):
     instrument_snapshot: dict[str, Any] | None
     requested_by_user_id: uuid.UUID
     status: BacktestStatus
+    definition_schema_version: int
     configuration_snapshot: dict[str, Any]
     backtest_configuration_snapshot: dict[str, Any]
     market_data_reference: str | None

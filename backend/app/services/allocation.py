@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.allocation import AllocationIntent, AllocationStatus
 from app.models.strategy import Strategy, StrategyStatus, StrategyVersion
+from app.services.strategy import require_execution_supported
 from app.schemas.allocation import AllocationCreateRequest, AllocationUpdateRequest
 
 
@@ -24,6 +25,7 @@ async def create_allocation(
 ) -> AllocationIntent:
     strategy = await _get_eligible_strategy(session, data.strategy_id)
     version = await _get_current_strategy_version(session, strategy)
+    require_execution_supported(version, "allocate")
 
     allocation = AllocationIntent(
         investor_user_id=investor_user_id,

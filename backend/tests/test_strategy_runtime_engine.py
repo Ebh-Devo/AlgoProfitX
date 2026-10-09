@@ -28,7 +28,7 @@ from tests.strategy_v2_parity_support import (
     CAPITAL, DOWN_UP_DOWN, EMA_3_9_LONG_ENTRY, EMA_3_9_LONG_EXIT, UP_DOWN_UP, candles,
 )
 
-V2_ENV = {"initial_capital": 50000, "fill_model": "same_bar_close"}
+V2_ENV = {"initial_capital": 50000, "fill_model": "same_bar_close", "timeframe": "1d"}
 
 
 def ema_definition(side="buy", shares=10, **changes):

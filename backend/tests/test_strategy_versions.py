@@ -105,6 +105,7 @@ async def test_create_first_version_is_server_numbered_and_persisted(client):
         "instrument_id",
         "instrument",
         "version_number",
+        "definition_schema_version",
         "configuration",
         "backtest_configuration",
         "created_at",

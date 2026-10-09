@@ -21,6 +21,7 @@ from app.services.allocation import (
     get_allocations_for_investor,
     update_allocation,
 )
+from app.services.strategy import UnsupportedExecutionVersionError
 
 
 router = APIRouter(prefix="/allocations", tags=["Allocations"])
@@ -35,6 +36,8 @@ async def create_allocation_intent(
     try:
         allocation = await create_allocation(session, current_user.id, data)
         await session.commit()
+    except UnsupportedExecutionVersionError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.detail())
     except AllocationEligibilityError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
     return allocation

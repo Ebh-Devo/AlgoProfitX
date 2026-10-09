@@ -20,7 +20,13 @@ from app.strategy_definition.runtime.environment import (
     parse_environment,
     prepare_definition,
 )
-from app.strategy_definition.runtime.errors import RuntimeSetupError, StrategyRuntimeError
+from app.strategy_definition.runtime.errors import (
+    RuntimeDataError,
+    RuntimeEnvironmentError,
+    RuntimeSetupError,
+    StrategyRuntimeError,
+    UnsupportedOperationError,
+)
 from app.strategy_definition.runtime.execution import ExecutionAdapter, ExecutionBar
 from app.strategy_definition.runtime.ledger import JournalEntry, Trade
 from app.strategy_definition.runtime.market import (
@@ -36,6 +42,23 @@ QUANTUM = Decimal("0.00000001")  # the existing 8-dp output convention (spec §1
 
 def format_decimal(value: Decimal) -> str:
     return format(value.quantize(QUANTUM), "f")
+
+
+def runtime_error_code(exc: Exception) -> str:
+    """A stable ``BacktestExecutionError`` code for a failure raised by the runtime.
+
+    Only a genuine candle problem is a market-data error; setup, unsupported-operation and
+    execution failures are strategy errors and must not be labelled as data errors.
+    """
+    if isinstance(exc, RuntimeDataError):
+        return "market_data_invalid_payload"
+    if isinstance(exc, RuntimeEnvironmentError):
+        return "strategy_environment_invalid"
+    if isinstance(exc, UnsupportedOperationError):
+        return "strategy_definition_unsupported_capability"
+    if isinstance(exc, (RuntimeSetupError, StrategyDefinitionError)):
+        return "strategy_definition_invalid"
+    return "strategy_runtime_failed"
 
 
 @dataclass(frozen=True)
@@ -79,7 +102,7 @@ class StrategyRuntimeEngine:
         try:
             run = self.run_detailed(configuration, backtest_configuration, candles)
         except (StrategyRuntimeError, StrategyDefinitionError, EvaluatorError) as exc:
-            raise BacktestExecutionError(str(exc)) from exc
+            raise BacktestExecutionError(str(exc), runtime_error_code(exc)) from exc
         return self._result(run)
 
     def _result(self, run: RuntimeRun) -> BacktestExecutionResult:
@@ -110,7 +133,7 @@ class StrategyRuntimeEngine:
         try:
             run = self._execute(canonical, backtest_configuration, candles)
         except (StrategyRuntimeError, StrategyDefinitionError, EvaluatorError) as exc:
-            raise BacktestExecutionError(str(exc)) from exc
+            raise BacktestExecutionError(str(exc), runtime_error_code(exc)) from exc
         return self._result(run)
 
     # --- The loop ---------------------------------------------------------------------------

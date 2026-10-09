@@ -24,6 +24,7 @@ _LAYER_PREFIXES: tuple[tuple[str, CapabilityLayer], ...] = (
     ("risk.", CapabilityLayer.IMPLEMENTATION),
     ("leg.", CapabilityLayer.IMPLEMENTATION),
     ("resolver.", CapabilityLayer.IMPLEMENTATION),
+    ("rule.", CapabilityLayer.IMPLEMENTATION),
     ("data.", CapabilityLayer.DATA),
     ("short_sell", CapabilityLayer.ENVIRONMENT),
     ("margin.", CapabilityLayer.ENVIRONMENT),

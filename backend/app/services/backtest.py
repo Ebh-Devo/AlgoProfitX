@@ -35,7 +35,7 @@ from app.schemas.backtest import BacktestCreateRequest
 from app.strategy_definition.errors import StrategyDefinitionError
 from app.strategy_definition.runtime.engine import StrategyRuntimeEngine
 from app.strategy_definition.runtime.environment import parse_environment
-from app.strategy_definition.runtime.errors import RuntimeSetupError
+from app.strategy_definition.runtime.errors import RuntimeEnvironmentError, RuntimeSetupError
 from app.strategy_definition.versioning import (
     LEGACY_SCHEMA_VERSION,
     LoadedDefinition,
@@ -151,13 +151,19 @@ async def execute_backtest(
                 candles,
             )
         else:  # V2: the Phase 5 runtime, over the already-loaded canonical definition
-            result = StrategyRuntimeEngine(
-                provider.identifier, str(backtest.strategy_version_id)
-            ).run_canonical(
-                loaded.canonical,
-                backtest.backtest_configuration_snapshot,
-                candles,
-            )
+            try:
+                result = StrategyRuntimeEngine(
+                    provider.identifier, str(backtest.strategy_version_id)
+                ).run_canonical(
+                    loaded.canonical,
+                    backtest.backtest_configuration_snapshot,
+                    candles,
+                )
+            except BacktestExecutionError:
+                raise
+            except Exception as exc:  # an unexpected runtime bug is not a market-data failure
+                log_event("backtest_runtime_failed", level=logging.ERROR, exc_info=True, backtest_id=backtest_id)
+                raise BacktestExecutionError("Strategy runtime failed", "strategy_runtime_failed") from exc
         if len(result.trades) > MAX_RESULT_TRADES:
             raise BacktestExecutionError("Backtest trade result exceeds its limit")
         if len(result.equity_curve) > MAX_RESULT_EQUITY_POINTS:
@@ -231,7 +237,9 @@ def _load_versioned_definition(backtest: Backtest) -> LoadedDefinition | None:
         raise BacktestExecutionError(str(exc), "strategy_definition_invalid") from exc
     except RuntimeSetupError as exc:
         codes = {issue.code for issue in exc.issues}
-        if "capability_missing" in codes:
+        if isinstance(exc, RuntimeEnvironmentError):
+            code = "strategy_environment_invalid"
+        elif "capability_missing" in codes:
             code = "strategy_definition_unsupported_capability"
         elif exc.issues:
             code = "strategy_definition_invalid"

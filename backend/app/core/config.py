@@ -82,6 +82,10 @@ class Settings(BaseSettings):
     backtest_burst_window_seconds: PositiveInt = 60
     backtest_sustained_limit: PositiveInt = 30
     backtest_sustained_window_seconds: PositiveInt = 3600
+    definition_validation_burst_limit: PositiveInt = 20
+    definition_validation_burst_window_seconds: PositiveInt = 60
+    definition_validation_sustained_limit: PositiveInt = 300
+    definition_validation_sustained_window_seconds: PositiveInt = 3600
     execution_burst_limit: PositiveInt = 10
     execution_burst_window_seconds: PositiveInt = 60
     execution_sustained_limit: PositiveInt = 60

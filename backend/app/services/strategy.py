@@ -42,6 +42,40 @@ class StrategyVersionValidationError(Exception):
     pass
 
 
+UNSUPPORTED_EXECUTION_VERSION_CODE = "strategy_definition_version_unsupported_for_execution"
+
+
+class UnsupportedExecutionVersionError(ValueError):
+    """A strategy whose version this execution environment cannot run (V2 is backtest-only).
+
+    A ``ValueError`` so existing lifecycle handlers still treat it as a 409; routes map it to the
+    stable structured detail ``{"code", "message"}``.
+    """
+
+    code = UNSUPPORTED_EXECUTION_VERSION_CODE
+
+    def __init__(self, action: str, schema_version: object):
+        self.message = (
+            f"Cannot {action}: strategy definition schema version {schema_version!r} is not "
+            "supported by the current execution environment. Version 2 definitions can be "
+            "backtested only."
+        )
+        super().__init__(self.message)
+
+    def detail(self) -> dict[str, str]:
+        return {"code": self.code, "message": self.message}
+
+
+def require_execution_supported(version: StrategyVersion | None, action: str) -> None:
+    """Only legacy/V1 versions can be published, deployed or allocated: paper and live execution
+    understand the V1 configuration only. The persisted column decides; the JSON is never read."""
+    if version is None:
+        return
+    schema_version = getattr(version, "definition_schema_version", None)
+    if schema_version is not None and schema_version != V1_SCHEMA_VERSION:
+        raise UnsupportedExecutionVersionError(action, schema_version)
+
+
 _SLUG_MAX_LENGTH = 180
 _SLUG_MIN_LENGTH = 3
 _SLUG_SUFFIX_RESERVE = 12
@@ -233,11 +267,12 @@ async def create_strategy_version_v2(
     configuration: dict,
     backtest_configuration: dict,
 ) -> StrategyVersion:
-    """Internal entry point (no public API yet): persist a V2 definition as version 2.
+    """Persist a V2 definition as version 2.
 
     The document must pass schema and semantic validation before it is stored. Runtime
-    capabilities are checked when a backtest executes, not here, so a valid definition that
-    needs a future capability can still be saved.
+    capabilities are deliberately not checked here, so this service stays permissive; the public
+    ``POST /strategies/{id}/versions/v2`` route additionally requires the definition to be
+    runnable (see ``strategy_definition.assessment``) before calling it.
     """
     try:
         load_definition_for_version(
@@ -388,6 +423,7 @@ async def publish_strategy(
 
     if latest_version is None:
         raise ValueError("A strategy version is required before publishing")
+    require_execution_supported(latest_version, "publish")
 
     strategy.status = StrategyStatus.PUBLISHED
     strategy.current_version_id = latest_version.id
@@ -405,6 +441,9 @@ async def deploy_strategy(
 ) -> Strategy:
     strategy = await _lock_strategy(session, strategy)
     _require_transition(strategy, StrategyStatus.DEPLOYED)
+    if strategy.current_version_id is not None:
+        current = await session.get(StrategyVersion, strategy.current_version_id)
+        require_execution_supported(current, "deploy")
 
     strategy.status = StrategyStatus.DEPLOYED
     strategy.deployed_at = datetime.now(timezone.utc)

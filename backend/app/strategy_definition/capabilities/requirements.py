@@ -60,6 +60,8 @@ def direct_capabilities(definition: StrategyDefinition) -> CapabilityRequirement
         names.add("positions.multiple_core")
 
     for rule in definition.rules:
+        if rule.limits is not None:
+            names.add("rule.limits")
         for operation in rule.then:
             names.add(f"op.{operation.op}")
         for ref in _indicators(rule.when):

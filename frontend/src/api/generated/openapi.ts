@@ -124,6 +124,64 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/strategies/definition-vocabulary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Definition Vocabulary
+         * @description The V2 subset the runtime can run today, derived from its actual capabilities.
+         */
+        get: operations["get_definition_vocabulary_api_v1_strategies_definition_vocabulary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/strategies/definitions/validate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Validate Definition Draft
+         * @description Validate a V2 draft without persisting anything. A well-formed request is always 200;
+         *     the verdict (and every issue, warnings included) is in the body.
+         */
+        post: operations["validate_definition_draft_api_v1_strategies_definitions_validate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/strategies/{strategy_id}/versions/v2": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Version V2 */
+        post: operations["create_version_v2_api_v1_strategies__strategy_id__versions_v2_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/strategies/{strategy_id}/versions": {
         parameters: {
             query?: never;
@@ -626,6 +684,8 @@ export interface components {
              */
             requested_by_user_id: string;
             status: components["schemas"]["BacktestStatus"];
+            /** Definition Schema Version */
+            definition_schema_version: number;
             /** Configuration Snapshot */
             configuration_snapshot: {
                 [key: string]: unknown;
@@ -679,6 +739,100 @@ export interface components {
          * @enum {string}
          */
         BacktestStatus: "queued" | "running" | "completed" | "failed";
+        /** DefinitionIssue */
+        DefinitionIssue: {
+            /** Path */
+            path: string;
+            /** Code */
+            code: string;
+            /** Message */
+            message: string;
+            /**
+             * Severity
+             * @enum {string}
+             */
+            severity: "error" | "warning";
+            /**
+             * Layer
+             * @enum {string}
+             */
+            layer: "schema" | "semantic" | "position" | "capability" | "environment";
+        };
+        /** DefinitionValidateRequest */
+        DefinitionValidateRequest: {
+            /**
+             * Definition Schema Version
+             * @constant
+             */
+            definition_schema_version: 2;
+            /** Configuration */
+            configuration: {
+                [key: string]: unknown;
+            };
+            /** Backtest Configuration */
+            backtest_configuration: {
+                [key: string]: unknown;
+            };
+        };
+        /** DefinitionValidationResponse */
+        DefinitionValidationResponse: {
+            /**
+             * Definition Schema Version
+             * @constant
+             */
+            definition_schema_version: 2;
+            /** Valid */
+            valid: boolean;
+            /** Savable */
+            savable: boolean;
+            /** Runnable */
+            runnable: boolean;
+            /** Issues */
+            issues: components["schemas"]["DefinitionIssue"][];
+            /** Required Capabilities */
+            required_capabilities: string[];
+            /** Unsupported Capabilities */
+            unsupported_capabilities: string[];
+        };
+        /** DefinitionVocabularyResponse */
+        DefinitionVocabularyResponse: {
+            /**
+             * Definition Schema Version
+             * @constant
+             */
+            definition_schema_version: 2;
+            /** Timeframes */
+            timeframes: string[];
+            /** Evaluation Modes */
+            evaluation_modes: string[];
+            /** Fill Models */
+            fill_models: string[];
+            position: components["schemas"]["VocabularyPosition"];
+            /** Operations */
+            operations: string[];
+            /** Condition Kinds */
+            condition_kinds: string[];
+            /** Compare Operators */
+            compare_operators: string[];
+            /** Cross Directions */
+            cross_directions: string[];
+            /** Edge Directions */
+            edge_directions: string[];
+            /** Operand Kinds */
+            operand_kinds: string[];
+            /** Price Fields */
+            price_fields: string[];
+            /** Indicator Source Fields */
+            indicator_source_fields: string[];
+            /** Indicators */
+            indicators: components["schemas"]["VocabularyIndicator"][];
+            /** Supports Rule Limits */
+            supports_rule_limits: boolean;
+            /** Supports Risk Rules */
+            supports_risk_rules: boolean;
+            /** Capabilities */
+            capabilities: string[];
+        };
         /** ExchangeSummaryResponse */
         ExchangeSummaryResponse: {
             /**
@@ -931,6 +1085,8 @@ export interface components {
         };
         /** StrategyVersionCreateRequest */
         StrategyVersionCreateRequest: {
+            /** Definition Schema Version */
+            definition_schema_version?: 1 | null;
             /**
              * Instrument Id
              * Format: uuid
@@ -962,6 +1118,8 @@ export interface components {
             instrument: components["schemas"]["InstrumentResponse"] | null;
             /** Version Number */
             version_number: number;
+            /** Definition Schema Version */
+            definition_schema_version: number;
             /** Configuration */
             configuration: {
                 [key: string]: unknown;
@@ -975,6 +1133,30 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+        };
+        /**
+         * StrategyVersionV2CreateRequest
+         * @description A V2 definition. The version is explicit, required and never inferred from the JSON.
+         */
+        StrategyVersionV2CreateRequest: {
+            /**
+             * Definition Schema Version
+             * @constant
+             */
+            definition_schema_version: 2;
+            /**
+             * Instrument Id
+             * Format: uuid
+             */
+            instrument_id: string;
+            /** Configuration */
+            configuration: {
+                [key: string]: unknown;
+            };
+            /** Backtest Configuration */
+            backtest_configuration: {
+                [key: string]: unknown;
+            };
         };
         /** TokenResponse */
         TokenResponse: {
@@ -1017,6 +1199,47 @@ export interface components {
             input?: unknown;
             /** Context */
             ctx?: Record<string, never>;
+        };
+        /** VocabularyIndicator */
+        VocabularyIndicator: {
+            /** Key */
+            key: string;
+            /** Name */
+            name: string;
+            /** Version */
+            version: number;
+            /** Params */
+            params: components["schemas"]["VocabularyParam"][];
+            /** Outputs */
+            outputs: string[];
+        };
+        /** VocabularyParam */
+        VocabularyParam: {
+            /** Name */
+            name: string;
+            /** Type */
+            type: string;
+            /** Required */
+            required: boolean;
+            /** Minimum */
+            minimum: number | null;
+            /** Maximum */
+            maximum: number | null;
+        };
+        /** VocabularyPosition */
+        VocabularyPosition: {
+            /** Roles */
+            roles: string[];
+            /** Max Core Positions */
+            max_core_positions: number | null;
+            /** Max Legs Per Position */
+            max_legs_per_position: number | null;
+            /** Instrument Kinds */
+            instrument_kinds: string[];
+            /** Leg Sides */
+            leg_sides: string[];
+            /** Sizing Units */
+            sizing_units: string[];
         };
     };
     responses: never;
@@ -1211,6 +1434,94 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["StrategyResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_definition_vocabulary_api_v1_strategies_definition_vocabulary_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DefinitionVocabularyResponse"];
+                };
+            };
+        };
+    };
+    validate_definition_draft_api_v1_strategies_definitions_validate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DefinitionValidateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DefinitionValidationResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_version_v2_api_v1_strategies__strategy_id__versions_v2_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                strategy_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StrategyVersionV2CreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StrategyVersionResponse"];
                 };
             };
             /** @description Validation Error */
