@@ -67,7 +67,7 @@
 .rs-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr)); overflow: hidden; background: var(--color-surface); border: 1px solid var(--border); border-radius: var(--radius-lg); }
 .rs-metric { display: grid; gap: 0.25rem; min-width: 0; padding: var(--space-3) var(--space-4); border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); margin: 0 -1px -1px 0; }
 .rs-metric span { color: var(--muted); font-size: var(--text-xs); font-weight: 500; }
-.rs-metric strong { color: var(--text); font-family: var(--font-mono); font-size: 1.15rem; font-variant-numeric: tabular-nums; font-weight: 600; letter-spacing: -0.01em; }
+.rs-metric strong { color: var(--text); font-size: 1.15rem; font-variant-numeric: tabular-nums; font-weight: 600; letter-spacing: -0.01em; }
 .rs-metric.is-primary strong { font-size: 1.4rem; }
 .rs-metric.is-unavailable strong { color: var(--faint); font-family: inherit; font-size: var(--text-sm); font-weight: 500; }
 

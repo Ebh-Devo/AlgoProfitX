@@ -135,7 +135,7 @@ Use a single accent hue (the existing teal-green) as the brand's only saturated 
 /* Body / UI */
 --font-sans: "IBM Plex Sans", "Segoe UI Variable", "Segoe UI", Inter, system-ui, sans-serif;
 
-/* Monospace — code, JSON, financial numbers, IDs */
+/* Monospace — code, JSON, hashes and identifiers only. Financial figures use --font-sans with tabular-nums. */
 --font-mono: "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
 
 /* Numeric — trading values, prices, quantities */

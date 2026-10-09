@@ -42,7 +42,7 @@ export function EquityChart({ curve }: { curve: Point[] }) {
           <LineChart data={points} margin={{ top: 10, right: 12, bottom: 6, left: 4 }}>
             <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" />
             <XAxis dataKey="timestamp" hide />
-            <YAxis dataKey="value" stroke="var(--muted)" domain={["auto", "auto"]} width={72} tickFormatter={(v: number) => v.toLocaleString(undefined, { maximumFractionDigits: 0 })} />
+            <YAxis dataKey="value" stroke="var(--muted)" tick={{ fontSize: 12, fontFamily: "var(--font-sans)", fill: "var(--muted)" }} domain={["auto", "auto"]} width={72} tickFormatter={(v: number) => v.toLocaleString(undefined, { maximumFractionDigits: 0 })} />
             <Tooltip
               contentStyle={{ background: "var(--surface)", border: "1px solid var(--border)", color: "var(--text)" }}
               labelFormatter={(_, items) => { const ts = items?.[0]?.payload?.timestamp; return typeof ts === "string" ? displayDay(ts) : ""; }}
