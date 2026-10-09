@@ -689,3 +689,76 @@ async def test_a_definition_the_assessment_passes_actually_runs(client):
     assert assess_v2_definition(document(), V2_ENV).runnable
     strategy, version = await v2_version(client, headers, "assessed-runs")
     assert (await run(client, headers, strategy, version))["status"] == "completed"
+
+
+# --- compare operators: advertised vocabulary == validator behaviour -------------------------------
+
+PRICE = {"kind": "price", "field": "close"}
+EMA = {
+    "kind": "indicator", "name": "ema", "version": 1, "params": {"period": 3},
+    "source": PRICE, "timeframe": "1d", "output": "value",
+}
+CONSTANT = {"kind": "constant", "value": 100}
+
+
+def compare_document(op: str, left: dict, right: dict) -> dict:
+    configuration = document()
+    configuration["rules"][0]["when"] = {"kind": "compare", "op": op, "left": left, "right": right}
+    return configuration
+
+
+def schema_compare_operators() -> tuple[str, ...]:
+    from typing import get_args, get_type_hints
+
+    from app.strategy_definition.schema import CompareCondition
+
+    return tuple(get_args(get_type_hints(CompareCondition)["op"]))
+
+
+def test_every_advertised_compare_operator_is_runnable_on_series_operands():
+    from app.strategy_definition.vocabulary import runnable_vocabulary
+
+    advertised = runnable_vocabulary()["compare_operators"]
+    assert advertised == ["gt", "gte", "lt", "lte"]
+    for op_name in advertised:
+        for left, right in ((PRICE, CONSTANT), (CONSTANT, PRICE), (EMA, CONSTANT), (PRICE, EMA)):
+            assessment = assess_v2_definition(compare_document(op_name, left, right), V2_ENV)
+            assert assessment.runnable, (op_name, left["kind"], right["kind"], assessment.issues)
+
+
+def test_operators_that_are_not_advertised_are_rejected_on_series_operands():
+    from app.strategy_definition.vocabulary import runnable_vocabulary
+
+    advertised = set(runnable_vocabulary()["compare_operators"])
+    not_advertised = set(schema_compare_operators()) - advertised
+    assert not_advertised == {"eq"}
+    for op_name in not_advertised:
+        for left, right in ((PRICE, CONSTANT), (CONSTANT, PRICE), (EMA, CONSTANT), (PRICE, EMA)):
+            assessment = assess_v2_definition(compare_document(op_name, left, right), V2_ENV)
+            assert not assessment.savable and not assessment.runnable, (op_name, left, right)
+            assert any(
+                i.issue.code == "invalid_condition" and i.issue.path.endswith(".op")
+                for i in assessment.issues
+            )
+
+
+def test_eq_between_two_constants_is_the_only_accepted_eq_and_is_not_advertised():
+    """Documents the exact validator behaviour: constant-vs-constant eq passes, so the
+    vocabulary must (and does) leave it out rather than offer a comparison that never changes."""
+    from app.strategy_definition.vocabulary import runnable_vocabulary
+
+    assessment = assess_v2_definition(compare_document("eq", CONSTANT, CONSTANT), V2_ENV)
+    assert assessment.runnable
+    assert "eq" not in runnable_vocabulary()["compare_operators"]
+
+
+async def test_the_endpoints_agree_with_the_advertised_compare_operators(client):
+    headers = await register_and_login(client)
+    advertised = (await client.get(VOCABULARY, headers=headers)).json()["compare_operators"]
+    for op_name in schema_compare_operators():
+        result = (
+            await client.post(
+                VALIDATE, headers=headers, json=body(compare_document(op_name, PRICE, CONSTANT))
+            )
+        ).json()
+        assert result["runnable"] is (op_name in advertised), op_name

@@ -26,6 +26,12 @@ EVALUATION_MODES = ("bar_close",)
 INDICATOR_SOURCE_FIELDS = ("open", "high", "low", "close")
 
 
+# Schema-valid operators the semantic layer only accepts between two constants (exact equality on
+# a price/indicator series is rejected, spec §8.2). A constant-vs-constant comparison never
+# changes, so it is not a usable authoring choice and is not advertised.
+CONSTANT_ONLY_COMPARE_OPS = frozenset({"eq"})
+
+
 def _literal(cls: type, name: str) -> tuple[str, ...]:
     return tuple(get_args(get_type_hints(cls)[name]))
 
@@ -71,7 +77,9 @@ def runnable_vocabulary() -> dict[str, Any]:
         },
         "operations": _suffixes("op."),
         "condition_kinds": list(CONDITION_KINDS),
-        "compare_operators": list(_literal(CompareCondition, "op")),
+        "compare_operators": [
+            op for op in _literal(CompareCondition, "op") if op not in CONSTANT_ONLY_COMPARE_OPS
+        ],
         "cross_directions": list(_literal(CrossCondition, "dir")),
         "edge_directions": list(_literal(EdgeCondition, "dir")),
         "operand_kinds": list(OPERAND_KINDS),

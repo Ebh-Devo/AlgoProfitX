@@ -42,5 +42,5 @@ All fail before market data is requested.
 ## Known limitations
 
 * The structured `409` detail (and the structured `422` detail) are objects; the current frontend `normalizeDetail` renders object details generically until the 7B-2 client change.
-* The vocabulary lists `eq` among compare operators because the schema accepts it; the semantic layer rejects `eq` against series operands.
+* `eq` is accepted by the validator only between two constants (a comparison that never changes); against any price/indicator series it is rejected. The vocabulary therefore advertises only `gt`, `gte`, `lt`, `lte`, and regression tests assert advertised operators validate and non-advertised ones do not.
 * `create_strategy_version_v2` (service) stays permissive by design; only the route requires `runnable`.
