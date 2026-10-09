@@ -5,7 +5,7 @@
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor, within } from "@testing-library/react";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { RouterProvider, createMemoryRouter } from "react-router-dom";
 import { ApiError } from "../../../api/client";
 import { StrategyDetailPage, StrategyVersionPage } from "../StrategyPages";
 
@@ -58,18 +58,19 @@ const v2Version = {
   created_at: "2026-01-03T00:00:00Z",
 };
 
+// useBlocker needs a data router, so these tests use the same kind of router the application does.
 function view(ui: React.ReactNode, path = "/creator/strategies/s1") {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
-  return render(
-    <QueryClientProvider client={client}>
-      <MemoryRouter initialEntries={[path]}>
-        <Routes>
-          <Route path="/creator/strategies/:strategyId" element={ui} />
-          <Route path="/creator/strategies/:strategyId/versions/:versionId" element={ui} />
-        </Routes>
-      </MemoryRouter>
-    </QueryClientProvider>,
+  const router = createMemoryRouter(
+    [
+      { path: "/creator/strategies/:strategyId", element: ui },
+      { path: "/creator/strategies/:strategyId/versions/:versionId", element: ui },
+      { path: "/elsewhere", element: <p>Elsewhere page</p> },
+    ],
+    { initialEntries: [path] },
   );
+  const result = render(<QueryClientProvider client={client}><RouterProvider router={router} /></QueryClientProvider>);
+  return { ...result, router };
 }
 
 beforeEach(() => {
@@ -84,11 +85,12 @@ beforeEach(() => {
 const v2Form = () => within(screen.getByRole("form", { name: "Create Strategy V2 Version" }));
 
 async function openV2() {
-  view(<StrategyDetailPage />);
+  const rendered = view(<StrategyDetailPage />);
   await userEvent.click(await screen.findByRole("button", { name: "Create Version" }));
   await userEvent.click(await screen.findByRole("radio", { name: /Strategy V2/ }));
   await screen.findByRole("form", { name: "Create Strategy V2 Version" });
   await v2Form().findByLabelText("Instrument");
+  return rendered;
 }
 
 const pickInstrument = async () => userEvent.selectOptions(await v2Form().findByLabelText("Instrument"), "i1");
@@ -163,7 +165,7 @@ describe("Vocabulary-driven controls", () => {
     expect(screen.getByText("When EMA(9) crosses above EMA(21), open a long position.")).toBeInTheDocument();
     expect(screen.getByText("When EMA(9) crosses below EMA(21), close the long position.")).toBeInTheDocument();
     await userEvent.selectOptions(screen.getByLabelText("Direction"), "sell");
-    expect(screen.getByText("When EMA(9) crosses above EMA(21), open a short position.")).toBeInTheDocument();
+    expect(screen.getByText("When EMA(9) crosses below EMA(21), open a short position.")).toBeInTheDocument();
   });
 
   it("shows only the fields relevant to the selected condition", async () => {
@@ -376,5 +378,54 @@ describe("Version identity and lifecycle", () => {
     expect((await screen.findAllByText("Strategy V1")).length).toBeGreaterThan(0);
     expect(screen.queryByRole("list", { name: "Strategy rules" })).not.toBeInTheDocument();
     expect(screen.queryByText("Backtest only")).not.toBeInTheDocument();
+  });
+});
+
+describe("Draft protection and starter rules", () => {
+  it("asks before in-app navigation discards an edited draft, and can stay", async () => {
+    const { router } = await openV2();
+    await userEvent.type(v2Form().getByLabelText("Number of shares"), "5");
+    await router.navigate("/elsewhere");
+    expect(await screen.findByText("Leave without saving?")).toBeInTheDocument();
+    expect(router.state.location.pathname).toBe("/creator/strategies/s1");
+    await userEvent.click(within(screen.getByText("Leave without saving?").closest("dialog") as HTMLElement).getByRole("button", { name: "Cancel", hidden: true }));
+    expect(router.state.location.pathname).toBe("/creator/strategies/s1");
+    expect(v2Form().getByLabelText("Number of shares")).toHaveValue("105");
+  });
+
+  it("lets the user leave after confirming", async () => {
+    const { router } = await openV2();
+    await pickInstrument();
+    await router.navigate("/elsewhere");
+    await userEvent.click(await screen.findByRole("button", { name: "Leave and discard" }));
+    expect(await screen.findByText("Elsewhere page")).toBeInTheDocument();
+  });
+
+  it("does not interrupt navigation when nothing was entered", async () => {
+    const { router } = await openV2();
+    await router.navigate("/elsewhere");
+    expect(await screen.findByText("Elsewhere page")).toBeInTheDocument();
+  });
+
+  it("does not block the navigation that follows a successful save", async () => {
+    api.createVersionV2.mockResolvedValue(v2Version);
+    api.getVersion.mockResolvedValue(v2Version);
+    const { router } = await openV2();
+    await validateRunnable();
+    await userEvent.click(screen.getByRole("button", { name: "Save Version" }));
+    await waitFor(() => expect(router.state.location.pathname).toBe("/creator/strategies/s1/versions/v9"));
+    expect(screen.queryByText("Leave without saving?")).not.toBeInTheDocument();
+  });
+
+  it("mirrors the starter rules for a short position, but never overwrites edited rules", async () => {
+    await openV2();
+    await userEvent.selectOptions(v2Form().getByLabelText("Direction"), "sell");
+    expect(screen.getByText("When EMA(9) crosses below EMA(21), open a short position.")).toBeInTheDocument();
+    expect(screen.getByText("When EMA(9) crosses above EMA(21), close the short position.")).toBeInTheDocument();
+    // Edit a rule, then flip direction again: the edited rules stay as the user left them.
+    await userEvent.selectOptions(v2Form().getAllByLabelText(/^Direction \(Rule 1/)[0], "above");
+    await userEvent.selectOptions(v2Form().getByLabelText("Direction"), "buy");
+    expect(screen.getByText("When EMA(9) crosses above EMA(21), open a long position.")).toBeInTheDocument();
+    expect(screen.getByText("When EMA(9) crosses above EMA(21), close the long position.")).toBeInTheDocument();
   });
 });

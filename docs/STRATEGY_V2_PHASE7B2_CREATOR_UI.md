@@ -34,10 +34,14 @@ Every list of choices (timeframes, evaluation modes, fill models, leg sides, ope
 
 The V2 environment sent to both endpoints is `{initial_capital, timeframe, fill_model}`. No date range is sent: the backend does not require one and V1 sends none. Capital is labelled a simulation parameter, not a deposit.
 
+## Starter rules
+
+The initial rules are examples to review. They follow the position direction (long opens on a bullish cross, short on a bearish one) and are swapped on a direction change only while still untouched; edited rules are never overwritten.
+
 ## Known limitations
 
 * Rules are checked by the backend only; client-side checks are limited to values that cannot be serialised (blank/non-numeric fields) and a missing instrument.
 * The builder authors one core position with one leg and `open`/`close` operations, matching the current vocabulary. It is a form, not a free-form graph editor; nested conditions are limited to 3 levels.
-* In-app route changes are not intercepted (the app uses `createBrowserRouter` but tests use `MemoryRouter`); a draft is protected by a discard confirmation on Cancel and a `beforeunload` prompt.
+* In-app navigation away from an edited draft is intercepted with `useBlocker` (needs the data router the app already uses) and asks "Leave without saving?"; the navigation after a successful save is allowed. Cancel and `beforeunload` remain.
 * V2 versions cannot be edited or published; creating a new Version is the only way to change a definition.
 * Backtests use whatever market-data provider the server is configured with; with the reference provider results are synthetic and labelled so.

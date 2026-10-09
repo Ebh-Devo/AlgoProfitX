@@ -124,19 +124,36 @@ export function defaultCondition(vocab: DefinitionVocabulary, kind: string, dire
   }
 }
 
-export function defaultForm(vocab: DefinitionVocabulary): V2Form {
+/**
+ * The starter entry/exit pair for a direction: a long opens on a bullish cross and closes on a bearish one;
+ * a short is the mirror image. They are examples for the user to review, and are swapped automatically only
+ * while the user has not edited them.
+ */
+export function defaultRules(vocab: DefinitionVocabulary, legSide: string): RuleForm[] {
   const kinds = authorableConditions(vocab);
   const operations = authorableOperations(vocab);
   const kind = kinds.includes("cross") ? "cross" : kinds[0] ?? "compare";
   const entry = operations.includes("open") ? "open" : operations[0] ?? "open";
   const exit = operations.includes("close") ? "close" : entry;
+  const [openDir, closeDir] = legSide === "sell" ? ["below", "above"] : ["above", "below"];
+  return [
+    { uid: uid(), when: defaultCondition(vocab, kind, openDir), operation: entry },
+    { uid: uid(), when: defaultCondition(vocab, kind, closeDir), operation: exit },
+  ];
+}
+
+const withoutUids = (value: unknown) => JSON.stringify(value, (key, v) => (key === "uid" ? undefined : v));
+
+/** True while the rules are still exactly the untouched starter pair for `legSide`. */
+export const rulesAreStarterDefaults = (vocab: DefinitionVocabulary, legSide: string, rules: RuleForm[]) =>
+  withoutUids(rules) === withoutUids(defaultRules(vocab, legSide));
+
+export function defaultForm(vocab: DefinitionVocabulary): V2Form {
+  const legSide = vocab.position.leg_sides.includes("buy") ? "buy" : vocab.position.leg_sides[0] ?? "buy";
   return {
-    legSide: vocab.position.leg_sides.includes("buy") ? "buy" : vocab.position.leg_sides[0] ?? "buy",
+    legSide,
     shares: "10",
-    rules: [
-      { uid: uid(), when: defaultCondition(vocab, kind, "above"), operation: entry },
-      { uid: uid(), when: defaultCondition(vocab, kind, "below"), operation: exit },
-    ],
+    rules: defaultRules(vocab, legSide),
     capital: "50000",
     timeframe: vocab.timeframes[0] ?? "1d",
     evaluation: vocab.evaluation_modes[0] ?? "bar_close",

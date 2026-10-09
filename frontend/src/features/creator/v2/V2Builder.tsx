@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useNavigate } from "react-router-dom";
+import { useBlocker, useNavigate } from "react-router-dom";
 import { CheckCircle2, Plus, Trash2 } from "lucide-react";
 import { ApiError } from "../../../api/client";
 import { instrumentsApi } from "../../../api/instruments";
@@ -13,7 +13,7 @@ import { formatCurrency } from "../../../lib/format";
 import { parseCapital } from "../strategyConfig";
 import {
   MAX_CONDITION_DEPTH, authorableConditions, authorableOperations, buildV2Request, compareOpLabel, conditionKindLabel, crossDirLabel,
-  defaultCondition, defaultForm, defaultIndicatorOperand, defaultOperand, edgeDirLabel, evaluationLabel, fillModelLabel, indicatorOf,
+  defaultCondition, defaultForm, defaultRules, rulesAreStarterDefaults, defaultIndicatorOperand, defaultOperand, edgeDirLabel, evaluationLabel, fillModelLabel, indicatorOf,
   legSideLabel, newRule, operandKindLabel, operationLabel, previewRule, priceFieldLabel, requestFingerprint, timeframeLabel,
   type ConditionForm, type OperandForm, type V2Form,
 } from "./definition";
@@ -240,6 +240,7 @@ function V2FormBody({ strategyId, vocab, onClose }: { strategyId: string; vocab:
   const [saveError, setSaveError] = useState<ApiError | Error | null>(null);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const saving = useRef(false);
+  const leaving = useRef(false);
 
   const built = useMemo(() => buildV2Request(vocab, form), [vocab, form]);
   const fingerprint = built.ok ? requestFingerprint(instrumentId, built.configuration, built.backtestConfiguration) : null;
@@ -251,6 +252,10 @@ function V2FormBody({ strategyId, vocab, onClose }: { strategyId: string; vocab:
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
   }, [dirty]);
+
+  // In-app navigation (links, back button) asks first; a successful save is allowed through.
+  const blocker = useBlocker(({ currentLocation, nextLocation }) =>
+    dirty && !leaving.current && currentLocation.pathname !== nextLocation.pathname);
 
   const update = (patch: Partial<V2Form>) => setForm((current) => ({ ...current, ...patch }));
 
@@ -272,6 +277,7 @@ function V2FormBody({ strategyId, vocab, onClose }: { strategyId: string; vocab:
     },
     onSuccess: async (version) => {
       toast.success(`Version ${version.version_number} saved (${schemaVersionLabel(version.definition_schema_version)})`, "It is immutable. You can now backtest it.");
+      leaving.current = true;
       onClose();
       await client.invalidateQueries({ queryKey: queryKeys.versions(strategyId) });
       navigate(`/creator/strategies/${strategyId}/versions/${version.id}`);
@@ -325,7 +331,11 @@ function V2FormBody({ strategyId, vocab, onClose }: { strategyId: string; vocab:
           <div><h3>Position</h3><p>How much to trade{limitations.length ? `. The current runtime supports ${limitations.join(" and ")}` : ""}.</p></div>
         </div>
         <div className="form-section-body v2-row">
-          <Select label="Direction" value={form.legSide} options={vocab.position.leg_sides} render={legSideLabel} onChange={(legSide) => update({ legSide })} />
+          <Select label="Direction" value={form.legSide} options={vocab.position.leg_sides} render={legSideLabel} onChange={(legSide) => update({
+            legSide,
+            // Untouched starter rules follow the direction; anything the user edited is left alone.
+            ...(rulesAreStarterDefaults(vocab, form.legSide, form.rules) ? { rules: defaultRules(vocab, legSide) } : {}),
+          })} />
           <Field label="Number of shares" hint={<span className="field-hint" id="v2-shares-hint">Explicit share count for every open. There is no hidden default.</span>}>
             <input className="input" type="text" inputMode="decimal" value={form.shares} onChange={(e) => update({ shares: e.target.value })} aria-describedby="v2-shares-hint" />
           </Field>
@@ -402,6 +412,11 @@ function V2FormBody({ strategyId, vocab, onClose }: { strategyId: string; vocab:
         <Button type="button" loading={save.isPending} disabled={!canSave} onClick={onSave}>{save.isPending ? "Saving…" : "Save Version"}</Button>
         <Button type="button" variant="ghost" disabled={save.isPending} onClick={() => (dirty ? setConfirmDiscard(true) : onClose())}>Cancel</Button>
       </div>
+
+      <ConfirmDialog open={blocker.state === "blocked"} title="Leave without saving?" confirmLabel="Leave and discard"
+        onCancel={() => blocker.reset?.()} onConfirm={() => blocker.proceed?.()}>
+        <p>Your Strategy V2 draft has not been saved. If you leave this page it will be lost.</p>
+      </ConfirmDialog>
 
       <ConfirmDialog open={confirmDiscard} title="Discard this draft?" confirmLabel="Discard draft" onCancel={() => setConfirmDiscard(false)} onConfirm={onClose}>
         <p>Your Strategy V2 draft has not been saved. Discarding it cannot be undone.</p>
