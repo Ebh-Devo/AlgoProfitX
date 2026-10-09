@@ -27,21 +27,29 @@ RUNTIME_CAPABILITIES = frozenset(
 )
 
 
-def check_capabilities(
+def capability_issues(
     definition: StrategyDefinition, provided: frozenset[str] = RUNTIME_CAPABILITIES
-) -> None:
-    """Raise ``RuntimeSetupError`` naming every unmet requirement, grouped by layer."""
+) -> tuple[tuple[str, ...], tuple[ValidationIssue, ...]]:
+    """The sorted missing capability names and one issue per name, grouped by layer."""
     missing = required_capabilities(definition) - provided
-    if not missing:
-        return
     issues = tuple(
         ValidationIssue("", "capability_missing", f"{layer_of(name).value}: {name}")
         for layer in CapabilityLayer
         for name in sorted(missing)
         if layer_of(name) is layer
     )
+    return tuple(sorted(missing)), issues
+
+
+def check_capabilities(
+    definition: StrategyDefinition, provided: frozenset[str] = RUNTIME_CAPABILITIES
+) -> None:
+    """Raise ``RuntimeSetupError`` naming every unmet requirement, grouped by layer."""
+    missing, issues = capability_issues(definition, provided)
+    if not missing:
+        return
     raise RuntimeSetupError(
         "the definition needs capabilities this runtime does not provide: "
-        + ", ".join(sorted(missing)),
+        + ", ".join(missing),
         issues,
     )

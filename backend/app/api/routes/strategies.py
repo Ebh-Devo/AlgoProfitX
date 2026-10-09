@@ -21,14 +21,23 @@ from app.services.analytics import (
     build_backtest_analytics,
 )
 from app.schemas.strategy import (
+    DefinitionIssue,
+    DefinitionValidateRequest,
+    DefinitionValidationResponse,
+    DefinitionVocabularyResponse,
     StrategyCreateRequest,
     StrategyResponse,
     StrategyUpdateRequest,
     StrategyVersionCreateRequest,
     StrategyVersionResponse,
+    StrategyVersionV2CreateRequest,
 )
+from app.strategy_definition.assessment import DefinitionAssessment, assess_v2_definition
+from app.strategy_definition.vocabulary import runnable_vocabulary
 from app.services.strategy import (
     StrategyConflict,
+    UnsupportedExecutionVersionError,
+    create_strategy_version_v2,
     StrategyVersionValidationError,
     archive_strategy,
     create_strategy_version,
@@ -109,6 +118,129 @@ async def list_my_strategies(
         session=session,
         creator_id=current_user.id,
     )
+
+
+def _issues(assessment: DefinitionAssessment) -> list[DefinitionIssue]:
+    return [
+        DefinitionIssue(**item.issue.to_dict(), layer=item.layer) for item in assessment.issues
+    ]
+
+
+@router.get(
+    "/definition-vocabulary",
+    response_model=DefinitionVocabularyResponse,
+)
+async def get_definition_vocabulary(
+    current_user: Annotated[User, Depends(require_creator)],
+):
+    """The V2 subset the runtime can run today, derived from its actual capabilities."""
+    return runnable_vocabulary()
+
+
+@router.post(
+    "/definitions/validate",
+    response_model=DefinitionValidationResponse,
+)
+async def validate_definition_draft(
+    data: DefinitionValidateRequest,
+    current_user: Annotated[User, Depends(require_creator)],
+):
+    """Validate a V2 draft without persisting anything. A well-formed request is always 200;
+    the verdict (and every issue, warnings included) is in the body."""
+    settings = get_settings()
+    user_key = str(current_user.id)
+    await abuse_controller.enforce(
+        (
+            RateLimitRule(
+                "definition_validation_burst_user",
+                user_key,
+                settings.definition_validation_burst_limit,
+                settings.definition_validation_burst_window_seconds,
+            ),
+            RateLimitRule(
+                "definition_validation_sustained_user",
+                user_key,
+                settings.definition_validation_sustained_limit,
+                settings.definition_validation_sustained_window_seconds,
+            ),
+        ),
+        settings.abuse_protection_enabled,
+    )
+    assessment = assess_v2_definition(data.configuration, data.backtest_configuration)
+    return DefinitionValidationResponse(
+        definition_schema_version=2,
+        valid=assessment.valid,
+        savable=assessment.savable,
+        runnable=assessment.runnable,
+        issues=_issues(assessment),
+        required_capabilities=list(assessment.required_capabilities),
+        unsupported_capabilities=list(assessment.unsupported_capabilities),
+    )
+
+
+@router.post(
+    "/{strategy_id}/versions/v2",
+    response_model=StrategyVersionResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_version_v2(
+    strategy_id: uuid.UUID,
+    data: StrategyVersionV2CreateRequest,
+    current_user: Annotated[User, Depends(require_creator)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+):
+    strategy = await get_strategy(
+        session=session,
+        strategy_id=strategy_id,
+        creator_id=current_user.id,
+    )
+    if strategy is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Strategy not found",
+        )
+
+    # Only a definition the runtime can actually run may be saved: versions are immutable.
+    assessment = assess_v2_definition(data.configuration, data.backtest_configuration)
+    if not assessment.runnable:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail={
+                "code": (
+                    "strategy_definition_not_runnable"
+                    if assessment.savable
+                    else "invalid_strategy_definition"
+                ),
+                "message": (
+                    "The definition is valid but cannot currently be executed."
+                    if assessment.savable
+                    else "The definition is not valid."
+                ),
+                "issues": [issue.model_dump() for issue in _issues(assessment) if issue.severity == "error"],
+            },
+        )
+
+    try:
+        version = await create_strategy_version_v2(
+            session,
+            strategy,
+            instrument_id=data.instrument_id,
+            configuration=data.configuration,
+            backtest_configuration=data.backtest_configuration,
+        )
+        await session.commit()
+    except StrategyVersionValidationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(exc),
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        )
+
+    return version
 
 
 @router.post(
@@ -477,6 +609,11 @@ async def publish(
     try:
         strategy = await publish_strategy(session=session, strategy=strategy)
         await session.commit()
+    except UnsupportedExecutionVersionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=exc.detail(),
+        )
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -510,6 +647,11 @@ async def deploy(
     try:
         strategy = await deploy_strategy(session=session, strategy=strategy)
         await session.commit()
+    except UnsupportedExecutionVersionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=exc.detail(),
+        )
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,

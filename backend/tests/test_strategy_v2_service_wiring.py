@@ -32,6 +32,7 @@ from tests.test_backtest_execution import (
 V2_BACKTEST_CONFIGURATION = {
     "initial_capital": "10000",
     "fill_model": "same_bar_close",
+    "timeframe": "1d",
     "start_date": "2025-01-01T00:00:00Z",
 }
 
@@ -126,7 +127,7 @@ def no_data_or_runtime(monkeypatch):
 async def test_v1_creation_persists_version_1_and_the_response_shape_is_unchanged(client):
     headers = await register_and_login(client)
     strategy, version = await create_strategy_version(client, headers, "persist-v1")
-    assert "definition_schema_version" not in version  # public API shape is untouched
+    assert version["definition_schema_version"] == 1
     async with AsyncSessionLocal() as session:
         row = await session.get(StrategyVersion, uuid.UUID(version["id"]))
         assert row.definition_schema_version == 1
@@ -147,7 +148,7 @@ async def test_v2_round_trips_with_version_2_and_untouched_json(client):
     )
     assert response.status_code == 200
     assert response.json()["configuration"] == document
-    assert "definition_schema_version" not in response.json()
+    assert response.json()["definition_schema_version"] == 2
 
 
 async def test_a_historical_row_without_the_column_value_reads_as_v1(client):
@@ -216,7 +217,7 @@ async def test_the_backtest_snapshots_the_schema_version(client):
     async with AsyncSessionLocal() as session:
         assert (await session.get(Backtest, uuid.UUID(first["id"]))).definition_schema_version == 1
         assert (await session.get(Backtest, uuid.UUID(second["id"]))).definition_schema_version == 2
-    assert "definition_schema_version" not in first
+    assert first["definition_schema_version"] == 1
 
 
 # --- V2 execution -------------------------------------------------------------------------

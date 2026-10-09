@@ -21,6 +21,12 @@ class RuntimeSetupError(StrategyRuntimeError):
         self.issues = tuple(issues)
 
 
+class RuntimeEnvironmentError(RuntimeSetupError):
+    """The environment (``backtest_configuration``) cannot be run: bad capital, a fill model or
+    timeframe this runtime does not support. Distinguished from a definition problem so callers
+    can report ``strategy_environment_invalid``."""
+
+
 class UnsupportedOperationError(StrategyRuntimeError):
     """A position operation that is reserved but not implemented (``increase``, ``reduce``)."""
 
