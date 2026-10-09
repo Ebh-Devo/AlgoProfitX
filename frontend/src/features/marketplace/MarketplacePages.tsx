@@ -289,6 +289,25 @@ export function MarketplaceDetailPage() {
         {strategy.description || "No public description provided for this strategy."}
       </p>
 
+      <Card variant="elevated" as="section" className="bt-feature" aria-labelledby="bt-feature-title">
+        <CardHeader>
+          <p className="eyebrow">Simulation</p>
+          <h2 id="bt-feature-title">Backtest &amp; Performance</h2>
+        </CardHeader>
+        <CardBody>
+          <p>
+            Configure a simulated Backtest for {strategy.current_version_number ? `Version ${strategy.current_version_number}` : "this strategy"} and review
+            performance, trades and assumptions in one workspace.
+          </p>
+          <p className="field-hint">
+            Backtest results for Marketplace strategies are not yet available, and no performance is shown on this profile. A backtest is a simulation, not live or paper trading.
+          </p>
+          <Link className="button" to={`/marketplace/${encodeURIComponent(strategy.slug)}/backtest`}>
+            Open Backtest workspace <ArrowRight size={14} aria-hidden="true" />
+          </Link>
+        </CardBody>
+      </Card>
+
       <div className="detail-grid">
         <Card variant="elevated">
           <CardHeader>
@@ -322,7 +341,7 @@ export function MarketplaceDetailPage() {
         <Card variant="elevated">
           <CardHeader>
             <p className="eyebrow">Research context</p>
-            <h2>Verified Transparency</h2>
+            <h2>Strategy Transparency</h2>
           </CardHeader>
           <CardBody>
             <p>
@@ -332,17 +351,20 @@ export function MarketplaceDetailPage() {
             <ul className="detail-context-list">
               <li>
                 <CheckCircle2 size={16} aria-hidden="true" />
-                <span>Verified strategy lifecycle state</span>
+                <span>Lifecycle status is shown as recorded by the platform</span>
               </li>
               <li>
                 <CheckCircle2 size={16} aria-hidden="true" />
-                <span>Immutable version numbering</span>
+                <span>Versions are immutable and numbered by the platform</span>
               </li>
               <li>
                 <ShieldCheck size={16} aria-hidden="true" />
                 <span>Protected creator source code & execution logic</span>
               </li>
             </ul>
+            <p className="field-hint">
+              Publication is not an endorsement. No performance, rating or independent verification is claimed on this page.
+            </p>
           </CardBody>
         </Card>
 
