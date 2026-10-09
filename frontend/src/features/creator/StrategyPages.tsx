@@ -26,6 +26,8 @@ import { queryKeys } from "../../api/queryKeys";
 import type { Strategy, StrategyCreateRequest, StrategyUpdateRequest } from "../../api/types";
 import { formatCurrency } from "../../lib/format";
 import { AlgorithmSummary, StartingCapitalSummary, TechnicalDetails } from "./ConfigViews";
+import { V2VersionCreator } from "./v2/V2Builder";
+import { BacktestOnlyNotice, DefinitionVersionBadge, V2_EXECUTION_NOTICE, isBacktestOnly } from "./v2/V2Views";
 import {
   ACTIONS, ACTION_LABEL, DEFAULT_CAPITAL, DEFAULT_EMA_RULE, DEFAULT_EXIT_RULE, DIRECTIONS, STRATEGY_TYPE_LABEL, buildBacktestConfiguration, buildConfiguration, describeEntry, describeExit,
   parseCapital, usualDirection, validateCapital, validateEmaRule, validateExitAction,
@@ -605,7 +607,40 @@ export function StrategyEditPage() {
 }
 
 /* ── Version creator ──────────────────────────────────────────── */
+/**
+ * The creator offers both definition versions explicitly. V1 (the EMA-crossover form) stays the default so the
+ * existing flow is unchanged; V2 is a separate guided builder with its own endpoints. Both stay mounted once
+ * opened so switching never discards a draft.
+ */
 function VersionCreator({ strategyId, onClose }: { strategyId: string; onClose: () => void }) {
+  const [schema, setSchema] = useState<1 | 2>(1);
+  const [v2Opened, setV2Opened] = useState(false);
+  const choose = (next: 1 | 2) => { setSchema(next); if (next === 2) setV2Opened(true); };
+  const options = [
+    { value: 1 as const, title: "Strategy V1", text: "The existing EMA-crossover form: one entry rule, one exit rule." },
+    { value: 2 as const, title: "Strategy V2", text: "A guided rule builder with conditions and actions. Backtesting only for now." },
+  ];
+  return (
+    <div className="page-stack">
+      <fieldset className="panel v2-choice">
+        <legend className="v2-choice-legend">Definition version</legend>
+        <p className="field-hint">Choose how this Version is defined. The choice is stored with the Version and cannot be changed afterwards.</p>
+        <div className="v2-choice-options">
+          {options.map((option) => (
+            <label key={option.value} className={`v2-choice-option${schema === option.value ? " is-selected" : ""}`}>
+              <input type="radio" name="definition-version" value={option.value} checked={schema === option.value} onChange={() => choose(option.value)} />
+              <span><strong>{option.title}</strong><span>{option.text}</span></span>
+            </label>
+          ))}
+        </div>
+      </fieldset>
+      <div hidden={schema !== 1}><V1VersionCreator strategyId={strategyId} onClose={onClose} /></div>
+      {v2Opened && <div hidden={schema !== 2}><V2VersionCreator strategyId={strategyId} onClose={onClose} /></div>}
+    </div>
+  );
+}
+
+function V1VersionCreator({ strategyId, onClose }: { strategyId: string; onClose: () => void }) {
   const client = useQueryClient();
   const toast = useToast();
   const navigate = useNavigate();
@@ -1026,6 +1061,11 @@ export function StrategyDetailPage() {
     ? versions.data?.find((v) => v.id === strategy.current_version_id)
     : undefined;
   const busy = lifecycle.isPending || remove.isPending;
+  // The backend refuses to publish/deploy anything but V1 (publish checks the latest Version, deploy the current one).
+  const latestVersion = [...(versions.data ?? [])].sort((a, b) => b.version_number - a.version_number)[0];
+  const executionBlocked =
+    (primary === "publish" && isBacktestOnly(latestVersion?.definition_schema_version)) ||
+    (primary === "deploy" && isBacktestOnly(currentVersion?.definition_schema_version));
 
   const closeDialog = () => { setConfirm(null); setDialogError(null); };
 
@@ -1058,7 +1098,8 @@ export function StrategyDetailPage() {
             <Button
               iconLeft={primary === "publish" ? <Globe size={15} aria-hidden="true" /> : <Rocket size={15} aria-hidden="true" />}
               loading={lifecycle.isPending && lifecycle.variables === primary}
-              disabled={busy}
+              disabled={busy || executionBlocked}
+              aria-describedby={executionBlocked ? "v2-execution-blocked" : undefined}
               onClick={() => { setActionError(null); lifecycle.mutate(primary); }}
             >
               {ACTION_COPY[primary].label}
@@ -1069,6 +1110,11 @@ export function StrategyDetailPage() {
         </div>
       </header>
 
+      {executionBlocked && (
+        <div id="v2-execution-blocked" style={{ marginBottom: "var(--space-5)" }}>
+          <Alert variant="info" title={`${primary === "deploy" ? "Deploy" : "Publish"} is not available for Strategy V2`}>{V2_EXECUTION_NOTICE}</Alert>
+        </div>
+      )}
       {actionError && (
         <div style={{ marginBottom: "var(--space-5)" }}>
           <Alert variant="error">{actionError}</Alert>
@@ -1140,6 +1186,7 @@ export function StrategyDetailPage() {
                       <Link className="version-row" to={`/creator/strategies/${strategy.id}/versions/${version.id}`}>
                         <div className="version-row-main">
                           <strong>Version {version.version_number}</strong>
+                          {version.definition_schema_version != null && <DefinitionVersionBadge schemaVersion={version.definition_schema_version} />}
                           {version.instrument && <span>{version.instrument.name} · {version.instrument.exchange.code}</span>}
                         </div>
                         <div className="version-row-meta">
@@ -1248,6 +1295,7 @@ export function StrategyVersionPage() {
           <p className="eyebrow">{strategyName ? `${strategyName} · ` : ""}Immutable version</p>
           <div className="title-with-status">
             <h1>Version {query.data.version_number}</h1>
+            {query.data.definition_schema_version != null && <DefinitionVersionBadge schemaVersion={query.data.definition_schema_version} />}
             {isCurrent && <span className="badge badge-info">Current</span>}
           </div>
           <p>Created {date(query.data.created_at)}</p>
@@ -1256,20 +1304,21 @@ export function StrategyVersionPage() {
 
       <div className="page-stack">
         <div role="note"><Alert variant="info">Versions are immutable once created. There are no edit or delete actions.</Alert></div>
+        {isBacktestOnly(query.data.definition_schema_version) && <BacktestOnlyNotice />}
 
         <div className="detail-layout">
           <div className="detail-main">
             <section className="panel" aria-labelledby="algo-config">
               <div className="panel-head"><SectionHeader id="algo-config" title="Algorithm" /></div>
               <div className="panel-body">
-                <AlgorithmSummary configuration={query.data.configuration} />
+                <AlgorithmSummary configuration={query.data.configuration} schemaVersion={query.data.definition_schema_version} />
                 <TechnicalDetails value={query.data.configuration} />
               </div>
             </section>
             <section className="panel" aria-labelledby="bt-config">
               <div className="panel-head"><SectionHeader id="bt-config" title="Backtest settings" /></div>
               <div className="panel-body">
-                <StartingCapitalSummary backtestConfiguration={query.data.backtest_configuration} currency={instrument?.quote_currency} />
+                <StartingCapitalSummary backtestConfiguration={query.data.backtest_configuration} currency={instrument?.quote_currency} schemaVersion={query.data.definition_schema_version} />
                 <TechnicalDetails value={query.data.backtest_configuration} />
               </div>
             </section>
