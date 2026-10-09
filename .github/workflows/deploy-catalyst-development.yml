@@ -2,6 +2,23 @@ name: Deploy Catalyst Development
 
 on:
   workflow_dispatch:
+    inputs:
+      release_run_id:
+        description: "Run ID of the successful 'Build Catalyst release artifacts' run"
+        required: true
+        type: string
+      source_sha:
+        description: "Full 40-character source commit SHA the release was built from"
+        required: true
+        type: string
+      api_sha256:
+        description: "SHA-256 of algoprofitx-api.tar from that release"
+        required: true
+        type: string
+      web_sha256:
+        description: "SHA-256 of algoprofitx-web.tar from that release"
+        required: true
+        type: string
 
 permissions:
   actions: read
@@ -12,41 +29,112 @@ jobs:
     runs-on: ubuntu-24.04
     environment: catalyst-development
     env:
-      RELEASE_RUN_ID: "33951383950"
-      RELEASE_ARTIFACT: catalyst-release-c07b5b1fda10834462334648e835235a0dcafcde
-      API_SHA256: 40c243a2fcf8095919af6d0a4922401e1ea71915088ff7e4e325f92c20d1037b
-      WEB_SHA256: 5216823289870c8f0ea2324125de0c5bc20fa5addbb0e1c080507b76aa0b57af
+      # Fixed Development target. Dispatch inputs can never change these.
       CATALYST_PROJECT_ID: "36851000000392052"
       CATALYST_ORG_ID: "60069781151"
       CATALYST_DC: in
       CATALYST_TARGET_ENVIRONMENT: Development
       ZCATALYST_NON_INTERACTIVE: "1"
+      # Dispatch inputs are passed through the environment, never interpolated
+      # into shell source.
+      RELEASE_RUN_ID: ${{ inputs.release_run_id }}
+      SOURCE_SHA: ${{ inputs.source_sha }}
+      API_SHA256: ${{ inputs.api_sha256 }}
+      WEB_SHA256: ${{ inputs.web_sha256 }}
     steps:
-      - uses: actions/checkout@v4
-      - name: Download the reviewed immutable release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: >-
-          gh run download "$RELEASE_RUN_ID"
-          --repo "$GITHUB_REPOSITORY"
-          --name "$RELEASE_ARTIFACT"
-          --dir release
-      - name: Verify exact release archives
+      - name: Guard the fixed Development target and workflow ref
         shell: bash
         run: |
-          test "$(sha256sum release/algoprofitx-api.tar | cut -d' ' -f1)" = "$API_SHA256"
-          test "$(sha256sum release/algoprofitx-web.tar | cut -d' ' -f1)" = "$WEB_SHA256"
-      - name: Install official Catalyst CLI
-        run: |
-          npm install --global zcatalyst-cli@1.27.2
-          test "$(catalyst --version)" = "1.27.2"
-      - name: Guard the fixed Development target
-        shell: bash
-        run: |
+          set -euo pipefail
           test "$CATALYST_PROJECT_ID" = "36851000000392052"
           test "$CATALYST_ORG_ID" = "60069781151"
           test "$CATALYST_DC" = "in"
           test "$CATALYST_TARGET_ENVIRONMENT" = "Development"
+          case "$GITHUB_REF" in
+            refs/heads/dev|refs/heads/main) ;;
+            *) echo "::error::Dispatch this workflow from dev or main only (got $GITHUB_REF)"; exit 1 ;;
+          esac
+      - name: Validate dispatch input formats
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_RUN_ID" =~ ^[0-9]{1,20}$ ]] || { echo "::error::release_run_id must be numeric"; exit 1; }
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::source_sha must be a full lowercase 40-hex SHA"; exit 1; }
+          [[ "$API_SHA256" =~ ^[0-9a-f]{64}$ ]] || { echo "::error::api_sha256 must be 64 lowercase hex characters"; exit 1; }
+          [[ "$WEB_SHA256" =~ ^[0-9a-f]{64}$ ]] || { echo "::error::web_sha256 must be 64 lowercase hex characters"; exit 1; }
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify the source commit is on dev or main
+        shell: bash
+        run: |
+          set -euo pipefail
+          git cat-file -e "${SOURCE_SHA}^{commit}"
+          if git merge-base --is-ancestor "$SOURCE_SHA" origin/dev \
+            || git merge-base --is-ancestor "$SOURCE_SHA" origin/main; then
+            echo "Source commit $SOURCE_SHA is reachable from dev or main."
+          else
+            echo "::error::source_sha is not reachable from dev or main"; exit 1
+          fi
+      - name: Verify the release run (conclusion, source, workflow)
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          run_json="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${RELEASE_RUN_ID}")"
+          check() { echo "$run_json" | jq -e "$1" >/dev/null || { echo "::error::Release run check failed: $2"; exit 1; }; }
+          check '.status == "completed" and .conclusion == "success"' "run did not complete successfully"
+          check ".head_sha == \"${SOURCE_SHA}\"" "run head_sha does not match source_sha"
+          check '.path | startswith(".github/workflows/build-catalyst.yml")' "run is not the Catalyst release build workflow"
+          check '.event == "push" or .event == "workflow_dispatch"' "run event does not produce release artifacts"
+          check ".repository.full_name == \"${GITHUB_REPOSITORY}\" and .head_repository.full_name == \"${GITHUB_REPOSITORY}\"" "run is not from this repository"
+      - name: Verify the release artifact is available
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_ARTIFACT: catalyst-release-${{ inputs.source_sha }}
+        run: |
+          set -euo pipefail
+          count="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${RELEASE_RUN_ID}/artifacts" \
+            --jq "[.artifacts[] | select(.name == \"${RELEASE_ARTIFACT}\" and .expired == false)] | length")"
+          test "$count" = "1" || { echo "::error::Artifact ${RELEASE_ARTIFACT} is missing or expired (release artifacts are retained for 1 day)"; exit 1; }
+      - name: Download the release artifact
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_ARTIFACT: catalyst-release-${{ inputs.source_sha }}
+        run: |
+          set -euo pipefail
+          gh run download "$RELEASE_RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --name "$RELEASE_ARTIFACT" \
+            --dir release
+      - name: Verify artifact structure and hashes
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Exactly the expected files, nothing else.
+          test "$(find release -type f | sort | tr '\n' ' ')" = \
+            "release/SHA256SUMS release/algoprofitx-api.tar release/algoprofitx-web.tar "
+          # Hashes supplied at dispatch must match the archives.
+          test "$(sha256sum release/algoprofitx-api.tar | cut -d' ' -f1)" = "$API_SHA256"
+          test "$(sha256sum release/algoprofitx-web.tar | cut -d' ' -f1)" = "$WEB_SHA256"
+          # Hashes must also match the checksum manifest written by the build.
+          grep -q "^${API_SHA256}  /tmp/algoprofitx-api.tar$" release/SHA256SUMS
+          grep -q "^${WEB_SHA256}  /tmp/algoprofitx-web.tar$" release/SHA256SUMS
+          # Each archive must be the right application image built from SOURCE_SHA.
+          for app in api web; do
+            tar -xOf "release/algoprofitx-${app}.tar" manifest.json \
+              | jq -e --arg tag "algoprofitx-${app}:${SOURCE_SHA}" \
+                  '[.[].RepoTags[]?] | index($tag) != null' >/dev/null \
+              || { echo "::error::algoprofitx-${app}.tar is not tagged algoprofitx-${app}:${SOURCE_SHA}"; exit 1; }
+          done
+          echo "Release artifact for ${SOURCE_SHA} verified."
+      - name: Install official Catalyst CLI
+        run: |
+          npm install --global zcatalyst-cli@1.27.2
+          test "$(catalyst --version)" = "1.27.2"
       - name: Deploy API to Catalyst Development
         shell: bash
         env:
