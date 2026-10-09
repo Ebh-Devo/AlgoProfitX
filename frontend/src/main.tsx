@@ -22,6 +22,7 @@ import "./styles/workspace.css";
 import "./styles/interaction.css";
 import "./styles/landing-motion.css";
 import "./styles/research.css";
+import "./styles/marketplace-backtest.css";
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } } });
 

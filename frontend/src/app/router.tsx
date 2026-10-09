@@ -8,6 +8,7 @@ import { AccountPage, CreatorEnrollPage } from "../features/account/AccountPages
 import { LoginPage, RegisterPage } from "../features/account/AuthPages";
 import { HomePage } from "../features/home/HomePage";
 import { DashboardPage } from "../features/dashboard/DashboardPage";
+import { MarketplaceBacktestPage } from "../features/marketplace/BacktestWorkspace";
 import { MarketplaceDetailPage, MarketplaceListPage } from "../features/marketplace/MarketplacePages";
 import { LoadingState } from "../components/PageState";
 
@@ -54,6 +55,7 @@ export const router = createBrowserRouter([
       { path: "register", element: <RegisterPage /> },
       { path: "marketplace", element: <MarketplaceListPage /> },
       { path: "marketplace/:slug", element: <MarketplaceDetailPage /> },
+      { path: "marketplace/:slug/backtest", element: <MarketplaceBacktestPage /> },
       { path: "instruments", element: deferred(<InstrumentListPage />) },
       { path: "instruments/:instrumentId", element: deferred(<InstrumentDetailPage />) },
       { path: "*", element: <NotFoundPage /> },
