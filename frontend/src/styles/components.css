@@ -74,7 +74,7 @@
 .badge-muted   { color: var(--faint); background: transparent; }
 
 /* Financial values — colour is always paired with a sign by <FinancialBadge> */
-.badge-financial { font-family: var(--font-mono); font-size: var(--text-sm); font-variant-numeric: tabular-nums; font-weight: 600; }
+.badge-financial { font-size: var(--text-sm); font-variant-numeric: tabular-nums; font-weight: 600; }
 .badge-profit { color: var(--color-profit); }
 .badge-loss { color: var(--color-loss); }
 .badge-neutral-val { color: var(--color-neutral-value); }
@@ -176,7 +176,7 @@
 .data-table td, .strategy-table td { padding: 0.8rem var(--space-4); color: var(--text-2); border-bottom: 1px solid var(--border); vertical-align: middle; }
 .data-table tbody tr:last-child td, .strategy-table tbody tr:last-child td { border-bottom: 0; }
 .data-table tbody tr:hover, .strategy-table tbody tr:hover { background: var(--color-surface-raised); }
-.data-table .num, .data-table th.num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; text-align: right; }
+.data-table .num, .data-table th.num { font-variant-numeric: tabular-nums; text-align: right; }
 
 /* ── Loading / empty / skeleton ──────────────────────────────── */
 .loading-state {
