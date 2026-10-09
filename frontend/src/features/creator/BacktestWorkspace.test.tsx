@@ -356,3 +356,64 @@ describe("History", () => {
     expect(screen.queryByRole("table", { name: /Side-by-side comparison/ })).not.toBeInTheDocument();
   });
 });
+
+describe("Strategy V2 versions", () => {
+  const v2 = {
+    ...version, definition_schema_version: 2,
+    configuration: {
+      timeframe: "1d", evaluation: "bar_close",
+      positions: { main: { role: "core", hedges: null, legs: [{ id: "leg-1", instrument: { kind: "primary" }, side: "buy", quantity: 1 }], sizing: { unit: "shares", value: 10 } } },
+      rules: [{ id: "rule-1", when: { kind: "compare", op: "gt", left: { kind: "price", field: "close" }, right: { kind: "constant", value: 100 } }, then: [{ op: "open", position: "main" }] }],
+    },
+    backtest_configuration: { initial_capital: 50000, timeframe: "1d", fill_model: "same_bar_close" },
+  };
+
+  it("describes the V2 runtime, the rules and the backtest-only limit before running", () => {
+    view(<VersionBacktests strategyId="s1" versionId="v1" strategyName="Rules" version={v2 as never} />);
+    expect(screen.getByText("Strategy V2 runtime")).toBeInTheDocument();
+    expect(screen.queryByText("Reference backtest engine")).not.toBeInTheDocument();
+    const summary = screen.getByRole("group", { name: "Backtest Summary" });
+    expect(summary).toHaveTextContent("When the close price is greater than 100, open a long position.");
+    expect(summary).toHaveTextContent("Strategy V2 · Version 2");
+    expect(screen.getByText("Backtest only")).toBeInTheDocument();
+    const context = screen.getByRole("group", { name: /what is being tested/i });
+    expect(within(context).getByText("Strategy V2")).toBeInTheDocument();
+    expect(within(context).getByText(/Filled at the signal bar's close price/)).toBeInTheDocument();
+  });
+
+  it("runs the saved version through the existing create endpoint", async () => {
+    api.createBacktest.mockResolvedValue({ ...base, id: "b1", definition_schema_version: 2 });
+    api.getBacktest.mockResolvedValue({ ...base, id: "b1", definition_schema_version: 2 });
+    api.executeBacktest.mockReturnValue(new Promise(() => {}));
+    view(<VersionBacktests strategyId="s1" versionId="v1" strategyName="Rules" version={v2 as never} />);
+    await userEvent.click(screen.getByRole("button", { name: "Run Backtest" }));
+    await waitFor(() => expect(api.createBacktest).toHaveBeenCalledWith("s1", "v1", { market_data_reference: null }));
+  });
+
+  it("labels a failed V2 run with its version, the real error code and a recovery step", async () => {
+    api.getBacktest.mockResolvedValue({
+      ...base, status: "failed", definition_schema_version: 2, error_code: "strategy_environment_invalid", error_message: "timeframe is not supported",
+    });
+    view(<div />, detailPath);
+    expect(await screen.findByText("Strategy V2")).toBeInTheDocument();
+    expect(screen.getByText(/strategy_environment_invalid/)).toBeInTheDocument();
+    expect(screen.getByText(/timeframe is not supported/)).toBeInTheDocument();
+    expect(screen.getByText(/saved backtest settings are not supported/)).toBeInTheDocument();
+  });
+
+  it("does not call a non-synthetic result synthetic", async () => {
+    api.getBacktest.mockResolvedValue({ ...completed, definition_schema_version: 2, market_data_provenance: { synthetic: false } });
+    api.getBacktestAnalytics.mockResolvedValue(analytics);
+    view(<div />, detailPath);
+    expect(await screen.findByText("Completed backtest run")).toBeInTheDocument();
+    expect(screen.queryByText("Completed synthetic run")).not.toBeInTheDocument();
+  });
+
+  it("marks a synthetic V2 result as synthetic reference data", async () => {
+    api.getBacktest.mockResolvedValue({ ...completed, definition_schema_version: 2 });
+    api.getBacktestAnalytics.mockResolvedValue(analytics);
+    view(<div />, detailPath);
+    expect(await screen.findByText("Completed synthetic run")).toBeInTheDocument();
+    expect(screen.getAllByText(/Synthetic reference dataset/).length).toBeGreaterThan(0);
+  });
+});

@@ -81,4 +81,29 @@ describe("authenticated API client", () => {
     }));
     expect(window.sessionStorage.length).toBe(0);
   });
+
+  it("keeps the structured code, message and issues of an object-shaped error detail", async () => {
+    const issue = { path: "rules[0]", code: "capability_missing", message: "needs op.increase", severity: "error", layer: "capability" };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(
+      JSON.stringify({ detail: { code: "strategy_definition_not_runnable", message: "Not runnable", issues: [issue, { nonsense: true }] } }),
+      { status: 422, headers: { "Content-Type": "application/json" } },
+    )));
+    await expect(apiRequest("/strategies/s/versions/v2", { method: "POST", body: "{}" })).rejects.toMatchObject({
+      status: 422, message: "Not runnable", code: "strategy_definition_not_runnable", issues: [issue],
+    });
+  });
+
+  it("shows the message of an object detail without issues and still handles string and list details", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(
+      JSON.stringify({ detail: { code: "strategy_definition_version_unsupported_for_execution", message: "V2 can be backtested only." } }),
+      { status: 409, headers: { "Content-Type": "application/json" } },
+    )));
+    await expect(apiRequest("/strategies/s/publish", { method: "POST" })).rejects.toMatchObject({
+      message: "V2 can be backtested only.", code: "strategy_definition_version_unsupported_for_execution", issues: [],
+    });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ detail: "plain" }), { status: 400, headers: { "Content-Type": "application/json" } })));
+    await expect(apiRequest("/x")).rejects.toMatchObject({ message: "plain", issues: [] });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ detail: [{ loc: ["body", "name"], msg: "bad" }] }), { status: 422, headers: { "Content-Type": "application/json" } })));
+    await expect(apiRequest("/x")).rejects.toMatchObject({ fieldErrors: [{ path: "name", message: "bad" }] });
+  });
 });

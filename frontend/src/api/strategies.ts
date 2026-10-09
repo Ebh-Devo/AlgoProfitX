@@ -1,5 +1,5 @@
 import { apiRequest } from "./client";
-import type { Backtest, BacktestAnalytics, BacktestCreateRequest, Strategy, StrategyCreateRequest, StrategyUpdateRequest, StrategyVersion, StrategyVersionCreateRequest } from "./types";
+import type { Backtest, BacktestAnalytics, BacktestCreateRequest, DefinitionValidateRequest, DefinitionValidation, DefinitionVocabulary, Strategy, StrategyCreateRequest, StrategyUpdateRequest, StrategyVersion, StrategyVersionCreateRequest, StrategyVersionV2CreateRequest } from "./types";
 
 const root = "/strategies";
 
@@ -13,6 +13,9 @@ export const strategiesApi = {
   listVersions: (id: string) => apiRequest<StrategyVersion[]>(`${root}/${id}/versions`),
   getVersion: (id: string, versionId: string) => apiRequest<StrategyVersion>(`${root}/${id}/versions/${versionId}`),
   createVersion: (id: string, data: StrategyVersionCreateRequest) => apiRequest<StrategyVersion>(`${root}/${id}/versions`, { method: "POST", body: JSON.stringify(data) }),
+  createVersionV2: (id: string, data: StrategyVersionV2CreateRequest) => apiRequest<StrategyVersion>(`${root}/${id}/versions/v2`, { method: "POST", body: JSON.stringify(data) }),
+  getDefinitionVocabulary: () => apiRequest<DefinitionVocabulary>(`${root}/definition-vocabulary`),
+  validateDefinition: (data: DefinitionValidateRequest) => apiRequest<DefinitionValidation>(`${root}/definitions/validate`, { method: "POST", body: JSON.stringify(data) }),
   listBacktests: (id: string, versionId: string) => apiRequest<Backtest[]>(`${root}/${id}/versions/${versionId}/backtests?limit=100`),
   getBacktest: (id: string, versionId: string, backtestId: string) => apiRequest<Backtest>(`${root}/${id}/versions/${versionId}/backtests/${backtestId}`),
   createBacktest: (id: string, versionId: string, data: BacktestCreateRequest) => apiRequest<Backtest>(`${root}/${id}/versions/${versionId}/backtests`, { method: "POST", body: JSON.stringify(data) }),

@@ -16,6 +16,19 @@ import {
 } from "./backtestFormat";
 import { AlgorithmSummary, StartingCapitalSummary, TechnicalDetails } from "./ConfigViews";
 import { describeEntry, describeExit, readEmaRule, readExitRule } from "./strategyConfig";
+import { fillModelLabel, timeframeLabel } from "./v2/definition";
+import { BacktestOnlyNotice, DefinitionVersionBadge, V2DefinitionSummary, isBacktestOnly, schemaVersionLabel } from "./v2/V2Views";
+
+/** What a user can do about a failed run. Codes come from the backend; unknown codes get no invented advice. */
+function failureHint(code: string | null): string | null {
+  switch (code) {
+    case "strategy_definition_invalid": return "The saved definition is not valid. Create a new Version with a corrected definition.";
+    case "strategy_definition_unsupported_capability": return "This Version needs a capability the backtest runtime does not provide. Create a new Version that avoids it.";
+    case "strategy_environment_invalid": return "The saved backtest settings are not supported (timeframe, fill model or capital). Create a new Version with supported settings.";
+    case "strategy_runtime_failed": return "The strategy runtime failed while running. Try again; if it keeps failing, create a new Version.";
+    default: return null;
+  }
+}
 import { UNAVAILABLE, formatCurrency, formatInteger, formatNumber, formatPercentage } from "../../lib/format";
 
 const runPath = (strategyId: string, versionId: string, runId: string) =>
@@ -96,8 +109,11 @@ export function VersionBacktests({ strategyId, versionId, strategyName, version 
   const end = configValue(bt, "end_date");
   const capital = configValue(bt, "initial_capital");
   const currency = instrument?.quote_currency;
-  const entryRule = readEmaRule(version?.configuration);
-  const exitRule = readExitRule(version?.configuration);
+  const schemaVersion = version?.definition_schema_version;
+  const isV2 = schemaVersion === 2;
+  const entryRule = isV2 ? null : readEmaRule(version?.configuration);
+  const exitRule = isV2 ? null : readExitRule(version?.configuration);
+  const fillModel = configValue(bt, "fill_model");
   const period = start && end ? `${displayDay(start)} – ${displayDay(end)}` : null;
 
   const refId = "backtest-reference";
@@ -129,7 +145,9 @@ export function VersionBacktests({ strategyId, versionId, strategyName, version 
             versionLabel={version ? `v${version.version_number} · immutable` : undefined}
             fields={[
               { label: "Instrument", value: instrument ? <strong>{`${instrument.exchange_symbol} · ${instrument.exchange.code}`}</strong> : "Legacy / unresolved" },
-              { label: "Timeframe", value: timeframe ?? (version ? "1d (engine default)" : NOT_AVAILABLE) },
+              ...(schemaVersion != null ? [{ label: "Definition", value: <DefinitionVersionBadge schemaVersion={schemaVersion} /> }] : []),
+              { label: "Timeframe", value: timeframe ? (isV2 ? timeframeLabel(timeframe) : timeframe) : (version ? "1d (engine default)" : NOT_AVAILABLE) },
+              ...(isV2 ? [{ label: "Fill model", value: fillModel ? fillModelLabel(fillModel) : NOT_AVAILABLE }] : []),
               { label: "Period", value: period ?? (version ? "Set by the data provider" : NOT_AVAILABLE) },
               { label: "Starting Capital", value: capital ? formatCurrency(capital, { currency }) : NOT_AVAILABLE },
             ]}
@@ -137,8 +155,10 @@ export function VersionBacktests({ strategyId, versionId, strategyName, version 
           <div className="research-engine">
             <div>
               <span className="research-label">Engine</span>
-              <strong>Reference backtest engine</strong>
-              <p>A single-position EMA crossover reference run, long or short. Not a general strategy engine.</p>
+              <strong>{isV2 ? "Strategy V2 runtime" : "Reference backtest engine"}</strong>
+              <p>{isV2
+                ? "Runs the saved rules bar by bar on daily candles, with one position and fills at the signal bar's close. Backtesting only."
+                : "A single-position EMA crossover reference run, long or short. Not a general strategy engine."}</p>
             </div>
             <div>
               <span className="research-label">Market data</span>
@@ -147,13 +167,26 @@ export function VersionBacktests({ strategyId, versionId, strategyName, version 
             </div>
           </div>
 
+          {isBacktestOnly(schemaVersion) && <BacktestOnlyNotice />}
+
           <div className="config-summary" role="group" aria-label="Backtest Summary">
             <h4>Backtest Summary</h4>
             <dl className="kv">
               <dt>Strategy</dt>
               <dd>{strategyName ?? "Strategy"}</dd>
-              <dt>Entry</dt>
-              <dd>{entryRule ? describeEntry(entryRule) : "Custom algorithm"}</dd>
+              {isV2 ? (
+                <>
+                  <dt>Version</dt>
+                  <dd>{schemaVersionLabel(schemaVersion)} · Version {version?.version_number}</dd>
+                  <dt>Rules</dt>
+                  <dd><V2DefinitionSummary configuration={version?.configuration} /></dd>
+                </>
+              ) : (
+                <>
+                  <dt>Entry</dt>
+                  <dd>{entryRule ? describeEntry(entryRule) : "Custom algorithm"}</dd>
+                </>
+              )}
               {entryRule && (
                 <>
                   <dt>Exit</dt>
@@ -503,9 +536,9 @@ function Analytics({ data, run }: { data: BacktestAnalytics; run: Backtest }) {
     <section className="analytics result-reveal" aria-labelledby="analytics-heading">
       <div className="section-header">
         <div className="section-header-text">
-          <p className="eyebrow">Completed synthetic run</p>
+          <p className="eyebrow">{isSynthetic(run) ? "Completed synthetic run" : "Completed backtest run"}</p>
           <h2 id="analytics-heading">Backtest analytics</h2>
-          <p>Historical synthetic/reference output only; it is not live or realized Investor performance.</p>
+          <p>{isSynthetic(run) ? "Historical synthetic/reference output only; it is not live or realized Investor performance." : "Backtest output only; it is not live or realized Investor performance."}</p>
         </div>
       </div>
 
@@ -547,12 +580,12 @@ function Analytics({ data, run }: { data: BacktestAnalytics; run: Backtest }) {
               <div className="config-grid">
                 <div>
                   <h4 className="research-h4">Algorithm</h4>
-                  <AlgorithmSummary configuration={run.configuration_snapshot} />
+                  <AlgorithmSummary configuration={run.configuration_snapshot} schemaVersion={run.definition_schema_version} />
                   <TechnicalDetails value={run.configuration_snapshot} />
                 </div>
                 <div>
                   <h4 className="research-h4">Backtest settings</h4>
-                  <StartingCapitalSummary backtestConfiguration={run.backtest_configuration_snapshot} currency={instrumentOf(run)?.currency ?? undefined} />
+                  <StartingCapitalSummary backtestConfiguration={run.backtest_configuration_snapshot} currency={instrumentOf(run)?.currency ?? undefined} schemaVersion={run.definition_schema_version} />
                   <TechnicalDetails value={run.backtest_configuration_snapshot} />
                 </div>
               </div>
@@ -749,6 +782,7 @@ export function BacktestDetailPage() {
           <p className="eyebrow">{synthetic ? "Synthetic reference dataset" : "Historical market dataset"}</p>
           <div className="title-with-status">
             <h1>{strategyName ?? "Strategy"}{versionNumber != null ? ` · Version ${versionNumber}` : ""}</h1>
+            <DefinitionVersionBadge schemaVersion={run.definition_schema_version} />
             <StatusBadge status={run.status} />
           </div>
           <p className="meta-line"><span>Backtest run <span className="mono">{shortId(run.id)}</span></span><span>{synthetic ? "Deterministic reference infrastructure" : "Persisted historical dataset"} · not live trading</span></p>
@@ -788,6 +822,7 @@ export function BacktestDetailPage() {
           <div className="alert-body">
             <strong>Backtest failed{run.error_code ? ` (${run.error_code})` : ""}.</strong>{" "}
             {run.error_message || "No error detail was provided."}
+            {failureHint(run.error_code) && <p className="failure-next">{failureHint(run.error_code)}</p>}
             <p className="failure-next"><Link to={`/creator/strategies/${strategyId}/versions/${versionId}`}>Back to configuration</Link> to start a new run.</p>
           </div>
         </div>

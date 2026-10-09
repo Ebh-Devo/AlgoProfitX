@@ -1,8 +1,13 @@
 import { formatCurrency } from "../../lib/format";
+import { V2DefinitionSummary, V2EnvironmentSummary } from "./v2/V2Views";
 import { STRATEGY_TYPE_LABEL, describeEntry, describeExit, readEmaRule, readExitRule, readInitialCapital } from "./strategyConfig";
 
-/** Read-only, plain-language view of a stored algorithm configuration. Unknown shapes fall back to a neutral note. */
-export function AlgorithmSummary({ configuration }: { configuration: unknown }) {
+/**
+ * Read-only, plain-language view of a stored algorithm configuration. Unknown shapes fall back to a neutral note.
+ * The persisted `schemaVersion` (never the JSON shape) selects the reader; omitted means V1.
+ */
+export function AlgorithmSummary({ configuration, schemaVersion }: { configuration: unknown; schemaVersion?: number | null }) {
+  if (schemaVersion === 2) return <V2DefinitionSummary configuration={configuration} />;
   const rule = readEmaRule(configuration);
   const exitRule = readExitRule(configuration);
   if (!rule) {
@@ -20,7 +25,8 @@ export function AlgorithmSummary({ configuration }: { configuration: unknown }) 
   );
 }
 
-export function StartingCapitalSummary({ backtestConfiguration, currency }: { backtestConfiguration: unknown; currency?: string }) {
+export function StartingCapitalSummary({ backtestConfiguration, currency, schemaVersion }: { backtestConfiguration: unknown; currency?: string; schemaVersion?: number | null }) {
+  if (schemaVersion === 2) return <V2EnvironmentSummary backtestConfiguration={backtestConfiguration} currency={currency} />;
   const capital = readInitialCapital(backtestConfiguration);
   return (
     <dl className="kv">

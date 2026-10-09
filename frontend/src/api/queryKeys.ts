@@ -4,6 +4,7 @@ export const queryKeys = {
   marketplaceDetail: (slug: string) => ["marketplace", slug] as const,
   strategies: ["creator-strategies"] as const,
   strategy: (id: string) => ["creator-strategy", id] as const,
+  definitionVocabulary: ["definition-vocabulary"] as const,
   versions: (strategyId: string) => ["strategy-versions", strategyId] as const,
   version: (strategyId: string, versionId: string) => ["strategy-version", strategyId, versionId] as const,
   instruments: (filters: unknown) => ["instruments", filters] as const,
