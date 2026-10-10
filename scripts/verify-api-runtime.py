@@ -42,25 +42,38 @@ assert not any(item.split("=", 1)[0] in {
 docker("run", "--rm", "--entrypoint", "sh", image, "-c",
        "test ! -e /app/.env && test ! -d /app/.git && test ! -d /app/tests")
 
-# Same app.main import/command as the previous Dockerfile: prove the diagnosed
-# missing-settings crash with no environment configuration, without logging it.
+# Direct app.main still requires the signing key, while Catalyst persistence
+# intentionally requires no database configuration.
 baseline = docker("run", "--rm", "--entrypoint", "python", image,
                   "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0",
                   "--port", "8000", check=False)
 assert baseline.returncode != 0
-assert all(marker in baseline.stderr for marker in (
-    "database_url", "secret_key", "Field required"
-))
-print("Original app.main startup reproduced: missing DATABASE_URL and SECRET_KEY")
+assert all(marker in baseline.stderr for marker in ("secret_key", "Field required"))
+assert "database_url" not in baseline.stderr
+print("Direct app.main startup rejects a missing SECRET_KEY without requiring DATABASE_URL")
 
 key = secrets.token_urlsafe(48)
 checks = []
 for mode, env in (
     ("missing-development-config", []),
     ("missing-production-config", ["APP_ENV=production"]),
-    ("configured-unreachable-db", ["APP_ENV=test", "DEBUG=false",
+    ("configured-catalyst-production", ["APP_ENV=production", "DEBUG=false",
+        "SECRET_KEY=" + key, "AUTH_COOKIE_SECURE=true",
+        "AUTH_CSRF_COOKIE_DOMAIN=algoprofitx.com",
+        "CORS_ALLOWED_ORIGINS=https://www.algoprofitx.com",
+        "FRONTEND_PUBLIC_URL=https://www.algoprofitx.com",
+        "API_PUBLIC_URL=https://api.algoprofitx.com",
+        "BACKTEST_EXECUTION_MODE=disabled"]),
+    # A production process asking for PostgreSQL must be refused, never fall back or connect.
+    ("refused-postgresql-production", ["APP_ENV=production", "DEBUG=false",
+        "PERSISTENCE_PROVIDER=postgresql",
         "DATABASE_URL=postgresql+asyncpg://smoke:unused@127.0.0.1:5432/unused",
-        "SECRET_KEY=" + key]),
+        "SECRET_KEY=" + key, "AUTH_COOKIE_SECURE=true",
+        "AUTH_CSRF_COOKIE_DOMAIN=algoprofitx.com",
+        "CORS_ALLOWED_ORIGINS=https://www.algoprofitx.com",
+        "FRONTEND_PUBLIC_URL=https://www.algoprofitx.com",
+        "API_PUBLIC_URL=https://api.algoprofitx.com",
+        "BACKTEST_EXECUTION_MODE=disabled"]),
 ):
     name = "algoprofitx-runtime-smoke"
     args = ["run", "--detach", "--name", name, "-p", "127.0.0.1:8000:8000"]
@@ -74,9 +87,10 @@ for mode, env in (
             time.sleep(1)
         assert status("/health/live") == 200, "Liveness unavailable"
         assert status("/health/ready") == 503, "Readiness must reject missing dependencies"
-        if mode != "configured-unreachable-db":
+        if mode in {"missing-development-config", "missing-production-config",
+                    "refused-postgresql-production"}:
             assert status("/api/v1/strategies") == 503
-        else:
+        elif mode == "configured-catalyst-production":
             # A normal application route exists when configuration is valid.
             assert status("/api/v1/strategies") in (401, 403)
         time.sleep(3)

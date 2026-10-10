@@ -1,8 +1,3 @@
-import base64
-from pathlib import Path
-import ssl
-
-import certifi
 import pytest
 from httpx import ASGITransport, AsyncClient
 from pydantic import ValidationError
@@ -14,12 +9,8 @@ from app.main import create_app
 def production_values(**overrides: object) -> dict[str, object]:
     values: dict[str, object] = {
         "app_env": "production",
+        "persistence_provider": "catalyst",
         "debug": False,
-        "database_url": "postgresql+asyncpg://app:private@db.internal/algoprofitx",
-        "database_require_tls": True,
-        "pgsslrootcert_b64": base64.b64encode(
-            Path(certifi.where()).read_bytes()
-        ).decode("ascii"),
         "backtest_execution_mode": "disabled",
         "secret_key": "X6qvVf9mP2rL8sK4tN7wC3yH5jB0dG1z",
         "cors_allowed_origins": "https://www.algoprofitx.com",
@@ -41,6 +32,7 @@ def assert_production_error(message: str, **overrides: object) -> None:
 
 def test_development_configuration_remains_usable():
     settings = Settings(
+        app_env="development",
         database_url="postgresql+asyncpg://app:local@localhost/app",
         secret_key="local-secret",
         _env_file=None,
@@ -67,25 +59,85 @@ def test_valid_production_configuration_is_fail_closed_by_default():
     assert settings.app_env is AppEnvironment.PRODUCTION
     assert settings.api_docs_enabled is False
     assert settings.database_echo is False
-    tls = settings.database_connect_args["ssl"]
-    assert isinstance(tls, ssl.SSLContext)
-    assert tls.verify_mode == ssl.CERT_REQUIRED
-    assert tls.check_hostname is True
-    assert tls.minimum_version >= ssl.TLSVersion.TLSv1_2
     assert settings.market_data_provider == "synthetic"
-    assert settings.uses_application_pool is True
-    assert settings.database_engine_options["pool_size"] == 5
-    assert settings.database_engine_options["max_overflow"] == 2
-    assert settings.database_engine_options["pool_timeout"] == 10
-    assert settings.database_engine_options["pool_recycle"] == 1800
-    assert settings.database_engine_options["pool_pre_ping"] is True
+    assert settings.backtest_execution_mode == "disabled"
+    assert settings.uses_catalyst_persistence is True
 
 
-def test_production_requires_an_explicit_ca_transport():
-    assert_production_error(
-        "PGSSLROOTCERT or PGSSLROOTCERT_B64",
-        pgsslrootcert_b64=None,
+def test_catalyst_production_requires_no_postgresql_configuration():
+    settings = Settings(**production_values())
+    assert settings.database_url is None
+    assert settings.database_connect_args == {}
+    assert settings.uses_application_pool is False
+
+
+def test_production_ignores_leftover_postgresql_variables():
+    settings = Settings(
+        **production_values(
+            database_url="postgresql://stale:stale@example.invalid/legacy",
+            database_require_tls=True,
+            pgsslrootcert_b64="legacy",
+        )
     )
+    assert settings.uses_catalyst_persistence is True
+    assert settings.database_url is None
+    assert settings.pgsslrootcert_b64 is None
+    assert settings.database_connect_args == {}
+
+
+def test_production_cannot_select_or_fall_back_to_postgresql():
+    assert_production_error(
+        "PERSISTENCE_PROVIDER must be catalyst",
+        persistence_provider="postgresql",
+        database_url="postgresql+asyncpg://app:private@db.internal/algoprofitx",
+    )
+
+
+def test_production_defaults_to_catalyst_when_no_provider_is_configured():
+    values = production_values()
+    del values["persistence_provider"]
+    assert Settings(**values).uses_catalyst_persistence is True
+
+
+@pytest.mark.parametrize("app_env", ["development", "production"])
+def test_catalyst_runtime_refuses_postgresql_in_any_environment(monkeypatch, app_env):
+    monkeypatch.setenv("X_ZOHO_CATALYST_LISTEN_PORT", "9000")
+    values = production_values(
+        app_env=app_env,
+        persistence_provider="postgresql",
+        database_url="postgresql+asyncpg://app:private@db.internal/algoprofitx",
+    )
+    with pytest.raises(ValidationError, match="PERSISTENCE_PROVIDER must be catalyst"):
+        Settings(**values)
+
+
+def test_catalyst_runtime_development_defaults_to_catalyst(monkeypatch):
+    monkeypatch.setenv("X_ZOHO_CATALYST_LISTEN_PORT", "9000")
+    settings = Settings(
+        app_env="development",
+        database_url="postgresql+asyncpg://stale:stale@example.invalid/legacy",
+        secret_key="local-secret",
+        _env_file=None,
+    )
+    assert settings.uses_catalyst_persistence is True
+
+
+def test_postgresql_remains_available_only_as_local_tooling(monkeypatch):
+    monkeypatch.delenv("X_ZOHO_CATALYST_LISTEN_PORT", raising=False)
+    for app_env in ("development", "test"):
+        settings = Settings(
+            app_env=app_env,
+            persistence_provider="postgresql",
+            database_url="postgresql+asyncpg://app:local@localhost/app",
+            secret_key="local-secret",
+            _env_file=None,
+        )
+        assert settings.uses_catalyst_persistence is False
+
+
+def test_worker_backtest_mode_is_not_supported():
+    with pytest.raises(ValidationError):
+        Settings(**production_values(backtest_execution_mode="worker"))
 
 
 def test_production_requires_backtests_to_fail_closed_without_a_worker():
@@ -93,19 +145,6 @@ def test_production_requires_backtests_to_fail_closed_without_a_worker():
         "BACKTEST_EXECUTION_MODE must be disabled",
         backtest_execution_mode="inline",
     )
-
-
-def test_malformed_base64_ca_fails_without_falling_back():
-    settings = Settings(**production_values(pgsslrootcert_b64="not valid base64!"))
-    with pytest.raises(ValueError, match="valid Base64 PEM data"):
-        _ = settings.database_connect_args
-
-
-def test_non_certificate_base64_ca_fails_without_falling_back():
-    invalid = base64.b64encode(b"not a certificate").decode("ascii")
-    settings = Settings(**production_values(pgsslrootcert_b64=invalid))
-    with pytest.raises(ValueError, match="valid CA certificate"):
-        _ = settings.database_connect_args
 
 
 def test_staging_uses_production_security_with_approved_origins():
@@ -118,14 +157,6 @@ def test_staging_uses_production_security_with_approved_origins():
     )
     assert settings.app_env is AppEnvironment.PRODUCTION
     assert settings.cors_allowed_origins == ("https://staging.algoprofitx.com",)
-
-
-def test_external_transaction_pooler_mode_disables_application_pool():
-    settings = Settings(
-        **production_values(db_external_transaction_pooler=True)
-    )
-    assert settings.uses_application_pool is False
-    assert "pool_size" not in settings.database_engine_options
 
 
 @pytest.mark.parametrize(
@@ -195,10 +226,12 @@ def test_production_weak_or_placeholder_secret_is_rejected(secret: str):
 
 
 def test_secret_and_database_url_representations_are_redacted():
-    settings = Settings(**production_values())
+    settings = Settings(
+        **production_values(database_url="postgresql://stale:hunter2@example.invalid/legacy")
+    )
     representation = repr(settings)
     assert settings.secret_key.get_secret_value() not in representation
-    assert settings.database_url.get_secret_value() not in representation
+    assert "hunter2" not in representation
     assert "**********" in representation
 
 
@@ -252,37 +285,6 @@ def test_insecure_production_public_url_is_rejected(field: str, value: str):
     assert_production_error("must use HTTPS", **{field: value})
 
 
-def test_production_database_must_be_remote_asyncpg_with_tls():
-    assert_production_error("DATABASE_REQUIRE_TLS", database_require_tls=False)
-    assert_production_error(
-        "must not target localhost",
-        database_url="postgresql+asyncpg://app:private@localhost/algoprofitx",
-    )
-    assert_production_error(
-        r"must use postgresql\+asyncpg",
-        database_url="sqlite:///algoprofitx.db",
-    )
-
-
-def test_provider_database_url_is_adapted_for_asyncpg():
-    settings = Settings(
-        **production_values(
-            database_url=(
-                "postgresql://app:p%40ss@private.db.ondigitalocean.com:25060/"
-                "algoprofitx_staging?sslmode=require"
-            )
-        )
-    )
-    assert settings.database_url.get_secret_value() == (
-        "postgresql+asyncpg://app:p%40ss@private.db.ondigitalocean.com:25060/"
-        "algoprofitx_staging"
-    )
-    tls = settings.database_connect_args["ssl"]
-    assert isinstance(tls, ssl.SSLContext)
-    assert tls.verify_mode == ssl.CERT_REQUIRED
-    assert tls.check_hostname is True
-
-
 @pytest.mark.parametrize(
     ("field", "value", "message"),
     (
@@ -332,3 +334,20 @@ async def test_docs_remain_enabled_in_development(monkeypatch):
             assert (await client.get("/openapi.json")).status_code == 200
     finally:
         get_settings.cache_clear()
+
+
+def test_provider_database_url_is_adapted_for_asyncpg_in_local_tooling(monkeypatch):
+    monkeypatch.delenv("X_ZOHO_CATALYST_LISTEN_PORT", raising=False)
+    settings = Settings(
+        app_env="development",
+        persistence_provider="postgresql",
+        secret_key="local-secret",
+        database_url=(
+            "postgresql://app:p%40ss@private.db.example:25060/"
+            "algoprofitx_local?sslmode=require"
+        ),
+        _env_file=None,
+    )
+    assert settings.database_url.get_secret_value() == (
+        "postgresql+asyncpg://app:p%40ss@private.db.example:25060/algoprofitx_local"
+    )

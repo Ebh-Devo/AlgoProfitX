@@ -1,12 +1,15 @@
+# Local development and test tooling. The deployed (Catalyst) runtime installs
+# requirements-production.txt instead, which has no PostgreSQL driver, Alembic or Redis.
+# sqlalchemy/asyncpg/alembic remain here only for the legacy PostgreSQL test suite.
 fastapi
 uvicorn[standard]
+zcatalyst-sdk==1.4.0
 sqlalchemy
 asyncpg
 alembic
 pydantic-settings
 python-jose[cryptography]
 argon2-cffi
-redis
 python-multipart
 httpx
 pytest
