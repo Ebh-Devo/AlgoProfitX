@@ -51,19 +51,25 @@ class SchemaCapabilities:
         if cached is not None and cached[1] > now:
             return cached[0]
         present = await self._probe(client, table)
+        if not present and cached is not None and cached[0]:
+            # Columns are never dropped (see docs/catalyst-runtime.md). Once seen, a later "absent"
+            # is an anomaly, and downgrading would misread V2 rows as V1, so keep the known state.
+            present = True
         ttl = _PRESENT_TTL_SECONDS if present else _ABSENT_TTL_SECONDS
         self._entries[table] = (present, now + ttl)
         return present
 
     @staticmethod
     async def _probe(client: CatalystPersistenceClient, table: str) -> bool:
-        try:
-            await client.async_query_rows(
-                f"SELECT ROWID, {SCHEMA_VERSION_COLUMN} FROM {table} LIMIT 1", table
-            )
-            return True
-        except CatalystPersistenceError:
-            pass
+        # Two attempts: a single transient failure must not be mistaken for a missing column.
+        for _ in range(2):
+            try:
+                await client.async_query_rows(
+                    f"SELECT ROWID, {SCHEMA_VERSION_COLUMN} FROM {table} LIMIT 1", table
+                )
+                return True
+            except CatalystPersistenceError:
+                continue
         # The column query failed. Only conclude "missing" if the table itself is readable;
         # otherwise this is an outage and guessing would misread V2 rows as V1. Let it surface.
         await client.async_query_rows(f"SELECT ROWID FROM {table} LIMIT 1", table)

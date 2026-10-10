@@ -109,6 +109,35 @@ async def test_probe_results_are_cached_and_absence_expires_quickly():
     assert await capabilities.has_schema_version_column(store, STRATEGY_VERSIONS_TABLE) is True
 
 
+@pytest.mark.asyncio
+async def test_a_single_transient_probe_failure_is_not_mistaken_for_a_missing_column():
+    capabilities = SchemaCapabilities()
+    store = strategy_store(with_schema_column=True)
+    real = store.async_query_rows
+    failures = [1]
+
+    async def flaky(query, table):
+        if SCHEMA_VERSION_COLUMN in query and failures[0] > 0:
+            failures[0] -= 1
+            raise CatalystPersistenceError("Catalyst ZCQL query failed")
+        return await real(query, table)
+
+    store.async_query_rows = flaky
+    assert await capabilities.has_schema_version_column(store, STRATEGY_VERSIONS_TABLE) is True
+
+
+@pytest.mark.asyncio
+async def test_a_column_seen_present_is_never_downgraded_to_absent():
+    now = [0.0]
+    capabilities = SchemaCapabilities(clock=lambda: now[0])
+    store = strategy_store(with_schema_column=True)
+    assert await capabilities.has_schema_version_column(store, STRATEGY_VERSIONS_TABLE) is True
+    # Pretend the column query now fails persistently while the table stays readable.
+    store.schemas[STRATEGY_VERSIONS_TABLE] = store.schemas[STRATEGY_VERSIONS_TABLE] - {SCHEMA_VERSION_COLUMN}
+    now[0] += 301
+    assert await capabilities.has_schema_version_column(store, STRATEGY_VERSIONS_TABLE) is True
+
+
 def test_schema_version_parsing_defaults_to_v1_and_never_coerces_garbage():
     assert parse_schema_version(None) == 1
     assert parse_schema_version("") == 1
@@ -408,6 +437,27 @@ async def test_invalid_and_unsupported_definitions_fail_terminally_before_market
     assert failed.status is BacktestStatus.FAILED
     assert failed.error_code == "strategy_definition_unsupported_version"
     loaded_data.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_an_oversized_result_fails_terminally_with_a_clear_code(provision_schema_version_column):
+    store = backtest_store(with_schema_column=True)
+    provision_schema_version_column()
+    repository = CatalystBacktestRepository(store)
+    original = repository.finish_success
+
+    async def too_large(*args, **kwargs):
+        kwargs["result_summary"] = {"trades": ["x" * 200] * 100}  # far beyond one text column
+        return await original(*args, **kwargs)
+
+    repository.finish_success = too_large
+    queued = await repository.create(
+        version=v2_backtest_version(), requested_by_user_id=uuid.uuid4(), data=BacktestCreateRequest()
+    )
+    failed = await execute_catalyst_backtest(repository, queued.id)
+    assert failed.status is BacktestStatus.FAILED
+    assert failed.error_code == "backtest_result_too_large"
+    assert failed.attempt_count == 1  # not retried
 
 
 # ------------------------------------------------------------------------------------ routes

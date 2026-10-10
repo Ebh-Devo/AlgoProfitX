@@ -6,16 +6,17 @@ import { checkEnvironment } from "../../scripts/check-environment.mjs";
 const DEV_API = "https://algoprofitx-web-50045554365.development.catalystappsail.in/api/v1";
 const PROD_API = "https://www.algoprofitx.com/api/v1";
 const LEGACY_CROSS_ORIGIN_API = "https://api.algoprofitx.com/api/v1";
+const allowed = (env: "development" | "production") => environments[env].allowedApiBaseUrls;
 const STAGING_API = "https://api-staging.algoprofitx.com/api/v1";
 
 describe("frontend API configuration (same-origin)", () => {
   it("accepts the same-origin Production API URL for a production build", () => {
-    expect(validateApiBaseUrl(PROD_API, true, "production")).toBe(PROD_API);
-    expect(validateApiBaseUrl(`${PROD_API}/`, true, "production")).toBe(PROD_API);
+    expect(validateApiBaseUrl(PROD_API, true, allowed("production"))).toBe(PROD_API);
+    expect(validateApiBaseUrl(`${PROD_API}/`, true, allowed("production"))).toBe(PROD_API);
   });
 
   it("accepts the same-origin Development API URL for a development build", () => {
-    expect(validateApiBaseUrl(DEV_API, true, "development")).toBe(DEV_API);
+    expect(validateApiBaseUrl(DEV_API, true, allowed("development"))).toBe(DEV_API);
   });
 
   it("allows exactly one API URL per environment", () => {
@@ -24,20 +25,21 @@ describe("frontend API configuration (same-origin)", () => {
   });
 
   it("never lets a production build target Development, or the reverse", () => {
-    expect(() => validateApiBaseUrl(DEV_API, true, "production")).toThrow(/Production VITE_API_BASE_URL/);
-    expect(() => validateApiBaseUrl(PROD_API, true, "development")).toThrow(/Production VITE_API_BASE_URL/);
+    expect(() => validateApiBaseUrl(DEV_API, true, allowed("production"))).toThrow(/Production VITE_API_BASE_URL/);
+    expect(() => validateApiBaseUrl(PROD_API, true, allowed("development"))).toThrow(/Production VITE_API_BASE_URL/);
   });
 
   it.each([LEGACY_CROSS_ORIGIN_API, STAGING_API])(
     "rejects cross-origin API URL %s in either environment",
     (url) => {
-      expect(() => validateApiBaseUrl(url, true, "production")).toThrow(/Production VITE_API_BASE_URL/);
-      expect(() => validateApiBaseUrl(url, true, "development")).toThrow(/Production VITE_API_BASE_URL/);
+      expect(() => validateApiBaseUrl(url, true, allowed("production"))).toThrow(/Production VITE_API_BASE_URL/);
+      expect(() => validateApiBaseUrl(url, true, allowed("development"))).toThrow(/Production VITE_API_BASE_URL/);
     },
   );
 
   it("requires a built bundle to declare its environment", () => {
     expect(() => validateApiBaseUrl(PROD_API, true)).toThrow(/target environment/);
+    expect(() => validateApiBaseUrl(PROD_API, true, [])).toThrow(/target environment/);
     for (const bad of [undefined, "", "staging", "Production", "DEVELOPMENT"]) {
       expect(() => parseAppEnvironment(bad)).toThrow(/VITE_APP_ENV/);
     }
@@ -53,8 +55,8 @@ describe("frontend API configuration (same-origin)", () => {
     "https://www.algoprofitx.com.evil.example/api/v1",
     "https://algoprofitx-web-50045554365.catalystappsail.in/api/v1",
   ])("rejects unsafe API target %s in either environment", (value) => {
-    expect(() => validateApiBaseUrl(value, true, "production")).toThrow(/Production VITE_API_BASE_URL/);
-    expect(() => validateApiBaseUrl(value, true, "development")).toThrow(/Production VITE_API_BASE_URL/);
+    expect(() => validateApiBaseUrl(value, true, allowed("production"))).toThrow(/Production VITE_API_BASE_URL/);
+    expect(() => validateApiBaseUrl(value, true, allowed("development"))).toThrow(/Production VITE_API_BASE_URL/);
   });
 
   it("keeps localhost development valid", () => {

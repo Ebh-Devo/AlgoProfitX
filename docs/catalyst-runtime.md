@@ -63,7 +63,8 @@ Until the column is provisioned on a table, the code treats the table as legacy:
 V2 versions can be backtested only; publishing, deploying and allocating them is refused with the structured
 409 `strategy_definition_version_unsupported_for_execution` (same contract as the PostgreSQL path).
 
-Proposed schema change (needs approval, not applied): add an integer column `definition_schema_version`
+The exact, documented console plan (with sources, what Catalyst does and does not state, runbook and rollback) is in
+[catalyst-v2-schema-plan.md](catalyst-v2-schema-plan.md); it is **not approved and not applied**. Summary of the proposal: add an integer column `definition_schema_version`
 (not mandatory, default 1, not unique, not indexed) to `AlgoProfitXStrategyVersions` and
 `AlgoProfitXBacktests`. No data rewrite. Rollback: stop writing V2 (revert the application; the nullable
 column is harmless to leave) and never drop the column while any row has a value other than 1.
@@ -94,6 +95,14 @@ API:
 
 CSP is `connect-src 'self'` for every environment (no API origin, no wildcard); the server refuses to start
 without a known `APP_ENV`.
+
+## Bundle isolation
+
+A built web bundle carries only its own environment's approved API URL and web origin (injected at build time by
+`vite.config.ts`; the environment table is not imported into browser code). `scripts/verify-bundle-isolation.mjs` inspects
+the build output and fails on any other environment's origin, any API upstream origin, retired hosting origins, or the legacy
+Cloudflare `_headers` file (which is removed from every build). It runs in the Docker build and in CI for both environments, and CI
+also asserts each bundle fails the other environment's check and that a build without a declared environment fails.
 
 ## Environments
 

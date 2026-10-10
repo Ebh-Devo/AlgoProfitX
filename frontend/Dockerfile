@@ -13,6 +13,8 @@ RUN pnpm install --frozen-lockfile
 COPY . .
 RUN node scripts/check-environment.mjs
 RUN pnpm build
+# The built bundle may carry only this environment's origin (and no other environment's).
+RUN node scripts/verify-bundle-isolation.mjs "${VITE_APP_ENV}" dist
 
 FROM python:3.13.7-slim-bookworm AS runtime
 ARG APP_ENV

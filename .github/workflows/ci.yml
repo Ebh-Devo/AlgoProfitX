@@ -156,18 +156,35 @@ jobs:
       - name: Test
         working-directory: frontend
         run: pnpm test
-      - name: Build
+      - name: Build and verify bundle isolation (production)
         working-directory: frontend
         env:
           VITE_APP_ENV: production
           VITE_API_BASE_URL: https://www.algoprofitx.com/api/v1
-        run: node scripts/check-environment.mjs && pnpm build
-      - name: Build (development)
+        run: |
+          node scripts/check-environment.mjs
+          pnpm build
+          node scripts/verify-bundle-isolation.mjs production dist
+          mv dist /tmp/dist-production
+      - name: Build and verify bundle isolation (development)
         working-directory: frontend
         env:
           VITE_APP_ENV: development
           VITE_API_BASE_URL: https://algoprofitx-web-50045554365.development.catalystappsail.in/api/v1
-        run: node scripts/check-environment.mjs && pnpm build
+        run: |
+          node scripts/check-environment.mjs
+          pnpm build
+          node scripts/verify-bundle-isolation.mjs development dist
+          mv dist /tmp/dist-development
+      - name: Each bundle must fail the other environment's isolation check
+        working-directory: frontend
+        run: |
+          ! node scripts/verify-bundle-isolation.mjs production /tmp/dist-development
+          ! node scripts/verify-bundle-isolation.mjs development /tmp/dist-production
+      - name: A build without a declared environment must fail
+        working-directory: frontend
+        run: |
+          ! VITE_API_BASE_URL=https://www.algoprofitx.com/api/v1 pnpm exec vite build --outDir /tmp/dist-undeclared
       - name: A mismatched environment must fail the guard
         working-directory: frontend
         run: |

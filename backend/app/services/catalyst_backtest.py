@@ -122,15 +122,22 @@ async def execute_catalyst_backtest(
             "engine_identifier": result.engine_identifier,
             "provider_identifier": result.provider_identifier,
         }
-        completed = await repository.finish_success(
-            backtest.id,
-            backtest.lease_token,
-            result_summary=summary,
-            provider=batch.provider_code,
-            dataset_reference=batch.dataset_reference,
-            fetched_at=batch.fetched_at,
-            provenance=batch.provenance,
-        )
+        try:
+            completed = await repository.finish_success(
+                backtest.id,
+                backtest.lease_token,
+                result_summary=summary,
+                provider=batch.provider_code,
+                dataset_reference=batch.dataset_reference,
+                fetched_at=batch.fetched_at,
+                provenance=batch.provenance,
+            )
+        except ValueError as exc:
+            # The result cannot fit a Data Store text column (10,000 characters). Retrying cannot
+            # help, so fail terminally with a clear code instead of cycling through retries.
+            raise BacktestExecutionError(
+                "Backtest result exceeds the stored size limit", "backtest_result_too_large"
+            ) from exc
     except BacktestExecutionError as exc:
         error_code = getattr(exc, "code", None) or "backtest_invalid_request"
         log_event("backtest_failed", level=logging.WARNING, backtest_id=backtest.id, error_code=error_code)
