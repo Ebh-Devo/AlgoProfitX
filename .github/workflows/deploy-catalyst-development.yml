@@ -16,7 +16,7 @@ on:
         required: true
         type: string
       web_sha256:
-        description: "SHA-256 of algoprofitx-web.tar from that release"
+        description: "SHA-256 of algoprofitx-web-development.tar from that release"
         required: true
         type: string
 
@@ -116,19 +116,24 @@ jobs:
           set -euo pipefail
           # Exactly the expected files, nothing else.
           test "$(find release -type f | sort | tr '\n' ' ')" = \
-            "release/SHA256SUMS release/algoprofitx-api.tar release/algoprofitx-web.tar "
+            "release/SHA256SUMS release/algoprofitx-api.tar release/algoprofitx-web-development.tar release/algoprofitx-web-production.tar "
           # Hashes supplied at dispatch must match the archives.
           test "$(sha256sum release/algoprofitx-api.tar | cut -d' ' -f1)" = "$API_SHA256"
-          test "$(sha256sum release/algoprofitx-web.tar | cut -d' ' -f1)" = "$WEB_SHA256"
+          test "$(sha256sum release/algoprofitx-web-development.tar | cut -d' ' -f1)" = "$WEB_SHA256"
           # Hashes must also match the checksum manifest written by the build.
           grep -q "^${API_SHA256}  /tmp/algoprofitx-api.tar$" release/SHA256SUMS
-          grep -q "^${WEB_SHA256}  /tmp/algoprofitx-web.tar$" release/SHA256SUMS
-          # Each archive must be the right application image built from SOURCE_SHA.
-          for app in api web; do
-            tar -xOf "release/algoprofitx-${app}.tar" manifest.json \
-              | jq -e --arg tag "algoprofitx-${app}:${SOURCE_SHA}" \
-                  '[.[].RepoTags[]?] | index($tag) != null' >/dev/null \
-              || { echo "::error::algoprofitx-${app}.tar is not tagged algoprofitx-${app}:${SOURCE_SHA}"; exit 1; }
+          grep -q "^${WEB_SHA256}  /tmp/algoprofitx-web-development.tar$" release/SHA256SUMS
+          # Each archive must carry the exact tag for its application and
+          # environment, built from SOURCE_SHA. Only the development web image is
+          # ever deployed here; the production image must never be selected.
+          for spec in \
+            "api:algoprofitx-api:${SOURCE_SHA}" \
+            "web-development:algoprofitx-web:${SOURCE_SHA}-development" \
+            "web-production:algoprofitx-web:${SOURCE_SHA}-production"; do
+            file="${spec%%:*}"; tag="${spec#*:}"
+            tar -xOf "release/algoprofitx-${file}.tar" manifest.json \
+              | jq -e --arg tag "$tag" '[.[].RepoTags[]?] | index($tag) != null' >/dev/null \
+              || { echo "::error::algoprofitx-${file}.tar is not tagged ${tag}"; exit 1; }
           done
           echo "Release artifact for ${SOURCE_SHA} verified."
       - name: Install official Catalyst CLI
@@ -155,5 +160,5 @@ jobs:
           set +x
           catalyst --token "$CATALYST_TOKEN" --dc "$CATALYST_DC" --org "$CATALYST_ORG_ID" --project "$CATALYST_PROJECT_ID" --non-interactive deploy appsail \
             --name algoprofitx-web \
-            --source "docker-archive://$GITHUB_WORKSPACE/release/algoprofitx-web.tar" \
+            --source "docker-archive://$GITHUB_WORKSPACE/release/algoprofitx-web-development.tar" \
             --port 8000

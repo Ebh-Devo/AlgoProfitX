@@ -1,7 +1,10 @@
-from typing import Annotated
-
+import asyncio
 import hmac
+import logging
 import secrets
+import uuid
+from datetime import datetime, timedelta, timezone
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import JSONResponse
@@ -14,13 +17,20 @@ from app.core.abuse import (
     normalized_client_ip,
     record_authentication_failure,
 )
-from app.core.config import get_settings
+from app.core.config import AppEnvironment, get_settings
+from app.core.dependencies import get_current_user
 from app.core.metrics import metrics
 from app.core.observability import log_event
-from app.core.dependencies import get_current_user
-from app.core.security import create_access_token
+from app.core.security import create_access_token, hash_password, verify_password_or_decoy
 from app.db.session import get_session
 from app.models.user import User
+from app.persistence.auth_session import SessionTokenRejected
+from app.persistence.catalyst import (
+    CatalystAuthSessionRepository,
+    CatalystIdentityRepository,
+    CatalystPersistenceClient,
+)
+from app.persistence.identity import DuplicateIdentityError, IdentityUser
 from app.schemas.auth import (
     LoginRequest,
     RegisterRequest,
@@ -31,8 +41,11 @@ from app.services.auth import authenticate_user, enroll_creator, register_user
 from app.services.auth_session import (
     RefreshSessionError,
     create_refresh_session,
+    hash_refresh_token,
+    new_refresh_token,
     revoke_refresh_session,
     rotate_refresh_session,
+    session_id_from_token,
 )
 
 
@@ -40,6 +53,17 @@ router = APIRouter(
     prefix="/auth",
     tags=["Authentication"],
 )
+
+
+def _uses_catalyst_auth() -> bool:
+    return get_settings().uses_catalyst_persistence
+
+
+def _catalyst_auth_repositories(
+    request: Request,
+) -> tuple[CatalystIdentityRepository, CatalystAuthSessionRepository]:
+    client = CatalystPersistenceClient(request=request)
+    return CatalystIdentityRepository(client), CatalystAuthSessionRepository(client)
 
 
 def _set_session_cookies(response: Response, refresh_token: str, csrf_token: str) -> None:
@@ -136,17 +160,35 @@ async def register(
         settings.abuse_protection_enabled,
     )
     try:
-        user = await register_user(session, data)
-        await session.commit()
-    except ValueError as exc:
+        if _uses_catalyst_auth():
+            identity, _ = _catalyst_auth_repositories(request)
+            user = await identity.register_user(
+                email=str(data.email),
+                password_hash=await asyncio.to_thread(hash_password, data.password),
+                full_name=data.full_name,
+            )
+        else:
+            user = await register_user(session, data)
+            await session.commit()
+    except DuplicateIdentityError as exc:
+        # A fixed, non-sensitive message raised only for a taken email address.
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=str(exc),
         )
-    except RuntimeError as exc:
-        raise HTTPException(
+    except Exception:
+        # Anything else is unexpected: never echo exception text to the client. The detail is logged
+        # server-side with the request id (log redaction scrubs secrets); the client gets a generic body.
+        request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
+        log_event(
+            "registration_failed",
+            level=logging.ERROR,
+            exc_info=True,
+            request_id=request_id,
+        )
+        return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(exc),
+            content={"detail": "Internal server error", "request_id": request_id},
         )
 
     return user
@@ -181,11 +223,21 @@ async def login(
         ),
         settings.abuse_protection_enabled,
     )
-    user = await authenticate_user(
-        session,
-        data.email,
-        data.password,
-    )
+    identity: CatalystIdentityRepository | None = None
+    auth_sessions: CatalystAuthSessionRepository | None = None
+    if _uses_catalyst_auth():
+        identity, auth_sessions = _catalyst_auth_repositories(request)
+        user = await identity.get_user_by_email(str(data.email))
+        # One full verification for every outcome (unknown, inactive, wrong password, success).
+        matched = await asyncio.to_thread(
+            verify_password_or_decoy,
+            data.password,
+            user.password_hash if user is not None else None,
+        )
+        if user is None or not user.is_active or not matched:
+            user = None
+    else:
+        user = await authenticate_user(session, data.email, data.password)
 
     if user is None:
         record_authentication_failure(client_ip)
@@ -196,8 +248,20 @@ async def login(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    _, refresh_token = await create_refresh_session(session, user.id)
-    await session.commit()
+    if auth_sessions is not None:
+        session_id = uuid.uuid4()
+        refresh_token = new_refresh_token(session_id)
+        await auth_sessions.create_session(
+            session_id=session_id,
+            user_id=user.id,
+            refresh_token_hash=hash_refresh_token(refresh_token),
+            expires_at=datetime.now(timezone.utc)
+            + timedelta(days=settings.refresh_token_expire_days),
+            max_sessions=settings.auth_max_sessions_per_user,
+        )
+    else:
+        _, refresh_token = await create_refresh_session(session, user.id)
+        await session.commit()
     _set_session_cookies(response, refresh_token, secrets.token_urlsafe(32))
     access_token = create_access_token(str(user.id))
 
@@ -207,15 +271,38 @@ async def login(
 
 
 @router.post("/refresh", response_model=TokenResponse)
-async def refresh(request: Request, response: Response, session: Annotated[AsyncSession, Depends(get_session)]):
+async def refresh(
+    request: Request,
+    response: Response,
+    session: Annotated[AsyncSession, Depends(get_session)],
+):
     _require_csrf(request)
     refresh_token = _refresh_cookie(request)
+    uses_catalyst = _uses_catalyst_auth()
     try:
-        user, rotated_token = await rotate_refresh_session(session, refresh_token)
-        await session.commit()
-    except RefreshSessionError as exc:
-        if exc.suspicious_reuse:
+        if uses_catalyst:
+            identity, auth_sessions = _catalyst_auth_repositories(request)
+            session_id = session_id_from_token(refresh_token)
+            rotated_token = new_refresh_token(session_id)
+            rotated = await auth_sessions.rotate_session(
+                session_id=session_id,
+                supplied_token_hash=hash_refresh_token(refresh_token),
+                replacement_token_hash=hash_refresh_token(rotated_token),
+            )
+            user = await identity.get_user_by_id(rotated.user_id)
+            if user is None or not user.is_active:
+                await auth_sessions.revoke_session(
+                    session_id=session_id,
+                    supplied_token_hash=hash_refresh_token(rotated_token),
+                )
+                raise SessionTokenRejected()
+        else:
+            user, rotated_token = await rotate_refresh_session(session, refresh_token)
             await session.commit()
+    except (RefreshSessionError, SessionTokenRejected) as exc:
+        if exc.suspicious_reuse:
+            if not uses_catalyst:
+                await session.commit()
             log_event("refresh_token_reuse_detected", level=30)
             metrics.increment("authentication.failures", tags={"reason": "refresh_reuse"})
         error_response = JSONResponse(
@@ -228,15 +315,28 @@ async def refresh(request: Request, response: Response, session: Annotated[Async
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
-async def logout(request: Request, response: Response, session: Annotated[AsyncSession, Depends(get_session)]):
+async def logout(
+    request: Request,
+    response: Response,
+    session: Annotated[AsyncSession, Depends(get_session)],
+):
     _require_csrf(request)
     refresh_token = _refresh_cookie(request)
+    uses_catalyst = _uses_catalyst_auth()
     try:
-        await revoke_refresh_session(session, refresh_token)
-        await session.commit()
+        if uses_catalyst:
+            _, auth_sessions = _catalyst_auth_repositories(request)
+            await auth_sessions.revoke_session(
+                session_id=session_id_from_token(refresh_token),
+                supplied_token_hash=hash_refresh_token(refresh_token),
+            )
+        else:
+            await revoke_refresh_session(session, refresh_token)
+            await session.commit()
         log_event("session_revoked")
-    except RefreshSessionError:
-        await session.rollback()
+    except (RefreshSessionError, SessionTokenRejected):
+        if not uses_catalyst:
+            await session.rollback()
     _clear_session_cookies(response)
     response.status_code = status.HTTP_204_NO_CONTENT
 
@@ -246,7 +346,8 @@ async def logout(request: Request, response: Response, session: Annotated[AsyncS
     response_model=UserResponse,
 )
 async def enroll_as_creator(
-    current_user: Annotated[User, Depends(get_current_user)],
+    request: Request,
+    current_user: Annotated[User | IdentityUser, Depends(get_current_user)],
     session: Annotated[AsyncSession, Depends(get_session)],
 ):
     settings = get_settings()
@@ -262,8 +363,12 @@ async def enroll_as_creator(
         settings.abuse_protection_enabled,
     )
     try:
-        user = await enroll_creator(session, current_user)
-        await session.commit()
+        if _uses_catalyst_auth():
+            identity, _ = _catalyst_auth_repositories(request)
+            user = await identity.enroll_creator(current_user.id)
+        else:
+            user = await enroll_creator(session, current_user)
+            await session.commit()
     except RuntimeError as exc:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -278,6 +383,6 @@ async def enroll_as_creator(
     response_model=UserResponse,
 )
 async def me(
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User | IdentityUser, Depends(get_current_user)],
 ):
     return current_user

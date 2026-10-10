@@ -1,3 +1,8 @@
+> **Superseded for deployment.** The deployed AlgoProfitX runtime is Zoho Catalyst-only (Data Store +
+> ZCQL); see [catalyst-runtime.md](catalyst-runtime.md). The PostgreSQL/Alembic packaging described
+> below is the retired design, kept for history. Production must use `PERSISTENCE_PROVIDER=catalyst`,
+> and `BACKTEST_EXECUTION_MODE=disabled`; the image no longer contains Alembic or a PostgreSQL driver.
+
 # Production runtime packaging
 
 No Production deployment is defined or evidenced in this repository. This provider-neutral packaging does not create cloud resources, publish an image, configure DNS, or run migrations automatically.

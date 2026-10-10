@@ -140,7 +140,7 @@ async def execute_backtest(
         provider = ProviderRegistry((SyntheticMarketDataProvider(),)).resolve(configured_code)
         # The persisted schema version alone selects the path. A V2 definition is loaded and
         # fully validated here, before any market data is requested or any candle is read.
-        loaded = _load_versioned_definition(backtest)
+        loaded = load_versioned_definition(backtest)
         request = await _historical_request(session, backtest)
         dataset, candles = await _acquire_dataset(session, backtest, provider, request)
         await _attach_dataset(session, backtest_id, dataset)
@@ -211,7 +211,7 @@ def _snapshot_schema_version(strategy_version: StrategyVersion) -> int:
     return LEGACY_SCHEMA_VERSION if value is None else value
 
 
-def _load_versioned_definition(backtest: Backtest) -> LoadedDefinition | None:
+def load_versioned_definition(backtest: Backtest) -> LoadedDefinition | None:
     """``None`` for V1 (the existing path, untouched); the validated V2 definition otherwise.
 
     Order: resolve the persisted version, load, schema, semantic, capability, environment.

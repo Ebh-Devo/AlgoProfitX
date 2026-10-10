@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+import secrets
 import uuid
 
 from argon2 import PasswordHasher
@@ -23,6 +24,29 @@ def verify_password(password: str, password_hash: str) -> bool:
         return password_hasher.verify(password_hash, password)
     except VerifyMismatchError:
         return False
+
+
+# Created once, eagerly, when this module is imported, i.e. before any request is served. It must
+# never be generated lazily: the first unknown-account login would then also pay the hash-generation
+# cost that a known account does not, which is itself a timing signal. The random secret it was made
+# from is discarded; only the hash (same hasher, so same algorithm and cost as real hashes) is kept,
+# and it is never logged or returned.
+_DECOY_PASSWORD_HASH = password_hasher.hash(secrets.token_urlsafe(32))
+
+
+def _decoy_password_hash() -> str:
+    return _DECOY_PASSWORD_HASH
+
+
+def verify_password_or_decoy(password: str, password_hash: str | None) -> bool:
+    """Always perform one full password verification, even when no account exists.
+
+    Login uses this for unknown, inactive and active accounts alike so response time does not reveal
+    whether an account exists. With no hash the decoy is verified and the result is always False.
+    """
+    candidate = password_hash if password_hash is not None else _decoy_password_hash()
+    matched = verify_password(password, candidate)
+    return matched and password_hash is not None
 
 
 def create_access_token(subject: str) -> str:

@@ -6,8 +6,8 @@ on:
 
 jobs:
   backend:
-    # PostgreSQL service containers are supported on Linux runners. The
-    # Windows-specific setup scripts are exercised locally by developers.
+    # Legacy PostgreSQL test suite (test tooling only). The deployed runtime is Catalyst-only; see the
+    # catalyst-runtime job below for the database-free runtime checks.
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -38,9 +38,13 @@ jobs:
         run: python -m pip install --requirement backend/requirements.lock
       - name: Migrate an empty database to head
         working-directory: backend
+        env:
+          PERSISTENCE_PROVIDER: postgresql  # local test tooling only
         run: python -m alembic -c alembic.ini upgrade head
       - name: Verify Alembic is at head
         working-directory: backend
+        env:
+          PERSISTENCE_PROVIDER: postgresql  # local test tooling only
         run: python -m alembic -c alembic.ini current --check-heads
       - name: Run tests
         working-directory: backend
@@ -51,10 +55,71 @@ jobs:
           python -c "from fastapi.testclient import TestClient; from app.main import app;
           response = TestClient(app).get('/health'); assert response.status_code == 200 and response.json() == {'status': 'ok'}"
 
+  catalyst-runtime:
+    # No PostgreSQL service, no Alembic, no Redis: the deployed dependency set alone must run the app.
+    runs-on: ubuntu-latest
+    env:
+      SECRET_KEY: ci-only-secret-not-for-production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install the production runtime dependency set only
+        working-directory: backend
+        run: |
+          python -m venv /tmp/runtime-venv
+          /tmp/runtime-venv/bin/python -m pip install --requirement requirements-production.txt
+      - name: Production runtime has no database driver, Alembic or Redis
+        working-directory: backend
+        run: |
+          /tmp/runtime-venv/bin/python -m pip list --format=freeze | tee /tmp/runtime-packages.txt
+          ! grep -i -E '^(asyncpg|alembic|redis|psycopg|psycopg2|pg8000|aiopg)==' /tmp/runtime-packages.txt
+          grep -i -E '^zcatalyst[-_]sdk==' /tmp/runtime-packages.txt
+      - name: The Catalyst runtime serves from that environment
+        working-directory: backend
+        env:
+          APP_ENV: development
+          PERSISTENCE_PROVIDER: catalyst
+          DATABASE_URL: postgresql://stale:stale@example.invalid/legacy
+        run: |
+          /tmp/runtime-venv/bin/python - <<'PY'
+          import asyncio, sys
+          import app.core.config as config
+          config.Settings.model_config["env_file"] = None
+          import app.runtime as runtime
+
+          async def call(path):
+              sent = []
+              async def receive():
+                  return {"type": "http.request", "body": b"", "more_body": False}
+              async def send(message):
+                  sent.append(message)
+              scope = {"type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1", "method": "GET",
+                       "path": path, "raw_path": path.encode(), "query_string": b"", "scheme": "http",
+                       "headers": [(b"host", b"t")], "server": ("t", 80), "client": ("127.0.0.1", 1),
+                       "root_path": ""}
+              await runtime.app(scope, receive, send)
+              return next(m["status"] for m in sent if m["type"] == "http.response.start")
+
+          assert asyncio.run(call("/health/live")) == 200
+          assert asyncio.run(call("/api/v1/strategies")) in (401, 403)
+          loaded = [m for m in ("asyncpg", "alembic", "redis", "psycopg", "psycopg2") if m in sys.modules]
+          assert not loaded, loaded
+          print("Catalyst-only runtime OK")
+          PY
+      - name: Catalyst, proxy and workflow tests with no database
+        working-directory: backend
+        env:
+          # conftest requires the variable to exist; these modules never connect to it.
+          TEST_DATABASE_URL: postgresql+asyncpg://x:x@localhost:5432/tradeebh_test
+        run: |
+          python -m pip install --requirement requirements.lock
+          python -m pytest tests/test_catalyst_*.py tests/test_web_proxy.py tests/test_workflow_environment_isolation.py
+
   frontend:
     runs-on: ubuntu-latest
     env:
-      DATABASE_URL: postgresql+asyncpg://tradebh:unused@localhost:5432/tradeebh
       SECRET_KEY: ci-only-secret-not-for-production
     steps:
       - uses: actions/checkout@v4
@@ -91,11 +156,41 @@ jobs:
       - name: Test
         working-directory: frontend
         run: pnpm test
-      - name: Build
+      - name: Build and verify bundle isolation (production)
         working-directory: frontend
         env:
-          VITE_API_BASE_URL: https://api.algoprofitx.com/api/v1
-        run: pnpm build
+          VITE_APP_ENV: production
+          VITE_API_BASE_URL: https://www.algoprofitx.com/api/v1
+        run: |
+          node scripts/check-environment.mjs
+          pnpm build
+          node scripts/verify-bundle-isolation.mjs production dist
+          mv dist /tmp/dist-production
+      - name: Build and verify bundle isolation (development)
+        working-directory: frontend
+        env:
+          VITE_APP_ENV: development
+          VITE_API_BASE_URL: https://algoprofitx-web-50045554365.development.catalystappsail.in/api/v1
+        run: |
+          node scripts/check-environment.mjs
+          pnpm build
+          node scripts/verify-bundle-isolation.mjs development dist
+          mv dist /tmp/dist-development
+      - name: Each bundle must fail the other environment's isolation check
+        working-directory: frontend
+        run: |
+          ! node scripts/verify-bundle-isolation.mjs production /tmp/dist-development
+          ! node scripts/verify-bundle-isolation.mjs development /tmp/dist-production
+      - name: A build without a declared environment must fail
+        working-directory: frontend
+        run: |
+          ! VITE_API_BASE_URL=https://www.algoprofitx.com/api/v1 pnpm exec vite build --outDir /tmp/dist-undeclared
+      - name: A mismatched environment must fail the guard
+        working-directory: frontend
+        run: |
+          ! VITE_APP_ENV=production VITE_API_BASE_URL=https://algoprofitx-web-50045554365.development.catalystappsail.in/api/v1 node scripts/check-environment.mjs
+          ! VITE_APP_ENV=development VITE_API_BASE_URL=https://www.algoprofitx.com/api/v1 node scripts/check-environment.mjs
+          ! VITE_APP_ENV=production VITE_API_BASE_URL=https://api.algoprofitx.com/api/v1 node scripts/check-environment.mjs
 
   backend-container:
     runs-on: ubuntu-latest
@@ -115,13 +210,25 @@ jobs:
           test "$(docker image inspect algoprofitx-backend:ci --format '{{.Config.User}}')" = "10001:10001"
           docker run --rm --entrypoint sh algoprofitx-backend:ci -c \
             'test ! -e /app/.env && test ! -d /app/tests && test ! -d /app/.git && test ! -d /app/node_modules'
+      - name: Image contains no database driver, Alembic, Redis or migration tooling
+        shell: bash
+        run: |
+          docker run --rm --entrypoint sh algoprofitx-backend:ci -c 'test ! -e /app/alembic && test ! -e /app/alembic.ini'
+          docker run --rm --entrypoint python algoprofitx-backend:ci -m pip list --format=freeze > /tmp/image-packages.txt
+          ! grep -i -E '^(asyncpg|alembic|redis|psycopg|psycopg2|pg8000|aiopg)==' /tmp/image-packages.txt
+          grep -i -E '^zcatalyst[-_]sdk==' /tmp/image-packages.txt
+          for module in asyncpg alembic redis; do
+            if docker run --rm --entrypoint python algoprofitx-backend:ci -c "import $module" 2>/dev/null; then
+              echo "::error::$module is importable in the runtime image"; exit 1
+            fi
+          done
       - name: Run liveness smoke test
         shell: bash
         run: |
           docker run --detach --rm --name algoprofitx-backend-smoke -p 8000:8000 \
-            -e APP_ENV=test \
-            -e DATABASE_URL=postgresql+asyncpg://smoke:smoke@127.0.0.1:5432/unused \
-            -e SECRET_KEY=ci-smoke-only \
+            -e APP_ENV=development \
+            -e PERSISTENCE_PROVIDER=catalyst \
+            -e SECRET_KEY=ci-smoke-only-secret-not-for-production \
             algoprofitx-backend:ci
           trap 'docker logs algoprofitx-backend-smoke; docker stop algoprofitx-backend-smoke >/dev/null 2>&1 || true' EXIT
           for attempt in {1..30}; do
