@@ -1,8 +1,10 @@
 # Catalyst schema plan for Strategy V2 (`definition_schema_version`)
 
-**Status: PROPOSED. NOT APPROVED. NOT APPLIED.** No live Data Store table has been or will be changed
-without explicit approval. Until then the application is fail-closed: V1 works unchanged and V2
-writes/backtests return 503 `strategy_definition_v2_storage_unavailable` (nothing is stored).
+**Status: APPLIED IN DEVELOPMENT ONLY (2026-10-10). NOT APPLIED IN PRODUCTION.** The owner added the
+column to `AlgoProfitXStrategyVersions` and `AlgoProfitXBacktests` in the Development Data Store (see
+"Applied in Development" below). No Production table or configuration has been changed, and Production is
+still fail-closed: while the column is absent, V1 works unchanged and V2 writes/backtests return 503
+`strategy_definition_v2_storage_unavailable` (nothing is stored). Any Production change needs its own decision.
 
 ## What the Catalyst documentation states (and does not)
 
@@ -26,7 +28,29 @@ Consequences for the design: the code never assumes backfill (a missing, `NULL` 
 column is created **not mandatory**; the data type is chosen correctly the first time because it cannot be
 edited; and the unknown-column behavior is handled without relying on a specific error (see Detection).
 
-## Proposed change (Development console, after approval)
+## Applied in Development (2026-10-10)
+
+The change below was applied by the owner in the Development console of project AlgoProfitX, on both tables, using
+exactly the settings in the next section (Int, default `1`, not mandatory, not unique, no search index, not PII).
+The settings were set by the owner and are recorded here as specified; they were not re-read from Schema View by the
+agent. Context: release `0db60aa54798633d445711db3f639ab57189f728` (build run 38054507517, deploy run 38054788096).
+
+Validation evidence (Development web proxy, throwaway identities, no live orders; issue #46):
+
+- Before the column existed, V1 passed 22/22 end to end (the V2 gate was fail-closed, V1 unaffected).
+- After the column was added, a V2 smoke passed 12/12: a V2 version was created (201) and stored as
+  `definition_schema_version = 2`; version listing returned 2; a V2 backtest was created, executed to `completed`
+  and stored as 2; publishing the V2 strategy was refused with 409
+  `strategy_definition_version_unsupported_for_execution`; a V1 version created afterwards stored as 1.
+- Not exercised live: V2 allocation (publish is refused first), how pre-existing rows read the new column
+  (they are handled as V1 whether `NULL`, blank or `1`), and Production.
+- `BACKTEST_EXECUTION_MODE=inline` is set on the Development API AppSail (owner-applied); the Production
+  configuration validator still requires `disabled`.
+
+Throwaway rows from these runs remain in Development (emails `validation+<run>-<role>@example.com`, slugs
+`validation-<run>`); they are disposable and were not cleaned up.
+
+## Proposed change (as specified for the Development console)
 
 Add one column to **each** of `AlgoProfitXStrategyVersions` and `AlgoProfitXBacktests`:
 
