@@ -10,8 +10,7 @@
     "frontendOrigin": "https://www.algoprofitx.com",
     "apiOrigin": "https://api.algoprofitx.com",
     "allowedApiBaseUrls": [
-      "https://api.algoprofitx.com/api/v1",
-      "https://api-staging.algoprofitx.com/api/v1"
+      "https://api.algoprofitx.com/api/v1"
     ]
   }
 }

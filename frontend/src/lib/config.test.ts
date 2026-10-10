@@ -5,15 +5,27 @@ import { checkEnvironment } from "../../scripts/check-environment.mjs";
 
 const DEV_API = "https://algoprofitx-api-50045554365.development.catalystappsail.in/api/v1";
 const PROD_API = "https://api.algoprofitx.com/api/v1";
+const STAGING_API = "https://api-staging.algoprofitx.com/api/v1";
 
 describe("frontend API configuration", () => {
   it("accepts the canonical production API URL for a production build", () => {
     expect(validateApiBaseUrl(PROD_API, true, "production")).toBe(PROD_API);
   });
 
-  it("accepts the approved staging API URL in a production build", () => {
-    expect(validateApiBaseUrl("https://api-staging.algoprofitx.com/api/v1", true, "production"))
-      .toBe("https://api-staging.algoprofitx.com/api/v1");
+  it("allows exactly one Production API URL", () => {
+    expect(environments.production.allowedApiBaseUrls).toEqual([PROD_API]);
+  });
+
+  it("rejects the Development and staging API URLs in a production build", () => {
+    for (const url of [DEV_API, STAGING_API]) {
+      expect(() => validateApiBaseUrl(url, true, "production")).toThrow(/Production VITE_API_BASE_URL/);
+    }
+    expect(checkEnvironment("production", STAGING_API)).toMatch(/not approved for the production/);
+    expect(checkEnvironment("production", DEV_API)).toMatch(/not approved for the production/);
+  });
+
+  it("rejects the staging API URL in a development build", () => {
+    expect(() => validateApiBaseUrl(STAGING_API, true, "development")).toThrow(/Production VITE_API_BASE_URL/);
   });
 
   it("accepts the Development API URL for a development build", () => {
