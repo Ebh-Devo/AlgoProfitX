@@ -26,30 +26,54 @@ jobs:
           build-args: |
             VCS_REF=${{ github.sha }}
             SOURCE_URL=${{ github.server_url }}/${{ github.repository }}
-      - name: Build linux/amd64 frontend archive
+      # The web bundle bakes in its API origin, so each environment gets its own
+      # image. APP_ENV and VITE_API_BASE_URL are checked against
+      # frontend/environments.json inside the Dockerfile; a mismatch fails the build.
+      - name: Build linux/amd64 Development frontend archive
         uses: docker/build-push-action@v6
         with:
           context: frontend
           platforms: linux/amd64
           push: false
-          tags: algoprofitx-web:${{ github.sha }}
-          outputs: type=docker,dest=/tmp/algoprofitx-web.tar
+          tags: algoprofitx-web:${{ github.sha }}-development
+          outputs: type=docker,dest=/tmp/algoprofitx-web-development.tar
           build-args: |
+            APP_ENV=development
+            VITE_API_BASE_URL=https://algoprofitx-api-50045554365.development.catalystappsail.in/api/v1
+      - name: Build linux/amd64 Production frontend archive
+        uses: docker/build-push-action@v6
+        with:
+          context: frontend
+          platforms: linux/amd64
+          push: false
+          tags: algoprofitx-web:${{ github.sha }}-production
+          outputs: type=docker,dest=/tmp/algoprofitx-web-production.tar
+          build-args: |
+            APP_ENV=production
             VITE_API_BASE_URL=https://api.algoprofitx.com/api/v1
       - name: Verify immutable images
         shell: bash
         run: |
           docker load --input /tmp/algoprofitx-api.tar
-          docker load --input /tmp/algoprofitx-web.tar
+          docker load --input /tmp/algoprofitx-web-development.tar
+          docker load --input /tmp/algoprofitx-web-production.tar
           test "$(docker image inspect algoprofitx-api:${GITHUB_SHA} --format '{{.Os}}/{{.Architecture}}')" = "linux/amd64"
-          test "$(docker image inspect algoprofitx-web:${GITHUB_SHA} --format '{{.Os}}/{{.Architecture}}')" = "linux/amd64"
+          for env in development production; do
+            test "$(docker image inspect algoprofitx-web:${GITHUB_SHA}-${env} --format '{{.Os}}/{{.Architecture}}')" = "linux/amd64"
+            test "$(docker image inspect algoprofitx-web:${GITHUB_SHA}-${env} --format '{{.Config.User}}')" = "10001:10001"
+            docker run --rm --entrypoint python algoprofitx-web:${GITHUB_SHA}-${env} --version | grep '^Python 3\.13\.'
+            docker run --rm --entrypoint sh algoprofitx-web:${GITHUB_SHA}-${env} -c 'test ! -e /app/.env && test ! -d /app/node_modules && test ! -d /app/.git'
+            # The served CSP must name only this environment's API origin.
+            docker run --rm --entrypoint python algoprofitx-web:${GITHUB_SHA}-${env} -c 'import server; print(server.CSP)' > /tmp/csp-${env}.txt
+          done
+          grep -q "connect-src 'self' https://algoprofitx-api-50045554365.development.catalystappsail.in;" /tmp/csp-development.txt
+          ! grep -q "api.algoprofitx.com" /tmp/csp-development.txt
+          grep -q "connect-src 'self' https://api.algoprofitx.com;" /tmp/csp-production.txt
+          ! grep -q "catalystappsail" /tmp/csp-production.txt
           test "$(docker image inspect algoprofitx-api:${GITHUB_SHA} --format '{{.Config.User}}')" = "10001:10001"
-          test "$(docker image inspect algoprofitx-web:${GITHUB_SHA} --format '{{.Config.User}}')" = "10001:10001"
           docker run --rm --entrypoint python algoprofitx-api:${GITHUB_SHA} --version | grep '^Python 3\.13\.'
-          docker run --rm --entrypoint python algoprofitx-web:${GITHUB_SHA} --version | grep '^Python 3\.13\.'
           docker run --rm --entrypoint sh algoprofitx-api:${GITHUB_SHA} -c 'test ! -e /app/.env && test ! -d /app/tests && test ! -d /app/.git'
-          docker run --rm --entrypoint sh algoprofitx-web:${GITHUB_SHA} -c 'test ! -e /app/.env && test ! -d /app/node_modules && test ! -d /app/.git'
-          sha256sum /tmp/algoprofitx-api.tar /tmp/algoprofitx-web.tar > /tmp/SHA256SUMS
+          sha256sum /tmp/algoprofitx-api.tar /tmp/algoprofitx-web-development.tar /tmp/algoprofitx-web-production.tar > /tmp/SHA256SUMS
       # Upload only on main-branch pushes and manual triggers.
       # PR builds verify the images but do not produce consumable release
       # artifacts — uploading them on every PR exhausts GitHub artifact storage
@@ -60,7 +84,8 @@ jobs:
           name: catalyst-release-${{ github.sha }}
           path: |
             /tmp/algoprofitx-api.tar
-            /tmp/algoprofitx-web.tar
+            /tmp/algoprofitx-web-development.tar
+            /tmp/algoprofitx-web-production.tar
             /tmp/SHA256SUMS
           retention-days: 1
           if-no-files-found: error

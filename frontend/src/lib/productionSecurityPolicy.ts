@@ -1,5 +1,7 @@
-export const productionSecurityHeaders = {
-  "Content-Security-Policy": [
+import environments from "../../environments.json";
+
+export function contentSecurityPolicyFor(appEnv: keyof typeof environments): string {
+  return [
     "default-src 'self'",
     "base-uri 'self'",
     "object-src 'none'",
@@ -9,10 +11,14 @@ export const productionSecurityHeaders = {
     "style-src 'self' 'unsafe-inline'",
     "font-src 'self'",
     "img-src 'self' data:",
-    "connect-src 'self' https://api.algoprofitx.com",
+    `connect-src 'self' ${environments[appEnv].apiOrigin}`,
     "manifest-src 'self'",
     "upgrade-insecure-requests",
-  ].join("; "),
+  ].join("; ");
+}
+
+export const productionSecurityHeaders = {
+  "Content-Security-Policy": contentSecurityPolicyFor("production"),
   "Strict-Transport-Security": "max-age=31536000",
   "X-Content-Type-Options": "nosniff",
   "Referrer-Policy": "strict-origin-when-cross-origin",

@@ -94,8 +94,15 @@ jobs:
       - name: Build
         working-directory: frontend
         env:
+          VITE_APP_ENV: production
           VITE_API_BASE_URL: https://api.algoprofitx.com/api/v1
-        run: pnpm build
+        run: node scripts/check-environment.mjs && pnpm build
+      - name: Build (development)
+        working-directory: frontend
+        env:
+          VITE_APP_ENV: development
+          VITE_API_BASE_URL: https://algoprofitx-api-50045554365.development.catalystappsail.in/api/v1
+        run: node scripts/check-environment.mjs && pnpm build
 
   backend-container:
     runs-on: ubuntu-latest

@@ -1,0 +1,17 @@
+{
+  "development": {
+    "frontendOrigin": "https://algoprofitx-web-50045554365.development.catalystappsail.in",
+    "apiOrigin": "https://algoprofitx-api-50045554365.development.catalystappsail.in",
+    "allowedApiBaseUrls": [
+      "https://algoprofitx-api-50045554365.development.catalystappsail.in/api/v1"
+    ]
+  },
+  "production": {
+    "frontendOrigin": "https://www.algoprofitx.com",
+    "apiOrigin": "https://api.algoprofitx.com",
+    "allowedApiBaseUrls": [
+      "https://api.algoprofitx.com/api/v1",
+      "https://api-staging.algoprofitx.com/api/v1"
+    ]
+  }
+}

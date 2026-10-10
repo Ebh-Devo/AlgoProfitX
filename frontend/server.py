@@ -1,3 +1,4 @@
+import json
 import os
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -5,7 +6,29 @@ from urllib.parse import urlsplit
 
 
 ROOT = Path(os.environ.get("STATIC_ROOT", "/app/dist")).resolve()
-API_ORIGIN = os.environ.get("API_PUBLIC_ORIGIN", "https://api.algoprofitx.com")
+ENVIRONMENTS = json.loads(
+    (Path(__file__).resolve().parent / "environments.json").read_text(encoding="utf-8")
+)
+
+
+def api_origin_for(app_env: str | None) -> str:
+    """Return the single API origin the CSP may connect to; never a default."""
+    if app_env not in ENVIRONMENTS:
+        raise RuntimeError("APP_ENV must be one of: " + ", ".join(sorted(ENVIRONMENTS)))
+    return ENVIRONMENTS[app_env]["apiOrigin"]
+
+
+def content_security_policy(app_env: str | None) -> str:
+    return (
+        "default-src 'self'; base-uri 'self'; object-src 'none'; "
+        "frame-ancestors 'none'; form-action 'self'; script-src 'self'; "
+        "style-src 'self' 'unsafe-inline'; font-src 'self'; "
+        f"img-src 'self' data:; connect-src 'self' {api_origin_for(app_env)}; "
+        "manifest-src 'self'; upgrade-insecure-requests"
+    )
+
+
+CSP = content_security_policy(os.environ.get("APP_ENV"))
 
 
 class SpaHandler(SimpleHTTPRequestHandler):
@@ -13,14 +36,7 @@ class SpaHandler(SimpleHTTPRequestHandler):
         super().__init__(*args, directory=str(ROOT), **kwargs)
 
     def end_headers(self) -> None:
-        self.send_header(
-            "Content-Security-Policy",
-            "default-src 'self'; base-uri 'self'; object-src 'none'; "
-            "frame-ancestors 'none'; form-action 'self'; script-src 'self'; "
-            "style-src 'self' 'unsafe-inline'; font-src 'self'; "
-            f"img-src 'self' data:; connect-src 'self' {API_ORIGIN}; "
-            "manifest-src 'self'; upgrade-insecure-requests",
-        )
+        self.send_header("Content-Security-Policy", CSP)
         self.send_header("Strict-Transport-Security", "max-age=31536000")
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Referrer-Policy", "strict-origin-when-cross-origin")
