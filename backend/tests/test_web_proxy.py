@@ -53,9 +53,7 @@ class FakeUpstream:
                     }
                 )
                 if self.path.startswith("/api/v1/slow"):
-                    import time
-
-                    time.sleep(2)
+                    outer.release.wait(timeout=2)
                 status = {"/api/v1/gone": 410, "/api/v1/conflict": 409, "/api/v1/none": 204}.get(
                     self.path.split("?")[0], 200
                 )
@@ -76,6 +74,8 @@ class FakeUpstream:
             do_GET = do_POST = do_PATCH = do_DELETE = do_HEAD = _handle
 
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.server.daemon_threads = False  # server_close() then joins in-flight handlers
+        self.release = threading.Event()
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
 
@@ -84,6 +84,7 @@ class FakeUpstream:
         return self.server.server_address[1]
 
     def close(self):
+        self.release.set()
         self.server.shutdown()
         self.server.server_close()
 
@@ -99,13 +100,18 @@ def stack(monkeypatch, tmp_path):
         "open_upstream_connection",
         lambda: http.client.HTTPConnection("127.0.0.1", upstream.port, timeout=server.UPSTREAM_TIMEOUT_SECONDS),
     )
+    monkeypatch.setattr(server.SpaHandler, "log_message", lambda *args, **kwargs: None)
     proxy = ThreadingHTTPServer(("127.0.0.1", 0), server.SpaHandler)
+    proxy.daemon_threads = False
     thread = threading.Thread(target=proxy.serve_forever, daemon=True)
     thread.start()
     yield server, upstream, proxy.server_address[1]
+    upstream.release.set()
     proxy.shutdown()
     proxy.server_close()
     upstream.close()
+    thread.join(timeout=5)
+    upstream.thread.join(timeout=5)
 
 
 def request(port, method, target, headers=None, body=None):

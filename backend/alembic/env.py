@@ -34,6 +34,12 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 settings = get_settings()
+if settings.database_url is None:
+    # Alembic is local PostgreSQL test tooling only. The Catalyst provider (the default and the only
+    # deployed one) has no SQL schema to migrate and discards any DATABASE_URL.
+    raise RuntimeError(
+        "Alembic requires PERSISTENCE_PROVIDER=postgresql with DATABASE_URL (local test tooling only)"
+    )
 
 config.set_main_option(
     "sqlalchemy.url",
