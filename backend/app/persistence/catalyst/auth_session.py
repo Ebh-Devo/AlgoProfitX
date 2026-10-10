@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from app.persistence.auth_session import RefreshSessionRecord, SessionTokenRejected
+from app.persistence.catalyst.paging import query_all
 from app.persistence.catalyst.client import (
     CatalystPersistenceClient,
     CatalystPersistenceError,
@@ -135,7 +136,8 @@ class CatalystAuthSessionRepository:
     async def _slot_rows(self, user_id: uuid.UUID) -> list[dict[str, Any]]:
         identifier = str(user_id)
         literal = _literal(identifier, _SAFE_UUID, "user ID")
-        rows = await self._client.async_query_rows(
+        rows = await query_all(
+            self._client,
             f"SELECT {_SLOT_COLUMNS} FROM {SLOTS_TABLE} "
             f"WHERE user_uuid = {literal}",
             SLOTS_TABLE,
@@ -385,7 +387,8 @@ class CatalystAuthSessionRepository:
     ) -> bool:
         identifier = str(session_id)
         literal = _literal(identifier, _SAFE_UUID, "session ID")
-        claim_rows = await self._client.async_query_rows(
+        claim_rows = await query_all(
+            self._client,
             f"SELECT ROWID FROM {CLAIMS_TABLE} "
             f"WHERE session_uuid = {literal}",
             CLAIMS_TABLE,

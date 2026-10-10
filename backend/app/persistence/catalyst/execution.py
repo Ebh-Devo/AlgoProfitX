@@ -11,6 +11,7 @@ from typing import Any
 from app.models.allocation import AllocationStatus
 from app.models.execution import ExecutionStatus
 from app.persistence.catalyst.allocation import CatalystAllocationRepository
+from app.persistence.catalyst.paging import query_all, select_list
 from app.persistence.catalyst.client import CatalystPersistenceClient, CatalystPersistenceError
 from app.persistence.catalyst.strategy import CatalystStrategyRepository
 from app.persistence.execution import ExecutionRecord
@@ -158,10 +159,11 @@ class CatalystExecutionRepository:
         return record
 
     async def _rows(self, condition: str) -> list[dict[str, Any]]:
-        return await self._client.async_query_rows(
-            f"SELECT {_COLUMNS} FROM {EXECUTIONS_TABLE} WHERE {condition}",
-            EXECUTIONS_TABLE,
-        )
+        # More than 20 explicit columns exceeds ZCQL's documented limit, so these reads use SELECT *.
+        query = f"SELECT {select_list(_COLUMNS)} FROM {EXECUTIONS_TABLE} WHERE {condition}"
+        if " LIMIT " in f" {condition.upper()} ":
+            return await self._client.async_query_rows(query, EXECUTIONS_TABLE)  # bounded lookup
+        return await query_all(self._client, query, EXECUTIONS_TABLE)
 
     async def _claim_for_execution(self, execution_id: uuid.UUID) -> dict[str, Any] | None:
         rows = await self._client.async_query_rows(

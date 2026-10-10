@@ -41,6 +41,8 @@ class MemoryDataStore:
         self.counter = 0
         self.fail_all = False
         self.queries: list[str] = []
+        self.row_cap = 300  # documented: a ZCQL SELECT returns at most 300 rows
+        self.max_explicit_columns = 20  # documented: at most 20 explicit columns
 
     # -- helpers -----------------------------------------------------------------------------
     def _check_columns(self, table: str, names: Iterable[str]) -> None:
@@ -53,20 +55,41 @@ class MemoryDataStore:
 
     # -- client surface ----------------------------------------------------------------------
     async def async_query_rows(self, query: str, table: str) -> list[dict]:
+        """ZCQL as documented by Catalyst: at most ``row_cap`` rows (silently cut, like the real service),
+        at most 20 explicit columns, ``SELECT *`` allowed, ``ORDER BY``, ``LIMIT [offset,]count``."""
         self.queries.append(query)
         if self.fail_all:
             raise CatalystPersistenceError("Catalyst ZCQL query failed")
-        match = re.match(r"SELECT (.+?) FROM (\w+)(?: WHERE (.+?))?(?: LIMIT (\d+))?$", query.strip())
+        match = re.match(
+            r"SELECT (.+?) FROM (\w+)(?: WHERE (.+?))?(?: ORDER BY (\w+))?(?: LIMIT (\d+)(?:,(\d+))?)?$",
+            query.strip(),
+        )
         assert match, f"unsupported ZCQL in test double: {query}"
-        selected = [column.strip() for column in match.group(1).split(",")]
         assert match.group(2) == table
+        columns, where, order_by, first, second = (match.group(n) for n in (1, 3, 4, 5, 6))
+        select_all = columns.strip() == "*"
+        selected = [] if select_all else [column.strip() for column in columns.split(",")]
+        if len(selected) > self.max_explicit_columns:
+            raise CatalystPersistenceError("Catalyst ZCQL query failed")  # documented 20-column limit
         self._check_columns(table, selected)
         rows = list(self.rows[table])
-        if match.group(3):
-            for column, value in re.findall(r"(\w+) = '([^']*)'", match.group(3)):
+        if where:
+            for column, value in re.findall(r"(\w+) = '([^']*)'", where):
                 rows = [row for row in rows if row.get(column) == value]
-        if match.group(4):
-            rows = rows[: int(match.group(4))]
+            for bound in re.findall(r"ROWID > (\d+)", where):
+                rows = [row for row in rows if int(row["ROWID"]) > int(bound)]
+        if order_by:
+            assert order_by == "ROWID", "the double only orders by ROWID"
+            rows.sort(key=lambda row: int(row["ROWID"]))
+        offset, count = (int(first), int(second)) if second is not None else (0, int(first) if first else None)
+        rows = rows[offset:]
+        limit = self.row_cap if count is None else min(count, self.row_cap)
+        rows = rows[:limit]  # the provider cuts silently at its cap
+        if select_all:
+            keys = self.schemas.get(table) or None
+            return [
+                {**{key: row.get(key) for key in (keys or row)}, "ROWID": row["ROWID"]} for row in rows
+            ]
         return [{column: row.get(column) for column in selected} for row in rows]
 
     async def async_insert_row(self, table: str, payload: dict) -> dict:
@@ -76,7 +99,7 @@ class MemoryDataStore:
         if _unique_collision(self.rows[table], payload, self.unique.get(table, ())):
             raise CatalystPersistenceError("Catalyst row insert failed")
         self.counter += 1
-        row = {**payload, "ROWID": f"row-{self.counter}"}
+        row = {**payload, "ROWID": str(36851000000000000 + self.counter)}  # real ROWIDs are numeric
         self.rows[table].append(row)
         return dict(row)
 

@@ -9,6 +9,7 @@ from typing import Any
 
 from app.bootstrap.instruments import EXCHANGES, INSTRUMENTS
 from app.models.instrument import InstrumentType
+from app.persistence.catalyst.paging import query_all
 from app.persistence.catalyst.client import CatalystPersistenceClient, CatalystPersistenceError
 from app.persistence.strategy import ExchangeSnapshotRecord, InstrumentSnapshotRecord
 
@@ -207,7 +208,8 @@ class CatalystInstrumentRepository:
         limit: int,
         offset: int,
     ) -> list[InstrumentSnapshotRecord]:
-        rows = await self._client.async_query_rows(
+        rows = await query_all(
+            self._client,
             f"SELECT {_INSTRUMENT_COLUMNS} FROM {INSTRUMENTS_TABLE}",
             INSTRUMENTS_TABLE,
         )

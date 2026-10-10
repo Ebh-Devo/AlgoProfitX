@@ -16,6 +16,7 @@ from app.persistence.catalyst.client import (
     CatalystPersistenceClient,
     CatalystPersistenceError,
 )
+from app.persistence.catalyst.paging import query_all
 from app.persistence.catalyst.schema import (
     SCHEMA_VERSION_COLUMN,
     SUPPORTED_WRITE_VERSIONS,
@@ -371,7 +372,8 @@ class CatalystStrategyRepository:
 
     async def list_strategies(self, creator_id: uuid.UUID) -> list[StrategyRecord]:
         creator_literal = _literal(str(creator_id), _SAFE_UUID, "creator ID")
-        rows = await self._client.async_query_rows(
+        rows = await query_all(
+            self._client,
             f"SELECT {_COLUMNS} FROM {STRATEGIES_TABLE} "
             f"WHERE creator_uuid = {creator_literal}",
             STRATEGIES_TABLE,
@@ -385,8 +387,10 @@ class CatalystStrategyRepository:
     async def list_marketplace(
         self, *, limit: int, offset: int
     ) -> list[tuple[StrategyRecord, int | None]]:
-        rows = await self._client.async_query_rows(
-            f"SELECT {_COLUMNS} FROM {STRATEGIES_TABLE}", STRATEGIES_TABLE
+        # Every strategy row is read (drafts included) and filtered here, so this must be complete:
+        # query_all pages through all rows and fails closed above its safety bound.
+        rows = await query_all(
+            self._client, f"SELECT {_COLUMNS} FROM {STRATEGIES_TABLE}", STRATEGIES_TABLE
         )
         discoverable = [
             self._record(row)
@@ -565,7 +569,8 @@ class CatalystStrategyRepository:
     async def _version_rows(self, strategy_id: uuid.UUID) -> list[dict[str, Any]]:
         strategy_literal = _literal(str(strategy_id), _SAFE_UUID, "strategy ID")
         columns = await self._version_columns()
-        return await self._client.async_query_rows(
+        return await query_all(
+            self._client,
             f"SELECT {columns} FROM {STRATEGY_VERSIONS_TABLE} "
             f"WHERE strategy_uuid = {strategy_literal}",
             STRATEGY_VERSIONS_TABLE,

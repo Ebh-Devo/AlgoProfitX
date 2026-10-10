@@ -11,6 +11,7 @@ from typing import Any
 from app.models.backtest import BacktestStatus
 from app.persistence.backtest import BacktestRecord
 from app.persistence.catalyst.client import CatalystPersistenceClient, CatalystPersistenceError
+from app.persistence.catalyst.paging import query_all, select_list
 from app.persistence.catalyst.schema import (
     SCHEMA_VERSION_COLUMN,
     SchemaVersionColumnUnavailable,
@@ -191,7 +192,8 @@ class CatalystBacktestRepository:
         has_column = await schema_capabilities.has_schema_version_column(
             self._client, BACKTESTS_TABLE
         )
-        return _COLUMNS_WITH_SCHEMA if has_column else _COLUMNS
+        # More than 20 explicit columns exceeds ZCQL's documented limit, so those reads use SELECT *.
+        return select_list(_COLUMNS_WITH_SCHEMA if has_column else _COLUMNS)
 
     async def _row(self, backtest_id: uuid.UUID) -> dict[str, Any] | None:
         columns = await self._columns()
@@ -263,7 +265,8 @@ class CatalystBacktestRepository:
     async def list(self, *, strategy_version_id: uuid.UUID, limit: int, offset: int) -> list[BacktestRecord]:
         literal = _literal(str(strategy_version_id), _SAFE_UUID, "version ID")
         columns = await self._columns()
-        rows = await self._client.async_query_rows(
+        rows = await query_all(
+            self._client,
             f"SELECT {columns} FROM {BACKTESTS_TABLE} WHERE strategy_version_uuid = {literal}",
             BACKTESTS_TABLE,
         )
@@ -272,7 +275,8 @@ class CatalystBacktestRepository:
         return records[offset:offset + limit]
 
     async def _claims(self, backtest_id: uuid.UUID) -> list[dict[str, Any]]:
-        return await self._client.async_query_rows(
+        return await query_all(
+            self._client,
             f"SELECT ROWID, claim_key, lease_token, attempt_number, claimed_at, expires_at FROM {BACKTEST_CLAIMS_TABLE} "
             f"WHERE backtest_uuid = {_literal(str(backtest_id), _SAFE_UUID, 'backtest ID')}",
             BACKTEST_CLAIMS_TABLE,

@@ -69,6 +69,37 @@ The exact, documented console plan (with sources, what Catalyst does and does no
 `AlgoProfitXBacktests`. No data rewrite. Rollback: stop writing V2 (revert the application; the nullable
 column is harmless to leave) and never drop the column while any row has a value other than 1.
 
+## ZCQL result limits (documented) and how reads are bounded
+
+Sources: Catalyst Docs, [General Syntax of SELECT](https://docs.catalyst.zoho.com/en/cloud-scale/help/zcql/select/),
+[LIMIT clause](https://docs.catalyst.zoho.com/en/cloud-scale/help/zcql/limit/) and the
+[Cloud Scale FAQ](https://docs.catalyst.zoho.com/en/faq/cloud-scale/) (read 2026-10-10).
+
+| Documented | Detail |
+|---|---|
+| Rows per SELECT | **at most 300** ("a maximum of 300 rows in one SELECT query"; FAQ: "Why do I get only 300 rows ... ?"). |
+| Explicit columns | **at most 20** ("a maximum of 20 columns"); `SELECT *` has no stated column limit. |
+| More rows | iterate with `LIMIT [offset,]count`; the docs are not consistent about whether `offset` is 0- or 1-based. |
+| **Not stated** | what happens when a limit is exceeded (error or silent cut), a maximum `LIMIT` value, query-length or rate limits. |
+
+Design (`persistence/catalyst/paging.py`), assuming the worst where the docs are silent:
+
+- Every multi-row read goes through `query_all`: **keyset paging on `ROWID`** (`... AND ROWID > <last> ORDER BY ROWID LIMIT 250`),
+  which needs no offset semantics. Pages are below the 300 cap and a short page ends the loop.
+- It **fails closed**: more than `DEFAULT_MAX_ROWS` (5,000) rows, or pages that cannot be continued safely (missing/non-numeric/
+  non-advancing `ROWID`), raise `CatalystResultTooLarge`/`CatalystPersistenceError`. A truncated list is never returned.
+- Reads that need more than 20 columns (`Backtests`, 29-30; `Executions`, 22) use `SELECT *`; no explicit list exceeds 20.
+- Single-row lookups keep `LIMIT 1`. A static test fails if a new direct `async_query_rows` call has no `LIMIT`.
+- Affected before this change: marketplace (read *all* strategies, drafts included, then filtered in Python), instrument catalog,
+  strategies per creator, versions per strategy (**a version number computed as `max()+1` over a 300-row cut would collide after the
+  300th version**), backtests per version, allocations/executions per investor, claims and slots.
+- Tests emulate the provider (silent 300-row cut, 20-column rejection) in `tests/catalyst_memory.py`; with the old unpaged code 8 of the
+  paging tests fail.
+
+Still **unverified against a live Data Store** (needs separately authorized, read-only verification): that `ORDER BY ROWID`, `ROWID > n`
+and `LIMIT n` behave as assumed, that `SELECT *` returns every column, and what an over-limit query actually does. If keyset paging
+proves unsupported, reads fail closed (error), they do not truncate.
+
 ## Backtesting
 
 Supported modes: `inline` and `disabled`. Production must be `disabled`. There is no `worker` mode, no

@@ -13,6 +13,7 @@ from app.persistence.catalyst.client import (
     CatalystPersistenceClient,
     CatalystPersistenceError,
 )
+from app.persistence.catalyst.paging import query_all
 from app.persistence.catalyst.strategy import CatalystStrategyRepository
 from app.services.strategy import require_execution_supported
 
@@ -168,7 +169,8 @@ class CatalystAllocationRepository:
     async def list_for_investor(
         self, investor_user_id: uuid.UUID
     ) -> list[AllocationRecord]:
-        rows = await self._client.async_query_rows(
+        rows = await query_all(
+            self._client,
             f"SELECT {_COLUMNS} FROM {ALLOCATIONS_TABLE} "
             f"WHERE investor_uuid = {_literal(investor_user_id)}",
             ALLOCATIONS_TABLE,

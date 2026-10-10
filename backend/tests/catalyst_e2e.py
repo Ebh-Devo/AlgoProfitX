@@ -43,7 +43,7 @@ def full_store(*, with_schema_column: bool) -> MemoryDataStore:
     # The real Roles table is pre-populated by the operator; registration requires these rows.
     for name in ("ADMIN", "CREATOR", "INVESTOR"):
         store.counter += 1
-        store.rows["AlgoProfitXRoles"].append({"ROWID": f"role-{name}", "role_name": name})
+        store.rows["AlgoProfitXRoles"].append({"ROWID": str(36851000000900000 + store.counter), "role_name": name})
     return store
 
 
