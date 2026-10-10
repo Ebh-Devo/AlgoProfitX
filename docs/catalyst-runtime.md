@@ -96,9 +96,28 @@ Design (`persistence/catalyst/paging.py`), assuming the worst where the docs are
 - Tests emulate the provider (silent 300-row cut, 20-column rejection) in `tests/catalyst_memory.py`; with the old unpaged code 8 of the
   paging tests fail.
 
-Still **unverified against a live Data Store** (needs separately authorized, read-only verification): that `ORDER BY ROWID`, `ROWID > n`
-and `LIMIT n` behave as assumed, that `SELECT *` returns every column, and what an over-limit query actually does. If keyset paging
-proves unsupported, reads fail closed (error), they do not truncate.
+### Live verification (Development ZCQL Console, read-only, 2026-10-10; authorized as "Phase A" in #46)
+
+SELECT statements only against non-sensitive tables (Instruments, Exchanges, Strategies, Backtests, StrategyVersions); no writes,
+no schema change, no Production. Results:
+
+| Question | Observed |
+|---|---|
+| `ORDER BY ROWID` | accepted; ascending numeric ROWIDs (`DESC` also works) |
+| `WHERE ROWID > <n>` | accepted; numeric compare; works together with `status = '...'`, `is_active = true`, `ORDER BY ROWID` and `LIMIT 250` (the exact shapes `query_all` generates) |
+| `SELECT *` | accepted; returns every column plus `CREATORID`/`CREATEDTIME`/`MODIFIEDTIME` (Instruments 21 columns, Backtests 32; more than 20 is fine); NULL shows as `null` in the console grid |
+| Explicit columns above 20 | **accepted**: 21 and the 29 columns the previous code used both returned in full. The documented 20-column limit is **not enforced** (at least in the console, today); the code still avoids relying on that |
+| `LIMIT` above 300 | **error**: `ZCQL CANNOT HAVE MORE THAN 300 ROWS in LIMIT` (300 accepted, 301 rejected) |
+| `LIMIT offset,count` | offsets are **1-based** (`0` behaves like `1`; `3,1` is the third row; `4,1` returns nothing). The docs' example is ambiguous; keyset paging is unaffected |
+| Unknown column in a `SELECT` | **error**: `Unkown Table <T> or Unkown Column <c> in SELECT` (sic), as the schema-capability probe assumes |
+
+Console trap found: after an *error*, the Output panel keeps showing the **previous** result, so a failed query can look like it
+returned data. (I initially misread `LIMIT 1000` that way; the error is recorded above.)
+
+**Still not verified live** (needs more than 300 rows, i.e. writes or a scratch table, which are not authorized): whether a SELECT
+*without* a `LIMIT` over a result larger than 300 rows is cut silently or is an error (the code assumes a silent cut and pages below it),
+and how the SDK (not the console) shapes results for `SELECT *`. The code paths that were *not* exercised live are the repository
+CRUD operations of this branch (they need a Development deployment, a later gate).
 
 ## Backtesting
 

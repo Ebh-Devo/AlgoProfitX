@@ -9,6 +9,12 @@ Documented provider limits (Catalyst Docs: ZCQL "General Syntax of SELECT" and t
 * more rows are fetched by iterating with the ``LIMIT [offset,]count`` clause. The docs are not fully
   consistent about whether ``offset`` is 0- or 1-based, so this module does **not** use offsets.
 
+Verified read-only in the Development ZCQL Console (2026-10-10, see docs/catalyst-runtime.md): ``ORDER BY ROWID``
+(also ``DESC``), ``WHERE ROWID > <n>`` combined with equality filters and ``LIMIT 250``, and ``SELECT *`` are
+accepted; ``LIMIT`` offsets are **1-based**; a ``LIMIT`` above 300 is an **error**; explicit lists of 21 and 29
+columns were accepted despite the documented 20-column limit. What an over-limit query without ``LIMIT`` does
+(silent cut or error) was not observable (it needs more than 300 rows) and is still assumed to be a silent cut.
+
 ``query_all`` therefore pages by **keyset** on ``ROWID`` (``WHERE ... AND ROWID > <last> ORDER BY ROWID
 LIMIT <page>``), which needs no offset semantics, and **fails closed**: if a result would exceed
 ``max_rows`` it raises ``CatalystResultTooLarge`` instead of returning a truncated list.

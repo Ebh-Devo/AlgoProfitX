@@ -61,8 +61,25 @@ async def test_a_plain_select_is_silently_cut_at_the_documented_300_rows():
     store = plain_store(count=700)
     rows = await store.async_query_rows("SELECT ROWID, n FROM T", "T")
     assert len(rows) == ZCQL_MAX_ROWS_PER_QUERY == 300  # the hazard this module removes
-    capped = await store.async_query_rows("SELECT ROWID, n FROM T LIMIT 1000", "T")
-    assert len(capped) == 300  # even an explicit larger LIMIT is cut
+    # Observed live: a LIMIT above 300 is an error ("ZCQL CANNOT HAVE MORE THAN 300 ROWS in LIMIT"), 300 is fine.
+    with pytest.raises(CatalystPersistenceError):
+        await store.async_query_rows("SELECT ROWID, n FROM T LIMIT 301", "T")
+    assert len(await store.async_query_rows("SELECT ROWID, n FROM T LIMIT 300", "T")) == 300
+
+
+@pytest.mark.asyncio
+async def test_limit_offsets_are_one_based_as_observed_live():
+    store = plain_store(count=3)
+    first, second, third = (BASE_ROWID + index for index in range(3))
+
+    async def ids(limit):
+        rows = await store.async_query_rows(f"SELECT ROWID FROM T ORDER BY ROWID LIMIT {limit}", "T")
+        return rowids(rows)
+
+    assert await ids("1,1") == [first] and await ids("2,1") == [second] and await ids("3,1") == [third]
+    assert await ids("4,1") == []
+    assert await ids("0,2") == await ids("1,2") == [first, second]  # offset 0 behaves like 1
+    assert await ids("3,2") == [third]
 
 
 @pytest.mark.asyncio
@@ -301,6 +318,14 @@ async def test_a_bounded_execution_lookup_is_not_paged():
 
 
 # ---------------------------------------------------------------------- static guards
+
+
+def test_no_query_in_the_code_can_exceed_the_verified_limit_cap():
+    assert PAGE_SIZE <= ZCQL_MAX_ROWS_PER_QUERY
+    literals = []
+    for path in sorted(CATALYST_DIR.glob("*.py")):
+        literals += [int(n) for n in re.findall(r"LIMIT (\d+)", path.read_text(encoding="utf-8"))]
+    assert literals and max(literals) <= ZCQL_MAX_ROWS_PER_QUERY
 
 
 def _query_call_sites():

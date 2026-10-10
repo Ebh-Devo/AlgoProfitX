@@ -55,8 +55,10 @@ class MemoryDataStore:
 
     # -- client surface ----------------------------------------------------------------------
     async def async_query_rows(self, query: str, table: str) -> list[dict]:
-        """ZCQL as documented by Catalyst: at most ``row_cap`` rows (silently cut, like the real service),
-        at most 20 explicit columns, ``SELECT *`` allowed, ``ORDER BY``, ``LIMIT [offset,]count``."""
+        """ZCQL as documented by Catalyst and observed in the Development console: at most ``row_cap`` rows
+        (silently cut without a LIMIT, assumed), ``LIMIT`` above 300 rejected, 1-based offsets, ``SELECT *``,
+        ``ORDER BY``. The documented 20-explicit-column limit is NOT enforced live (21 and 29 columns were
+        accepted), but the double still rejects it so the code stays compliant with the documentation."""
         self.queries.append(query)
         if self.fail_all:
             raise CatalystPersistenceError("Catalyst ZCQL query failed")
@@ -81,10 +83,15 @@ class MemoryDataStore:
         if order_by:
             assert order_by == "ROWID", "the double only orders by ROWID"
             rows.sort(key=lambda row: int(row["ROWID"]))
-        offset, count = (int(first), int(second)) if second is not None else (0, int(first) if first else None)
-        rows = rows[offset:]
-        limit = self.row_cap if count is None else min(count, self.row_cap)
-        rows = rows[:limit]  # the provider cuts silently at its cap
+        # Observed live (Development ZCQL Console, 2026-10-10): ``LIMIT offset,count`` offsets are
+        # 1-based (0 behaves like 1) and a LIMIT above 300 is an error, not a silent cut.
+        offset, count = (int(first), int(second)) if second is not None else (1, int(first) if first else None)
+        if count is not None and count > self.row_cap:
+            raise CatalystPersistenceError("ZCQL CANNOT HAVE MORE THAN 300 ROWS in LIMIT")
+        rows = rows[max(offset, 1) - 1 :]
+        # Without a LIMIT the documented 300-row cap applies; whether that is a silent cut or an error
+        # has NOT been observed live (it needs more than 300 rows), so it is assumed silent (worst case).
+        rows = rows[: self.row_cap if count is None else count]
         if select_all:
             keys = self.schemas.get(table) or None
             return [

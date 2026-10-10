@@ -50,8 +50,11 @@ Add one column to **each** of `AlgoProfitXStrategyVersions` and `AlgoProfitXBack
 - unreadable table -> outage, surfaced, never cached as "absent";
 - a column once seen present is never downgraded to absent (a transient blip must not make V2 rows read as V1).
 
-If Catalyst ever answered an unknown-column `SELECT` without error, the probe would report "present" and the V2 insert
-would then fail (generic persistence error): still fail-closed, never stored as V1.
+**Verified live (read-only, Development ZCQL Console, 2026-10-10):** a `SELECT` of the not-yet-existing column on
+`AlgoProfitXStrategyVersions` is rejected with `Unkown Table AlgoProfitXStrategyVersions or Unkown Column definition_schema_version in SELECT`
+(sic), exactly the failure the probe treats as "column absent". (Had Catalyst answered without error, the probe would report "present" and
+the V2 insert would then fail with a generic persistence error: still fail-closed, never stored as V1.) Runbook pre-check 1 below is
+therefore already answered for the unknown-column error text; the row-count and post-change reads still apply.
 
 ## Runbook (after approval; Development only)
 
