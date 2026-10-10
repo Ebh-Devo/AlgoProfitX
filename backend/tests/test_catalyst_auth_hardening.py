@@ -6,7 +6,12 @@ Catalyst-provider paths and the shared verifier. The SQL provider's equivalents 
 
 import dataclasses
 import logging
+import os
+import subprocess
+import sys
+import textwrap
 import uuid
+from pathlib import Path
 
 import pytest
 from argon2 import extract_parameters
@@ -18,6 +23,7 @@ from app.main import app
 from app.persistence.catalyst.client import CatalystPersistenceError
 from tests.test_catalyst_auth_routes import catalyst_auth  # noqa: F401  (pytest fixture)
 
+BACKEND = Path(__file__).resolve().parents[1]
 PASSWORD = "TestPassword123"
 GENERIC_LOGIN_BODY = {"detail": "Invalid email or password"}
 SENTINEL = "SENTINEL-internal-detail-7f3a91"
@@ -120,6 +126,89 @@ def test_the_decoy_hash_uses_the_same_algorithm_and_cost_as_real_hashes():
     decoy = security._decoy_password_hash()
     assert extract_parameters(decoy) == extract_parameters(real)
     assert decoy == security._decoy_password_hash()  # fixed for the process, not regenerated per request
+
+
+@pytest.mark.asyncio
+async def test_login_never_generates_a_hash_so_the_first_unknown_account_pays_no_extra_cost(
+    catalyst_auth, monkeypatch, verifier_calls
+):
+    """The decoy exists before any request; no login outcome may call hash generation."""
+
+    class VerifyOnlyHasher:
+        """Delegates verification; any attempt to generate a hash fails the test."""
+
+        def __init__(self, real):
+            self._real = real
+
+        def hash(self, *args, **kwargs):
+            raise AssertionError("a password hash was generated while handling a login request")
+
+        def verify(self, *args, **kwargs):
+            return self._real.verify(*args, **kwargs)
+
+    # Cold start: if an implementation caches the decoy lazily, drop the cache so this login would
+    # have to generate it (and fail). The eager implementation has nothing to clear.
+    getattr(security._decoy_password_hash, "cache_clear", lambda: None)()
+    monkeypatch.setattr(security, "password_hasher", VerifyOnlyHasher(security.password_hasher))
+    async with new_client() as client:
+        first_unknown = await client.post(
+            "/api/v1/auth/login", json={"email": f"nobody-{uuid.uuid4().hex}@example.com", "password": PASSWORD}
+        )
+    assert first_unknown.status_code == 401 and first_unknown.json() == GENERIC_LOGIN_BODY
+    assert verifier_calls == [security._decoy_password_hash()]  # exactly one verification, of the decoy
+
+
+IMPORT_PROBE = textwrap.dedent(
+    """
+    import argon2
+    calls = []
+    real = argon2.PasswordHasher.hash
+
+    def counting(self, *args, **kwargs):
+        calls.append(1)
+        return real(self, *args, **kwargs)
+
+    argon2.PasswordHasher.hash = counting
+    import app.core.config as config
+    config.Settings.model_config["env_file"] = None
+    import app.core.security as security
+    assert len(calls) == 1, f"decoy not created at import: {len(calls)}"
+    assert security.verify_password_or_decoy("x", None) is False
+    assert security.verify_password_or_decoy("y", None) is False
+    assert len(calls) == 1, "a hash was generated while verifying"
+    print("ok")
+    """
+)
+
+
+def _probe_environment() -> dict:
+    environment = {key: value for key, value in os.environ.items() if key not in {"DATABASE_URL", "PERSISTENCE_PROVIDER"}}
+    environment.update(APP_ENV="development", PERSISTENCE_PROVIDER="catalyst", SECRET_KEY="a-long-unique-secret-for-this-probe")
+    return environment
+
+
+def test_the_decoy_is_created_at_import_and_never_during_verification():
+    """In a fresh process: exactly one hash is generated while importing, none when verifying."""
+    result = subprocess.run(
+        [sys.executable, "-c", IMPORT_PROBE], cwd=BACKEND, env=_probe_environment(), capture_output=True, text=True, timeout=120
+    )
+    assert result.returncode == 0 and result.stdout.strip() == "ok", result.stderr[-1500:]
+    assert "argon2" not in result.stdout  # the decoy hash itself is never printed
+
+
+def test_the_decoy_secret_is_random_per_process():
+    """Two processes get different decoys, so nothing about it is constant or predictable."""
+    program = (
+        "import app.core.config as c; c.Settings.model_config['env_file'] = None; "
+        "import app.core.security as s; print(s._decoy_password_hash())"
+    )
+    outputs = {
+        subprocess.run(
+            [sys.executable, "-c", program], cwd=BACKEND, env=_probe_environment(), capture_output=True, text=True, timeout=120
+        ).stdout.strip()
+        for _ in range(2)
+    }
+    assert len(outputs) == 2 and all(value.startswith("$argon2") for value in outputs)
 
 
 def test_the_decoy_path_can_never_succeed(monkeypatch):

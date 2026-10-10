@@ -1,5 +1,4 @@
 from datetime import datetime, timedelta, timezone
-from functools import lru_cache
 import secrets
 import uuid
 
@@ -27,10 +26,16 @@ def verify_password(password: str, password_hash: str) -> bool:
         return False
 
 
-@lru_cache(maxsize=1)
+# Created once, eagerly, when this module is imported, i.e. before any request is served. It must
+# never be generated lazily: the first unknown-account login would then also pay the hash-generation
+# cost that a known account does not, which is itself a timing signal. The random secret it was made
+# from is discarded; only the hash (same hasher, so same algorithm and cost as real hashes) is kept,
+# and it is never logged or returned.
+_DECOY_PASSWORD_HASH = password_hasher.hash(secrets.token_urlsafe(32))
+
+
 def _decoy_password_hash() -> str:
-    """A fixed hash of a random secret, made by the same hasher (algorithm and cost) as real hashes."""
-    return password_hasher.hash(secrets.token_urlsafe(32))
+    return _DECOY_PASSWORD_HASH
 
 
 def verify_password_or_decoy(password: str, password_hash: str | None) -> bool:
