@@ -1,5 +1,6 @@
 import asyncio
 import hmac
+import logging
 import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -20,7 +21,7 @@ from app.core.config import AppEnvironment, get_settings
 from app.core.dependencies import get_current_user
 from app.core.metrics import metrics
 from app.core.observability import log_event
-from app.core.security import create_access_token, hash_password, verify_password
+from app.core.security import create_access_token, hash_password, verify_password_or_decoy
 from app.db.session import get_session
 from app.models.user import User
 from app.persistence.auth_session import SessionTokenRejected
@@ -169,15 +170,25 @@ async def register(
         else:
             user = await register_user(session, data)
             await session.commit()
-    except (DuplicateIdentityError, ValueError) as exc:
+    except DuplicateIdentityError as exc:
+        # A fixed, non-sensitive message raised only for a taken email address.
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=str(exc),
         )
-    except RuntimeError as exc:
-        raise HTTPException(
+    except Exception:
+        # Anything else is unexpected: never echo exception text to the client. The detail is logged
+        # server-side with the request id (log redaction scrubs secrets); the client gets a generic body.
+        request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
+        log_event(
+            "registration_failed",
+            level=logging.ERROR,
+            exc_info=True,
+            request_id=request_id,
+        )
+        return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(exc),
+            content={"detail": "Internal server error", "request_id": request_id},
         )
 
     return user
@@ -217,12 +228,13 @@ async def login(
     if _uses_catalyst_auth():
         identity, auth_sessions = _catalyst_auth_repositories(request)
         user = await identity.get_user_by_email(str(data.email))
-        if user is not None and (
-            not user.is_active
-            or not await asyncio.to_thread(
-                verify_password, data.password, user.password_hash
-            )
-        ):
+        # One full verification for every outcome (unknown, inactive, wrong password, success).
+        matched = await asyncio.to_thread(
+            verify_password_or_decoy,
+            data.password,
+            user.password_hash if user is not None else None,
+        )
+        if user is None or not user.is_active or not matched:
             user = None
     else:
         user = await authenticate_user(session, data.email, data.password)
