@@ -117,6 +117,28 @@ Automated tests use in-memory Data Store doubles (`tests/catalyst_memory.py`) an
 environment. The legacy PostgreSQL suite needs a local `TEST_DATABASE_URL` (a `tradeebh_test` database on
 localhost) and runs only as test tooling.
 
+### Running the tests locally (reproduces CI)
+
+`tests/conftest.py` detaches settings from your git-ignored `backend/.env` (only `TEST_DATABASE_URL` is still read from it,
+on purpose) and defaults `SECRET_KEY` the way CI does, so a local run sees the same configuration as CI. From `backend/`:
+
+```bash
+# Catalyst-only checks: no database needed (any TEST_DATABASE_URL value is never connected to)
+TEST_DATABASE_URL=postgresql+asyncpg://x:x@localhost:5432/tradeebh_test   python -m pytest tests/test_catalyst_*.py tests/test_web_proxy.py tests/test_workflow_environment_isolation.py
+
+# Everything, including the legacy PostgreSQL suite (needs a local database named tradeebh_test)
+python -m pytest
+```
+
+```powershell
+$env:TEST_DATABASE_URL='postgresql+asyncpg://tradebh:<local-password>@localhost:5432/tradeebh_test'
+python -m pytest
+```
+
+The end-to-end Catalyst tests (`test_catalyst_end_to_end.py`) run the real app on the Catalyst provider against an in-memory
+Data Store that mirrors the real tables' uniqueness; they use dev's own HTTP helpers, so the Catalyst provider is exercised
+through the same API calls as the PostgreSQL contract tests. They are still doubles, not a live Catalyst test.
+
 ### Live Catalyst integration procedure (prepared, not run)
 
 Run only with explicit approval, against Development, using a throwaway user and strategy:

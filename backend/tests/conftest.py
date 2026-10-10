@@ -15,6 +15,14 @@ BACKEND_ENV_FILE = Path(__file__).resolve().parents[1] / ".env"
 # application's Development default and accidentally contact Catalyst.
 os.environ["APP_ENV"] = "test"
 
+# Make local runs reproduce CI: a developer's git-ignored backend/.env must never change the
+# settings the tests see. CI supplies only DATABASE_URL/TEST_DATABASE_URL and SECRET_KEY (below);
+# TEST_DATABASE_URL is still read from .env on purpose by _require_test_database().
+os.environ.setdefault("SECRET_KEY", "ci-only-secret-not-for-production")
+from app.core.config import Settings  # noqa: E402
+
+Settings.model_config["env_file"] = None
+
 
 def _require_test_database() -> str:
     # Direct pytest invocations from CMD do not run the PowerShell environment
