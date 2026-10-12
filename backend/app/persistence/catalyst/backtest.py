@@ -83,6 +83,11 @@ def _parse_time(value: Any, label: str, *, optional: bool = True) -> datetime | 
     return parsed.astimezone(timezone.utc)
 
 
+# Catalyst Data Store Text columns hold 10,000 characters. We enforce 10,000 UTF-8 *bytes*, which is
+# stricter (bytes >= characters), so any accepted value always fits the column.
+MAX_JSON_COLUMN_BYTES = 10_000
+
+
 def _json(value: dict[str, Any] | None, label: str, *, required: bool = False) -> str | None:
     if value is None and not required:
         return None
@@ -92,7 +97,7 @@ def _json(value: dict[str, Any] | None, label: str, *, required: bool = False) -
         encoded = json.dumps(value, sort_keys=True, separators=(",", ":"))
     except (TypeError, ValueError) as exc:
         raise ValueError(f"{label} must contain JSON values") from exc
-    if len(encoded.encode("utf-8")) > 10000:
+    if len(encoded.encode("utf-8")) > MAX_JSON_COLUMN_BYTES:
         raise ValueError(f"{label} is too large")
     return encoded
 

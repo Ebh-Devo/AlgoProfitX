@@ -75,6 +75,10 @@ def _timestamp(value: datetime) -> str:
     return value.astimezone(timezone.utc).isoformat()
 
 
+# Catalyst Text columns hold 10,000 characters; we enforce 10,000 UTF-8 bytes (stricter).
+MAX_JSON_COLUMN_BYTES = 10_000
+
+
 def _bounded_json(value: dict[str, Any], label: str) -> str:
     if not isinstance(value, dict):
         raise ValueError(f"{label} must be an object")
@@ -82,7 +86,7 @@ def _bounded_json(value: dict[str, Any], label: str) -> str:
         encoded = json.dumps(value, sort_keys=True, separators=(",", ":"))
     except (TypeError, ValueError) as exc:
         raise ValueError(f"{label} must contain JSON values") from exc
-    if len(encoded.encode("utf-8")) > 10000:
+    if len(encoded.encode("utf-8")) > MAX_JSON_COLUMN_BYTES:
         raise ValueError(f"{label} is too large")
     return encoded
 

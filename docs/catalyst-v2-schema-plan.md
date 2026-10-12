@@ -109,3 +109,9 @@ so a stored value always fits. This applies to `configuration`, `backtest_config
 is allowed, so an oversized definition is rejected with a clear validation error before any write. Measured backtest results are
 about 5 KB (64 equity points, few trades); a result that does not fit fails **terminally** with `backtest_result_too_large`
 (not retried). Real market data with many trades will need File Store or a trimmed summary; that is future work.
+
+Synthetic worst-case measurement (`backend/scripts/measure_backtest_result_size.py`, pinned by
+`backend/tests/test_backtest_result_size_limit.py`): the service caps (100 trades, 256 equity points) do **not** fit the
+10,000-byte limit. At both caps a V2-shaped summary is about 65 KB (V1-shaped about 39 KB); 256 equity points alone are about
+17.9 KB. With V2 trades, 0 / 1 / 5 / 10 trades fit at most 141 / 134 / 107 / 73 equity points, and 25 or more trades do not fit
+at all. Such results fail terminally with `backtest_result_too_large`; the caps are unchanged and no downsampling exists yet.
