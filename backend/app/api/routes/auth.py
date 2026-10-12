@@ -137,6 +137,20 @@ def _refresh_cookie(request: Request) -> str:
     return token
 
 
+def _unexpected_failure_response(request: Request, event: str) -> JSONResponse:
+    """Generic 500 for an unexpected failure: never echo exception text to the client.
+
+    The detail is logged server-side with the request id (log redaction scrubs secrets); the client
+    gets a stable body carrying only that request id.
+    """
+    request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
+    log_event(event, level=logging.ERROR, exc_info=True, request_id=request_id)
+    return JSONResponse(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        content={"detail": "Internal server error", "request_id": request_id},
+    )
+
+
 @router.post(
     "/register",
     response_model=UserResponse,
@@ -177,19 +191,7 @@ async def register(
             detail=str(exc),
         )
     except Exception:
-        # Anything else is unexpected: never echo exception text to the client. The detail is logged
-        # server-side with the request id (log redaction scrubs secrets); the client gets a generic body.
-        request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
-        log_event(
-            "registration_failed",
-            level=logging.ERROR,
-            exc_info=True,
-            request_id=request_id,
-        )
-        return JSONResponse(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            content={"detail": "Internal server error", "request_id": request_id},
-        )
+        return _unexpected_failure_response(request, "registration_failed")
 
     return user
 
@@ -369,11 +371,8 @@ async def enroll_as_creator(
         else:
             user = await enroll_creator(session, current_user)
             await session.commit()
-    except RuntimeError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(exc),
-        )
+    except Exception:
+        return _unexpected_failure_response(request, "creator_enrollment_failed")
 
     return user
 
