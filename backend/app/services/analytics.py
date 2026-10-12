@@ -1,7 +1,8 @@
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
-from app.models.backtest import Backtest, BacktestStatus
+from app.models.backtest import Backtest
+from app.domain.enums import BacktestStatus
 
 
 class BacktestAnalyticsConflict(Exception):

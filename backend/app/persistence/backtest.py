@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-from app.models.backtest import BacktestStatus
+from app.domain.enums import BacktestStatus
 
 
 @dataclass(frozen=True, slots=True)

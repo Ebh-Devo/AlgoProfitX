@@ -1,4 +1,3 @@
-import enum
 import uuid
 from datetime import date, datetime
 from decimal import Decimal
@@ -23,11 +22,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
 from app.db.base import Base
-
-
-class InstrumentType(str, enum.Enum):
-    EQUITY = "equity"
-    INDEX = "index"
+from app.domain.enums import InstrumentType
 
 
 class Exchange(Base):

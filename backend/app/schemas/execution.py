@@ -5,7 +5,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
-from app.models.execution import ExecutionStatus
+from app.domain.enums import ExecutionStatus
 
 
 class ExecutionIntentCreateRequest(BaseModel):

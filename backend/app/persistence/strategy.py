@@ -6,8 +6,8 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any, Protocol
 
-from app.models.instrument import InstrumentType
-from app.models.strategy import StrategyStatus
+from app.domain.enums import InstrumentType
+from app.domain.enums import StrategyStatus
 
 
 @dataclass(frozen=True, slots=True)

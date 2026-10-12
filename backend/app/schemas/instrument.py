@@ -4,7 +4,7 @@ from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, field_serializer
 
-from app.models.instrument import InstrumentType
+from app.domain.enums import InstrumentType
 
 
 class ExchangeSummaryResponse(BaseModel):

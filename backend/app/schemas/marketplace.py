@@ -3,7 +3,7 @@ from datetime import datetime
 
 from pydantic import BaseModel
 
-from app.models.strategy import StrategyStatus
+from app.domain.enums import StrategyStatus
 
 
 class MarketplaceStrategyResponse(BaseModel):
