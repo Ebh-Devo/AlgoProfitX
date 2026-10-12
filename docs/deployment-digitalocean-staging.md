@@ -1,3 +1,6 @@
+> **Historical.** This DigitalOcean/Cloudflare plan was never applied and is not the deployment path.
+> AlgoProfitX runs entirely on Zoho Catalyst; see [catalyst-runtime.md](catalyst-runtime.md).
+
 # AlgoProfitX hybrid staging deployment specification
 
 This runbook is a reviewable plan only. No Cloudflare or DigitalOcean resource, deployment, DNS record, certificate, nameserver, or paid feature has been created. Production remains separate and untouched.

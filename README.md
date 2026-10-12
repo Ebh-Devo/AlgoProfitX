@@ -8,6 +8,11 @@ The intended product domain is [https://www.algoprofitx.com](https://www.algopro
 
 > Paper Execution uses synthetic NSE/INR reference data. It is not real NSE market data, live broker execution, or funded capital.
 
+> **Runtime architecture.** Every deployed environment runs entirely on Zoho Catalyst (Data Store +
+> ZCQL, same-origin web proxy). PostgreSQL appears in this README only as local test tooling for the
+> legacy PostgreSQL test suite; it is refused in production and inside any Catalyst AppSail. See
+> [docs/catalyst-runtime.md](docs/catalyst-runtime.md).
+
 ## Contents
 
 - [Current status](#current-status)

@@ -38,10 +38,10 @@ def development_values(**overrides: object) -> dict[str, object]:
 
 def test_backend_origins_match_the_frontend_environment_table():
     dev, prod = ENVIRONMENTS["development"], ENVIRONMENTS["production"]
-    assert DEVELOPMENT_FRONTEND_ORIGIN == dev["frontendOrigin"]
-    assert DEVELOPMENT_API_ORIGIN == dev["apiOrigin"]
-    assert CANONICAL_FRONTEND_ORIGIN == prod["frontendOrigin"]
-    assert PRODUCTION_API_ORIGIN == prod["apiOrigin"]
+    assert DEVELOPMENT_FRONTEND_ORIGIN == dev["webOrigin"]
+    assert DEVELOPMENT_API_ORIGIN in dev["allowedUpstreamApiOrigins"]
+    assert CANONICAL_FRONTEND_ORIGIN == prod["webOrigin"]
+    assert PRODUCTION_API_ORIGIN in prod["allowedUpstreamApiOrigins"]
 
 
 def test_development_origins_are_exact_https_without_wildcards():

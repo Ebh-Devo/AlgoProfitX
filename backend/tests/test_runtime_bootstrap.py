@@ -70,14 +70,35 @@ def test_configuration_failure_fields_never_include_input_values():
     with pytest.raises(ValidationError) as caught:
         Settings(
             app_env="production",
+            persistence_provider="catalyst",
             database_url="postgresql+asyncpg://user:sentinel-password@localhost/app",
             secret_key="sentinel-secret-never-log",
         )
 
     fields = _configuration_failure_fields(caught.value)
-    assert "DATABASE_URL" in fields
     assert "DEBUG" in fields
     assert "SECRET_KEY" in fields
     rendered = repr(fields)
     assert "sentinel-password" not in rendered
     assert "sentinel-secret-never-log" not in rendered
+
+
+def test_refused_postgresql_provider_is_reported_by_name_without_its_value():
+    from pydantic import ValidationError
+
+    from app.core.config import Settings
+    from app.runtime import _configuration_failure_fields
+
+    with pytest.raises(ValidationError) as caught:
+        Settings(
+            app_env="production",
+            persistence_provider="postgresql",
+            database_url="postgresql+asyncpg://user:sentinel-password@localhost/app",
+            secret_key="sentinel-secret-never-log",
+        )
+
+    fields = _configuration_failure_fields(caught.value)
+    assert "PERSISTENCE_PROVIDER" in fields
+    assert "sentinel-password" not in repr(fields)
+    assert "sentinel-secret-never-log" not in repr(fields)
+

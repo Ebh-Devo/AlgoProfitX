@@ -8,7 +8,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 WORKFLOWS = REPO_ROOT / ".github" / "workflows"
 ENVIRONMENTS = json.loads((REPO_ROOT / "frontend" / "environments.json").read_text())
 DEV_API_URL = ENVIRONMENTS["development"]["allowedApiBaseUrls"][0]
-PROD_API_URL = "https://api.algoprofitx.com/api/v1"
+PROD_API_URL = ENVIRONMENTS["production"]["allowedApiBaseUrls"][0]
 
 
 def workflow(name: str) -> str:
@@ -75,3 +75,42 @@ def test_no_workflow_deploys_to_production():
         text = path.read_text(encoding="utf-8")
         assert "CATALYST_TARGET_ENVIRONMENT: Production" not in text, path.name
         assert not re.search(r"--env(ironment)?[ =]+[Pp]roduction", text), path.name
+
+
+def job_block(text: str, job: str) -> str:
+    pattern = rf"^  {job}:\n(.*?)(?=^  [\w-]+:\n|\Z)"
+    match = re.search(pattern, text, re.DOTALL | re.MULTILINE)
+    assert match, job
+    return match.group(1)
+
+
+def test_web_builds_are_same_origin_for_each_environment():
+    for env, table in ENVIRONMENTS.items():
+        assert table["allowedApiBaseUrls"] == [f"{table['webOrigin']}/api/v1"], env
+
+
+def test_ci_has_a_database_free_catalyst_runtime_job():
+    ci = workflow("ci.yml")
+    runtime = job_block(ci, "catalyst-runtime")
+    assert "services:" not in runtime and "postgres" not in runtime.lower().replace("postgresql", "")
+    assert "requirements-production.txt" in runtime
+    assert "asyncpg|alembic|redis" in runtime
+    backend = job_block(ci, "backend")
+    assert "services:" in backend and "postgres" in backend  # legacy suite only
+
+
+def test_container_smoke_test_runs_the_catalyst_provider_not_a_database():
+    container = job_block(workflow("ci.yml"), "backend-container")
+    assert "PERSISTENCE_PROVIDER=catalyst" in container
+    assert "DATABASE_URL" not in container
+    assert "APP_ENV=test" not in container
+    assert "asyncpg|alembic|redis" in container
+
+
+def test_no_workflow_selects_postgresql_or_the_worker_mode_for_a_deployed_runtime():
+    for path in WORKFLOWS.glob("*.yml"):
+        text = path.read_text(encoding="utf-8")
+        assert "PERSISTENCE_PROVIDER=postgresql" not in text.replace(
+            "refused-postgresql", ""
+        ) or path.name == "ci.yml", path.name
+        assert "BACKTEST_EXECUTION_MODE=worker" not in text, path.name

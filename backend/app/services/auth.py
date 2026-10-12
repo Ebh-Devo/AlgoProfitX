@@ -4,7 +4,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.user import Role, User, UserProfile, user_roles
 from app.schemas.auth import RegisterRequest
-from app.core.security import hash_password, verify_password
+from app.core.security import hash_password, verify_password_or_decoy
+from app.persistence.identity import DuplicateIdentityError
 
 
 DEFAULT_ROLE = "INVESTOR"
@@ -31,7 +32,7 @@ async def register_user(
     existing_user = await get_user_by_email(session, email)
 
     if existing_user is not None:
-        raise ValueError("Email is already registered")
+        raise DuplicateIdentityError("Email is already registered")
 
     role_result = await session.execute(
         select(Role).where(Role.name == DEFAULT_ROLE)
@@ -91,13 +92,12 @@ async def authenticate_user(
 ) -> User | None:
     user = await get_user_by_email(session, email.lower())
 
-    if user is None:
-        return None
-
-    if not user.is_active:
-        return None
-
-    if not verify_password(password, user.password_hash):
+    # One full verification for every outcome (unknown, inactive, wrong password, success), so
+    # timing does not reveal whether the account exists or is active.
+    matched = verify_password_or_decoy(
+        password, user.password_hash if user is not None else None
+    )
+    if user is None or not user.is_active or not matched:
         return None
 
     return user

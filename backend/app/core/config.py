@@ -1,5 +1,6 @@
 import base64
 import binascii
+import os
 from enum import StrEnum
 from functools import lru_cache
 from pathlib import Path
@@ -12,6 +13,8 @@ from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 BACKEND_DIR = Path(__file__).resolve().parents[2]
+# Set by the Catalyst AppSail runtime for every process it starts.
+CATALYST_RUNTIME_MARKER = "X_ZOHO_CATALYST_LISTEN_PORT"
 CANONICAL_FRONTEND_ORIGIN = "https://www.algoprofitx.com"
 PRODUCTION_API_ORIGIN = "https://api.algoprofitx.com"
 STAGING_FRONTEND_ORIGIN = "https://staging.algoprofitx.com"
@@ -42,7 +45,8 @@ class Settings(BaseSettings):
     app_env: AppEnvironment = AppEnvironment.DEVELOPMENT
     debug: bool = True
 
-    database_url: SecretStr
+    persistence_provider: Literal["postgresql", "catalyst"] | None = None
+    database_url: SecretStr | None = None
     database_require_tls: bool = False
     pgsslrootcert: Path | None = None
     pgsslrootcert_b64: SecretStr | None = None
@@ -55,6 +59,9 @@ class Settings(BaseSettings):
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
     log_format: Literal["console", "json"] | None = None
     readiness_db_timeout_seconds: PositiveFloat = 2.0
+    readiness_alembic_head: str = "a7b9c1d3e5f7"
+    catalyst_probe_table: str = "MigrationProbe"
+    catalyst_probe_crud_enabled: bool = False
     request_id_header: str = "X-Request-ID"
 
     secret_key: SecretStr
@@ -101,8 +108,10 @@ class Settings(BaseSettings):
     execution_sustained_window_seconds: PositiveInt = 3600
     backtest_max_concurrency_per_user: PositiveInt = 1
     backtest_execution_mode: Literal["inline", "disabled"] = "inline"
+    # Lease for a claimed Catalyst backtest. A crashed request leaves a claim that expires and can
+    # be reclaimed; this is a persistence-level recovery bound, not a background worker.
+    backtest_claim_lease_seconds: PositiveFloat = 900.0
 
-    redis_url: str = "redis://localhost:6379/0"
     market_data_provider: str = "synthetic"
     market_data_timeout_seconds: float = 15.0
     market_data_max_retries: int = 2
@@ -166,8 +175,25 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def enforce_environment_policy(self) -> Self:
+        if self.persistence_provider is None:
+            self.persistence_provider = (
+                "postgresql"
+                if self.app_env is AppEnvironment.TEST
+                else "catalyst"
+            )
+        self._enforce_persistence_provider_policy()
+        if self.persistence_provider == "catalyst":
+            # Catalyst Data Store needs no connection string. Discard any leftover value so
+            # nothing in a Catalyst runtime can ever open a PostgreSQL connection with it.
+            self.database_url = None
+            self.pgsslrootcert = None
+            self.pgsslrootcert_b64 = None
+        elif self.database_url is None:
+            raise ValueError("DATABASE_URL is required for PostgreSQL persistence")
         if self.db_max_overflow < 0:
             raise ValueError("DB_MAX_OVERFLOW must be greater than or equal to 0")
+        if not self.readiness_alembic_head.strip():
+            raise ValueError("READINESS_ALEMBIC_HEAD must not be blank")
         if self.api_docs_enabled is None:
             self.api_docs_enabled = self.app_env is not AppEnvironment.PRODUCTION
         if self.log_format is None:
@@ -258,18 +284,6 @@ class Settings(BaseSettings):
         if unexpected_origins:
             errors.append("CORS_ALLOWED_ORIGINS contains an unapproved production origin")
 
-        database_url = self.database_url.get_secret_value()
-        parsed_database_url = urlsplit(database_url)
-        if parsed_database_url.scheme != "postgresql+asyncpg":
-            errors.append("DATABASE_URL must use postgresql+asyncpg in production")
-        if parsed_database_url.hostname in {"localhost", "127.0.0.1", "::1"}:
-            errors.append("DATABASE_URL must not target localhost in production")
-        if not self.database_require_tls:
-            errors.append("DATABASE_REQUIRE_TLS must be true in production")
-        if self.pgsslrootcert is None and self.pgsslrootcert_b64 is None:
-            errors.append(
-                "PGSSLROOTCERT or PGSSLROOTCERT_B64 is required in production"
-            )
         if self.backtest_execution_mode != "disabled":
             errors.append(
                 "BACKTEST_EXECUTION_MODE must be disabled until a durable worker is configured"
@@ -290,6 +304,20 @@ class Settings(BaseSettings):
                 "CORS_ALLOWED_ORIGINS must be exactly the Catalyst Development web origin"
             )
 
+    def _enforce_persistence_provider_policy(self) -> None:
+        """Catalyst Data Store is the only persistence provider a deployed runtime may use.
+
+        PostgreSQL remains available solely as local/test tooling: it is refused for production
+        and for any process running inside a Catalyst AppSail, so a stray ``PERSISTENCE_PROVIDER``
+        or ``DATABASE_URL`` can never route a deployed service to an external database.
+        """
+        if self.persistence_provider != "postgresql":
+            return
+        if self.app_env is AppEnvironment.PRODUCTION:
+            raise ValueError("PERSISTENCE_PROVIDER must be catalyst in production")
+        if os.environ.get(CATALYST_RUNTIME_MARKER):
+            raise ValueError("PERSISTENCE_PROVIDER must be catalyst on Catalyst AppSail")
+
     @property
     def database_echo(self) -> bool:
         """SQL logging is never permitted in production."""
@@ -298,6 +326,8 @@ class Settings(BaseSettings):
     @property
     def database_connect_args(self) -> dict[str, object]:
         """Build a certificate-verifying asyncpg TLS context without writing CA data."""
+        if self.persistence_provider == "catalyst":
+            return {}
         if not self.database_require_tls:
             return {}
         context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
@@ -327,6 +357,7 @@ class Settings(BaseSettings):
         """Only production application processes keep a persistent connection pool."""
         return (
             self.app_env is AppEnvironment.PRODUCTION
+            and self.persistence_provider == "postgresql"
             and not self.db_external_transaction_pooler
         )
 
@@ -345,6 +376,10 @@ class Settings(BaseSettings):
                 pool_pre_ping=self.db_pool_pre_ping,
             )
         return options
+
+    @property
+    def uses_catalyst_persistence(self) -> bool:
+        return self.persistence_provider == "catalyst"
 
 
 @lru_cache

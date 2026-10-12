@@ -5,26 +5,26 @@ import {
 } from "./productionSecurityPolicy";
 
 describe("production browser security contract", () => {
-  it("keeps scripts strict and API connectivity explicit", () => {
+  it("keeps scripts strict and connectivity same-origin only", () => {
     const csp = productionSecurityHeaders["Content-Security-Policy"];
     expect(csp).toContain("default-src 'self'");
     expect(csp).toContain("frame-ancestors 'none'");
-    expect(csp).toContain("connect-src 'self' https://api.algoprofitx.com;");
+    expect(csp).toContain("connect-src 'self';");
     expect(csp).toContain("style-src 'self' 'unsafe-inline'");
     expect(csp).not.toContain("script-src 'unsafe-inline'");
     expect(csp).not.toContain("'unsafe-eval'");
-    expect(csp).not.toContain("catalystappsail");
+    expect(csp).not.toContain("http");
+    expect(csp).not.toContain("*");
   });
 
-  it("limits the Development CSP to the exact Development API origin", () => {
-    const csp = contentSecurityPolicyFor("development");
-    expect(csp).toContain(
-      "connect-src 'self' https://algoprofitx-api-50045554365.development.catalystappsail.in;",
-    );
-    expect(csp).not.toContain("api.algoprofitx.com");
-    expect(csp).not.toContain("*");
-    expect(csp).not.toContain("script-src 'unsafe-inline'");
-    expect(csp).not.toContain("'unsafe-eval'");
+  it("gives Development the same restrictive policy without naming any origin", () => {
+    expect(contentSecurityPolicyFor("development")).toBe(contentSecurityPolicyFor("production"));
+    expect(contentSecurityPolicyFor("development")).not.toContain("catalystappsail");
+  });
+
+  it("has no policy for an unknown environment", () => {
+    // @ts-expect-error deliberately outside the environment union
+    expect(() => contentSecurityPolicyFor("staging")).toThrow(/Unknown environment/);
   });
 
   it("defines hardened transport and cache behavior", () => {

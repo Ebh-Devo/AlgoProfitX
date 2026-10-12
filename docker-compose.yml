@@ -1,3 +1,6 @@
+# LOCAL TEST TOOLING ONLY. The deployed AlgoProfitX runtime is Zoho Catalyst-only (Data Store +
+# ZCQL) and never uses PostgreSQL or Redis. This database backs only the legacy PostgreSQL test
+# suite (TEST_DATABASE_URL); it is not a deployment dependency.
 services:
 
   postgres:
@@ -18,20 +21,5 @@ services:
       timeout: 5s
       retries: 5
 
-  redis:
-    image: redis:7
-    container_name: tradeebh-redis
-    restart: unless-stopped
-    ports:
-      - "6380:6379"
-    volumes:
-      - redis_data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
 volumes:
   postgres_data:
-  redis_data:

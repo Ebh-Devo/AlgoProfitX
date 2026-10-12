@@ -1,16 +1,21 @@
 {
   "development": {
-    "frontendOrigin": "https://algoprofitx-web-50045554365.development.catalystappsail.in",
-    "apiOrigin": "https://algoprofitx-api-50045554365.development.catalystappsail.in",
+    "webOrigin": "https://algoprofitx-web-50045554365.development.catalystappsail.in",
     "allowedApiBaseUrls": [
-      "https://algoprofitx-api-50045554365.development.catalystappsail.in/api/v1"
+      "https://algoprofitx-web-50045554365.development.catalystappsail.in/api/v1"
+    ],
+    "allowedUpstreamApiOrigins": [
+      "https://algoprofitx-api-50045554365.development.catalystappsail.in"
     ]
   },
   "production": {
-    "frontendOrigin": "https://www.algoprofitx.com",
-    "apiOrigin": "https://api.algoprofitx.com",
+    "webOrigin": "https://www.algoprofitx.com",
     "allowedApiBaseUrls": [
-      "https://api.algoprofitx.com/api/v1"
+      "https://www.algoprofitx.com/api/v1"
+    ],
+    "allowedUpstreamApiOrigins": [
+      "https://api.algoprofitx.com",
+      "https://algoprofitx-api-50045554365.catalystappsail.in"
     ]
   }
 }

@@ -34,6 +34,7 @@ SAFE_CONFIGURATION_FIELDS = (
     "FRONTEND_PUBLIC_URL",
     "PGSSLROOTCERT",
     "PGSSLROOTCERT_B64",
+    "PERSISTENCE_PROVIDER",
     "REFRESH_TOKEN_EXPIRE_DAYS",
     "SECRET_KEY",
 )
@@ -61,8 +62,9 @@ def _configuration_failure_fields(exc: Exception) -> tuple[str, ...]:
 def create_runtime_app() -> FastAPI:
     try:
         settings = get_settings()
-        # This validates CA material locally; it does not connect to PostgreSQL.
-        settings.database_connect_args
+        if not settings.uses_catalyst_persistence:
+            # This validates CA material locally; it does not connect to PostgreSQL.
+            settings.database_connect_args
     except (ValidationError, ValueError, OSError) as exc:
         # Pydantic errors can include raw input. Never log the exception or
         # serialize it in a response, including exception chaining/tracebacks.
