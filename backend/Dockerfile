@@ -4,12 +4,14 @@ FROM python:${PYTHON_VERSION}-slim-bookworm AS runtime
 
 ARG VCS_REF=""
 ARG SOURCE_URL=""
+ARG BUILD_RUN_ID=""
 LABEL org.opencontainers.image.title="AlgoProfitX backend" \
       org.opencontainers.image.description="Provider-neutral AlgoProfitX FastAPI runtime" \
       org.opencontainers.image.source="${SOURCE_URL}" \
       org.opencontainers.image.revision="${VCS_REF}"
 
 ENV APP_SOURCE_SHA=${VCS_REF} \
+    APP_BUILD_RUN_ID=${BUILD_RUN_ID} \
     APP_SOURCE_REPO="Ebh-Devo/AlgoProfitX" \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \

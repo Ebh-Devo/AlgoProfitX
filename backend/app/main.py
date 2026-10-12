@@ -24,6 +24,7 @@ from app.api.routes.strategies import router as strategies_router
 from app.core.config import AppEnvironment, get_settings
 from app.core.security import hash_password, verify_password
 from app.core import health
+from app.core.build_info import build_identity
 from app.core.metrics import metrics
 from app.core.observability import (
     configure_logging,
@@ -180,7 +181,7 @@ def create_app() -> FastAPI:
 
     _RELEASE_IDENTITY = {
         "repository": os.getenv("APP_SOURCE_REPO", "Ebh-Devo/AlgoProfitX"),
-        "sha": os.getenv("APP_SOURCE_SHA", ""),
+        **build_identity(),
         "component": "algoprofitx-api",
     }
 
