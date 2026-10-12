@@ -28,16 +28,18 @@ def test_populated_identity_is_returned(monkeypatch):
     assert build_identity() == {"sha": SHA, "build_run_id": "38054507517"}
 
 
-def test_unset_identity_is_unknown(monkeypatch):
+def test_unset_or_empty_identity_is_an_empty_string_as_before(monkeypatch):
     monkeypatch.delenv("APP_SOURCE_SHA", raising=False)
     monkeypatch.delenv("APP_BUILD_RUN_ID", raising=False)
-    assert build_identity() == {"sha": UNKNOWN, "build_run_id": UNKNOWN}
+    assert build_identity() == {"sha": "", "build_run_id": ""}
+    monkeypatch.setenv("APP_SOURCE_SHA", "")
+    monkeypatch.setenv("APP_BUILD_RUN_ID", "")
+    assert build_identity() == {"sha": "", "build_run_id": ""}
 
 
 @pytest.mark.parametrize(
     "value",
     [
-        "",
         "abc1234",  # abbreviated
         SHA.upper(),  # wrong case
         SHA + "0",  # too long
@@ -51,7 +53,7 @@ def test_a_malformed_sha_is_replaced_by_unknown_never_echoed(monkeypatch, value)
     assert build_identity()["sha"] == UNKNOWN
 
 
-@pytest.mark.parametrize("value", ["", "abc", "12 34", "-1", "1" * 21, "1\n2"])
+@pytest.mark.parametrize("value", ["abc", "12 34", "-1", "1" * 21, "1\n2"])
 def test_a_malformed_run_id_is_replaced_by_unknown_never_echoed(monkeypatch, value):
     monkeypatch.setenv("APP_BUILD_RUN_ID", value)
     assert build_identity()["build_run_id"] == UNKNOWN
@@ -72,11 +74,20 @@ async def test_the_endpoint_returns_exactly_the_approved_fields_and_no_environme
 
 
 @pytest.mark.asyncio
-async def test_the_endpoint_reports_unknown_when_nothing_was_baked_in(monkeypatch):
+async def test_the_endpoint_keeps_the_empty_sha_when_nothing_was_baked_in(monkeypatch):
     monkeypatch.delenv("APP_SOURCE_SHA", raising=False)
     monkeypatch.delenv("APP_BUILD_RUN_ID", raising=False)
     body = await fetch_version()
+    assert body["sha"] == "" and body["build_run_id"] == ""
+
+
+@pytest.mark.asyncio
+async def test_a_malformed_value_is_never_echoed_by_the_endpoint(monkeypatch):
+    monkeypatch.setenv("APP_SOURCE_SHA", "postgresql://user:Distinct-pw@host/db")
+    monkeypatch.setenv("APP_BUILD_RUN_ID", "Distinct-run")
+    body = await fetch_version()
     assert body["sha"] == UNKNOWN and body["build_run_id"] == UNKNOWN
+    assert "Distinct" not in str(body)
 
 
 # ----------------------------------------------------------- build and deploy wiring (static)

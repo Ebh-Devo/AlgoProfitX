@@ -158,9 +158,9 @@ also asserts each bundle fails the other environment's check and that a build wi
 
 `GET /api/version` (public, unauthenticated) returns `repository`, `sha`, `build_run_id` and `component`. `sha` is the
 source commit and `build_run_id` the CI "Build Catalyst release artifacts" run that produced the image; both are baked in as
-build arguments (`VCS_REF`, `BUILD_RUN_ID`) and read from `APP_SOURCE_SHA` / `APP_BUILD_RUN_ID`. Each value is validated
-(40 lowercase hex characters; digits only) and reported as `unknown` otherwise, so the endpoint can never echo arbitrary text or
-any other environment value. Disclosing the commit SHA of a public-source build is a deliberate, modest trade-off. After a
+build arguments (`VCS_REF`, `BUILD_RUN_ID`) and read from `APP_SOURCE_SHA` / `APP_BUILD_RUN_ID`. An unset value is an
+empty string (the pre-existing contract for `sha`); a value that is set but not 40 lowercase hex characters / digits only is
+reported as `unknown`, so the endpoint can never echo arbitrary text or any other environment value. Disclosing the commit SHA of a public-source build is a deliberate, modest trade-off. After a
 Development deploy, the workflow polls this endpoint and fails unless it reports the dispatched `source_sha` and
 `release_run_id`. A runtime started without usable configuration serves the 503 "unavailable" body instead, which also fails the
 verification.

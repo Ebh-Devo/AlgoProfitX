@@ -1,8 +1,9 @@
 """Non-secret build identity, baked into the image at build time.
 
 Only two build arguments are ever read: ``APP_SOURCE_SHA`` (the source commit) and
-``APP_BUILD_RUN_ID`` (the CI build run that produced the image). Each value is validated against a
-strict format and replaced by ``unknown`` otherwise, so a mis-set variable can never put arbitrary
+``APP_BUILD_RUN_ID`` (the CI build run that produced the image). An unset or empty value is reported
+as an empty string (the existing ``/api/version`` contract for ``sha``). A value that is set but does
+not match its strict format is reported as ``unknown``, so a mis-set variable can never put arbitrary
 text (or anything else from the environment) into a response.
 """
 
@@ -16,6 +17,8 @@ _RUN_ID = re.compile(r"[0-9]{1,20}")
 
 def _validated(name: str, pattern: re.Pattern[str]) -> str:
     value = os.getenv(name, "")
+    if value == "":
+        return ""
     return value if pattern.fullmatch(value) else UNKNOWN
 
 
