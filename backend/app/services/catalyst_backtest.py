@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
-from app.backtesting.contracts import BacktestExecutionError, HistoricalCandleRequest, InstrumentIdentity
+from app.backtesting.contracts import BacktestExecutionError, BacktestExecutionResult, HistoricalCandleRequest, InstrumentIdentity
 from app.backtesting.reference import EmaCrossoverReferenceEngine, SyntheticMarketDataProvider
 from app.core.config import get_settings
 from app.core.metrics import metrics
@@ -26,6 +26,20 @@ MAX_RESULT_EQUITY_POINTS = 256
 
 def _decimal_string(value: Decimal) -> str:
     return format(value.quantize(Decimal("0.00000001")), "f")
+
+
+def build_result_summary(result: BacktestExecutionResult) -> dict[str, object]:
+    """The ``result_summary`` object persisted for a completed backtest."""
+    return {
+        "initial_capital": _decimal_string(result.initial_capital),
+        "final_equity": _decimal_string(result.final_equity),
+        "total_return": _decimal_string(result.total_return),
+        "trade_count": len(result.trades),
+        "trades": list(result.trades),
+        "equity_curve": list(result.equity_curve),
+        "engine_identifier": result.engine_identifier,
+        "provider_identifier": result.provider_identifier,
+    }
 
 
 def _historical_request(backtest: BacktestRecord) -> HistoricalCandleRequest:
@@ -112,16 +126,7 @@ async def execute_catalyst_backtest(
                 raise BacktestExecutionError("Strategy runtime failed", "strategy_runtime_failed") from exc
         if len(result.trades) > MAX_RESULT_TRADES or len(result.equity_curve) > MAX_RESULT_EQUITY_POINTS:
             raise BacktestExecutionError("Backtest result exceeds its limit")
-        summary = {
-            "initial_capital": _decimal_string(result.initial_capital),
-            "final_equity": _decimal_string(result.final_equity),
-            "total_return": _decimal_string(result.total_return),
-            "trade_count": len(result.trades),
-            "trades": list(result.trades),
-            "equity_curve": list(result.equity_curve),
-            "engine_identifier": result.engine_identifier,
-            "provider_identifier": result.provider_identifier,
-        }
+        summary = build_result_summary(result)
         try:
             completed = await repository.finish_success(
                 backtest.id,
