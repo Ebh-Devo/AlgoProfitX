@@ -6,8 +6,8 @@ from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
-from app.models.allocation import AllocationStatus
-from app.models.strategy import StrategyStatus
+from app.domain.enums import AllocationStatus
+from app.domain.enums import StrategyStatus
 from app.persistence.allocation import AllocationRecord
 from app.persistence.catalyst.client import (
     CatalystPersistenceClient,

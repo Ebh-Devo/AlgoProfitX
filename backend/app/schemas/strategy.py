@@ -4,7 +4,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from app.models.strategy import StrategyStatus
+from app.domain.enums import StrategyStatus
 from app.schemas.instrument import InstrumentResponse
 from app.strategy_rules import StrategyRuleError, validate_rule_configuration
 

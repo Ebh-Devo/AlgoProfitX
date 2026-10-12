@@ -4,7 +4,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.models.backtest import BacktestStatus
+from app.domain.enums import BacktestStatus
 
 
 class BacktestCreateRequest(BaseModel):

@@ -8,7 +8,7 @@ from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from app.bootstrap.instruments import EXCHANGES, INSTRUMENTS
-from app.models.instrument import InstrumentType
+from app.domain.enums import InstrumentType
 from app.persistence.catalyst.paging import query_all
 from app.persistence.catalyst.client import CatalystPersistenceClient, CatalystPersistenceError
 from app.persistence.strategy import ExchangeSnapshotRecord, InstrumentSnapshotRecord

@@ -1,4 +1,3 @@
-import enum
 import uuid
 from datetime import datetime
 from decimal import Decimal
@@ -21,14 +20,8 @@ from sqlalchemy.orm import Mapped, column_property, mapped_column
 from sqlalchemy.sql import func
 
 from app.db.base import Base
+from app.domain.enums import ExecutionStatus
 from app.models.strategy import Strategy, StrategyVersion
-
-
-class ExecutionStatus(str, enum.Enum):
-    PENDING = "pending"
-    RUNNING = "running"
-    COMPLETED = "completed"
-    FAILED = "failed"
 
 
 class ExecutionIntent(Base):

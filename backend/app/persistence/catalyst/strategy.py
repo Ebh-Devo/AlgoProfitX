@@ -10,8 +10,8 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
-from app.models.instrument import InstrumentType
-from app.models.strategy import StrategyStatus
+from app.domain.enums import InstrumentType
+from app.domain.enums import StrategyStatus
 from app.persistence.catalyst.client import (
     CatalystPersistenceClient,
     CatalystPersistenceError,

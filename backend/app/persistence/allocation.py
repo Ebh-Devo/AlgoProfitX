@@ -6,7 +6,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Protocol
 
-from app.models.allocation import AllocationStatus
+from app.domain.enums import AllocationStatus
 
 
 @dataclass(frozen=True, slots=True)

@@ -1,4 +1,3 @@
-import enum
 import uuid
 from datetime import datetime
 from decimal import Decimal
@@ -17,11 +16,8 @@ from sqlalchemy.orm import Mapped, column_property, mapped_column
 from sqlalchemy.sql import func
 
 from app.db.base import Base
+from app.domain.enums import AllocationStatus
 from app.models.strategy import Strategy, StrategyVersion
-
-
-class AllocationStatus(str, enum.Enum):
-    ACTIVE = "active"
 
 
 class AllocationIntent(Base):

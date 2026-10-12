@@ -8,8 +8,8 @@ from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
-from app.models.allocation import AllocationStatus
-from app.models.execution import ExecutionStatus
+from app.domain.enums import AllocationStatus
+from app.domain.enums import ExecutionStatus
 from app.persistence.catalyst.allocation import CatalystAllocationRepository
 from app.persistence.catalyst.paging import query_all, select_list
 from app.persistence.catalyst.client import CatalystPersistenceClient, CatalystPersistenceError

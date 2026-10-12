@@ -6,7 +6,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
-from app.models.execution import ExecutionStatus
+from app.domain.enums import ExecutionStatus
 
 
 @dataclass(frozen=True, slots=True)

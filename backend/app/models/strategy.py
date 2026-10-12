@@ -1,4 +1,3 @@
-import enum
 import uuid
 from datetime import datetime
 from typing import Any
@@ -20,14 +19,8 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
 from app.db.base import Base
+from app.domain.enums import StrategyStatus
 from app.models.instrument import Instrument
-
-
-class StrategyStatus(str, enum.Enum):
-    DRAFT = "draft"
-    PUBLISHED = "published"
-    DEPLOYED = "deployed"
-    ARCHIVED = "archived"
 
 
 class Strategy(Base):

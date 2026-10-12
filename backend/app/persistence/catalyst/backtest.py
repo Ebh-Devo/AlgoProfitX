@@ -8,7 +8,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from app.models.backtest import BacktestStatus
+from app.domain.enums import BacktestStatus
 from app.persistence.backtest import BacktestRecord
 from app.persistence.catalyst.client import CatalystPersistenceClient, CatalystPersistenceError
 from app.persistence.catalyst.paging import query_all, select_list

@@ -4,7 +4,7 @@ from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator
 
-from app.models.allocation import AllocationStatus
+from app.domain.enums import AllocationStatus
 
 
 class AllocationCreateRequest(BaseModel):

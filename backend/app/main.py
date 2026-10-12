@@ -44,9 +44,9 @@ from app.persistence.catalyst.backtest import (
     CatalystBacktestConflict,
 )
 from app.persistence.auth_session import SessionTokenRejected
-from app.models.instrument import InstrumentType
-from app.models.backtest import BacktestStatus
-from app.models.strategy import StrategyStatus
+from app.domain.enums import InstrumentType
+from app.domain.enums import BacktestStatus
+from app.domain.enums import StrategyStatus
 from app.persistence.strategy import (
     DuplicateStrategySlug,
     ExchangeSnapshotRecord,
