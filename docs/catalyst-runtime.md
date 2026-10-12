@@ -154,6 +154,17 @@ the build output and fails on any other environment's origin, any API upstream o
 Cloudflare `_headers` file (which is removed from every build). It runs in the Docker build and in CI for both environments, and CI
 also asserts each bundle fails the other environment's check and that a build without a declared environment fails.
 
+## Build identity
+
+`GET /api/version` (public, unauthenticated) returns `repository`, `sha`, `build_run_id` and `component`. `sha` is the
+source commit and `build_run_id` the CI "Build Catalyst release artifacts" run that produced the image; both are baked in as
+build arguments (`VCS_REF`, `BUILD_RUN_ID`) and read from `APP_SOURCE_SHA` / `APP_BUILD_RUN_ID`. Each value is validated
+(40 lowercase hex characters; digits only) and reported as `unknown` otherwise, so the endpoint can never echo arbitrary text or
+any other environment value. Disclosing the commit SHA of a public-source build is a deliberate, modest trade-off. After a
+Development deploy, the workflow polls this endpoint and fails unless it reports the dispatched `source_sha` and
+`release_run_id`. A runtime started without usable configuration serves the 503 "unavailable" body instead, which also fails the
+verification.
+
 ## Environments
 
 `frontend/environments.json` is the single table of approved origins (public values only). A built bundle

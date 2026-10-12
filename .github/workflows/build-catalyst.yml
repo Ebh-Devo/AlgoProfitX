@@ -25,6 +25,7 @@ jobs:
           outputs: type=docker,dest=/tmp/algoprofitx-api.tar
           build-args: |
             VCS_REF=${{ github.sha }}
+            BUILD_RUN_ID=${{ github.run_id }}
             SOURCE_URL=${{ github.server_url }}/${{ github.repository }}
       # The web bundle bakes in its API origin, so each environment gets its own
       # image. APP_ENV and VITE_API_BASE_URL are checked against

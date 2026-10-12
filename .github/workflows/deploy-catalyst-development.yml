@@ -162,3 +162,25 @@ jobs:
             --name algoprofitx-web \
             --source "docker-archive://$GITHUB_WORKSPACE/release/algoprofitx-web-development.tar" \
             --port 8000
+      - name: Verify the deployed API reports the released build
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Fixed Development API origin; nothing from dispatch inputs selects it.
+          api_origin="https://algoprofitx-api-50045554365.development.catalystappsail.in"
+          for attempt in $(seq 1 20); do
+            if body="$(curl --silent --show-error --fail --max-time 20 "${api_origin}/api/version")"; then
+              sha="$(jq -r '.sha // "missing"' <<<"$body")"
+              run_id="$(jq -r '.build_run_id // "missing"' <<<"$body")"
+              if [ "$sha" = "$SOURCE_SHA" ] && [ "$run_id" = "$RELEASE_RUN_ID" ]; then
+                echo "Deployed API reports source ${SOURCE_SHA} from build run ${RELEASE_RUN_ID}."
+                exit 0
+              fi
+              echo "Attempt ${attempt}: API reports sha=${sha} build_run_id=${run_id}; waiting for the new build."
+            else
+              echo "Attempt ${attempt}: /api/version not reachable yet."
+            fi
+            sleep 15
+          done
+          echo "::error::The deployed API did not report source ${SOURCE_SHA} from build run ${RELEASE_RUN_ID} within the timeout."
+          exit 1
