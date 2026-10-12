@@ -19,6 +19,15 @@ CANONICAL_FRONTEND_ORIGIN = "https://www.algoprofitx.com"
 PRODUCTION_API_ORIGIN = "https://api.algoprofitx.com"
 STAGING_FRONTEND_ORIGIN = "https://staging.algoprofitx.com"
 STAGING_API_ORIGIN = "https://api-staging.algoprofitx.com"
+# Deployed Zoho Catalyst Development AppSails. These must never appear in the
+# production approved pairs below; the test suite checks this table against the
+# frontend's environments.json.
+DEVELOPMENT_FRONTEND_ORIGIN = (
+    "https://algoprofitx-web-50045554365.development.catalystappsail.in"
+)
+DEVELOPMENT_API_ORIGIN = (
+    "https://algoprofitx-api-50045554365.development.catalystappsail.in"
+)
 APPROVED_PUBLIC_ORIGIN_PAIRS = {
     (CANONICAL_FRONTEND_ORIGIN, PRODUCTION_API_ORIGIN),
     (STAGING_FRONTEND_ORIGIN, STAGING_API_ORIGIN),
@@ -192,6 +201,12 @@ class Settings(BaseSettings):
                 "json" if self.app_env is AppEnvironment.PRODUCTION else "console"
             )
 
+        if (
+            self.app_env is AppEnvironment.DEVELOPMENT
+            and self.api_public_url.rstrip("/") == DEVELOPMENT_API_ORIGIN
+        ):
+            self._enforce_deployed_development_origins()
+
         if self.app_env is not AppEnvironment.PRODUCTION:
             return self
 
@@ -277,6 +292,17 @@ class Settings(BaseSettings):
         if errors:
             raise ValueError("; ".join(errors))
         return self
+
+    def _enforce_deployed_development_origins(self) -> None:
+        """The deployed Development API accepts browsers from exactly one origin."""
+        if self.frontend_public_url.rstrip("/") != DEVELOPMENT_FRONTEND_ORIGIN:
+            raise ValueError(
+                "FRONTEND_PUBLIC_URL must be the Catalyst Development web origin"
+            )
+        if set(self.cors_allowed_origins) != {DEVELOPMENT_FRONTEND_ORIGIN}:
+            raise ValueError(
+                "CORS_ALLOWED_ORIGINS must be exactly the Catalyst Development web origin"
+            )
 
     def _enforce_persistence_provider_policy(self) -> None:
         """Catalyst Data Store is the only persistence provider a deployed runtime may use.
