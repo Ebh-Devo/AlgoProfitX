@@ -157,17 +157,19 @@ def load_frontend_server(monkeypatch, app_env: str | None):
     return module
 
 
-def test_development_csp_allows_only_the_exact_development_api(monkeypatch):
-    csp = load_frontend_server(monkeypatch, "development").CSP
-    assert f"connect-src 'self' {DEVELOPMENT_API_ORIGIN};" in csp
-    assert PRODUCTION_API_ORIGIN not in csp
-    assert "*" not in csp
+@pytest.mark.parametrize("app_env", ["development", "production"])
+def test_csp_is_same_origin_only_in_every_environment(monkeypatch, app_env):
+    csp = load_frontend_server(monkeypatch, app_env).CSP
+    assert "connect-src 'self';" in csp
+    assert "http" not in csp and "*" not in csp
 
 
-def test_production_csp_keeps_the_production_api_origin(monkeypatch):
-    csp = load_frontend_server(monkeypatch, "production").CSP
-    assert f"connect-src 'self' {PRODUCTION_API_ORIGIN};" in csp
-    assert "catalystappsail" not in csp
+def test_each_environment_proxies_only_to_its_own_api(monkeypatch):
+    development = load_frontend_server(monkeypatch, "development").UPSTREAM_ORIGIN
+    production = load_frontend_server(monkeypatch, "production").UPSTREAM_ORIGIN
+    assert development == DEVELOPMENT_API_ORIGIN
+    assert production == PRODUCTION_API_ORIGIN
+    assert "catalystappsail" not in production or production != development
 
 
 @pytest.mark.parametrize("app_env", [None, "", "staging", "Production"])
