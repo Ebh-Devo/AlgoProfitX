@@ -128,3 +128,30 @@ async def test_a_taken_email_still_returns_the_fixed_409_on_sql(client):
     assert again.status_code == 409 and again.json() == {"detail": "Email is already registered"}
     upper = await client.post("/api/v1/auth/register", json={"email": email.upper(), "password": PASSWORD})
     assert upper.status_code == 409
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("error", [RuntimeError(SENTINEL), ValueError(SENTINEL), Exception(SENTINEL)])
+async def test_unexpected_sql_creator_enrollment_failures_return_a_generic_500(client, monkeypatch, caplog, error):
+    email = unique_email()
+    password = "Distinct-Enrollment-Secret-55"
+    assert (await client.post("/api/v1/auth/register", json={"email": email, "password": password})).status_code == 201
+    login = await client.post("/api/v1/auth/login", json={"email": email, "password": password})
+    assert login.status_code == 200
+    token = login.json()["access_token"]
+
+    async def explode(session, user):
+        raise error
+
+    monkeypatch.setattr(auth_routes, "enroll_creator", explode)
+    caplog.set_level(logging.ERROR, logger="app")
+    response = await client.post("/api/v1/auth/creator/enroll", headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 500
+    body = response.json()
+    assert body["detail"] == "Internal server error" and body["request_id"]
+    assert response.headers["x-request-id"] == body["request_id"]
+    assert SENTINEL not in response.text
+    records = [r for r in caplog.records if r.getMessage() == "creator_enrollment_failed"]
+    assert len(records) == 1 and SENTINEL in str(records[0].exc_info[1])
+    assert records[0].fields["request_id"] == body["request_id"]
+    assert password not in caplog.text and token not in caplog.text

@@ -137,6 +137,22 @@ def _refresh_cookie(request: Request) -> str:
     return token
 
 
+def _unexpected_failure_response(request: Request, event: str) -> JSONResponse:
+    """Generic 500 for an unexpected failure: never echo exception text to the client.
+
+    The exception and its traceback are logged server-side with the request id; the client gets a
+    stable body carrying only that request id. Log redaction is best effort (bearer tokens, database
+    URL credentials and ``name=value`` pairs with a secret-looking name), not a guarantee: code must
+    not put secrets in exception messages.
+    """
+    request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
+    log_event(event, level=logging.ERROR, exc_info=True, request_id=request_id)
+    return JSONResponse(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        content={"detail": "Internal server error", "request_id": request_id},
+    )
+
+
 @router.post(
     "/register",
     response_model=UserResponse,
@@ -176,20 +192,10 @@ async def register(
             status_code=status.HTTP_409_CONFLICT,
             detail=str(exc),
         )
+    except HTTPException:
+        raise
     except Exception:
-        # Anything else is unexpected: never echo exception text to the client. The detail is logged
-        # server-side with the request id (log redaction scrubs secrets); the client gets a generic body.
-        request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
-        log_event(
-            "registration_failed",
-            level=logging.ERROR,
-            exc_info=True,
-            request_id=request_id,
-        )
-        return JSONResponse(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            content={"detail": "Internal server error", "request_id": request_id},
-        )
+        return _unexpected_failure_response(request, "registration_failed")
 
     return user
 
@@ -369,11 +375,10 @@ async def enroll_as_creator(
         else:
             user = await enroll_creator(session, current_user)
             await session.commit()
-    except RuntimeError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(exc),
-        )
+    except HTTPException:
+        raise
+    except Exception:
+        return _unexpected_failure_response(request, "creator_enrollment_failed")
 
     return user
 

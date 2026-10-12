@@ -271,3 +271,124 @@ async def test_a_taken_email_still_returns_the_fixed_409(catalyst_auth):
         again = await client.post("/api/v1/auth/register", json={"email": email, "password": PASSWORD})
     assert again.status_code == 409
     assert again.json() == {"detail": "Email is already registered"}
+
+
+# ------------------------------------------------------------ creator-enrollment error leakage
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "error",
+    [
+        RuntimeError(SENTINEL),
+        ValueError(SENTINEL),
+        CatalystPersistenceError(SENTINEL),
+        Exception(SENTINEL),
+    ],
+    ids=["RuntimeError", "ValueError", "CatalystPersistenceError", "Exception"],
+)
+async def test_unexpected_creator_enrollment_failures_return_a_generic_500(catalyst_auth, caplog, error):
+    identity, _ = catalyst_auth
+    email = f"enroll-{uuid.uuid4().hex}@example.com"
+    async with new_client() as client:
+        await register(client, email)
+        login = await client.post("/api/v1/auth/login", json={"email": email, "password": PASSWORD})
+        assert login.status_code == 200
+        token = login.json()["access_token"]
+
+        async def explode(user_id):
+            raise error
+
+        identity.enroll_creator = explode
+        caplog.set_level(logging.ERROR, logger="app")
+        response = await client.post(
+            "/api/v1/auth/creator/enroll", headers={"Authorization": f"Bearer {token}"}
+        )
+
+    assert response.status_code == 500
+    body = response.json()
+    assert body["detail"] == "Internal server error"
+    assert body["request_id"] and response.headers["x-request-id"] == body["request_id"]
+    assert SENTINEL not in response.text
+
+    records = [record for record in caplog.records if record.getMessage() == "creator_enrollment_failed"]
+    assert len(records) == 1
+    record = records[0]
+    assert SENTINEL in str(record.exc_info[1])
+    assert record.fields["request_id"] == body["request_id"]
+    assert PASSWORD not in caplog.text and token not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_an_intentional_http_error_from_enrollment_is_preserved(catalyst_auth):
+    from fastapi import HTTPException
+
+    identity, _ = catalyst_auth
+    email = f"enroll-http-{uuid.uuid4().hex}@example.com"
+    async with new_client() as client:
+        await register(client, email)
+        login = await client.post("/api/v1/auth/login", json={"email": email, "password": PASSWORD})
+        token = login.json()["access_token"]
+
+        async def refuse(user_id):
+            raise HTTPException(status_code=409, detail="Already a creator")
+
+        identity.enroll_creator = refuse
+        response = await client.post(
+            "/api/v1/auth/creator/enroll", headers={"Authorization": f"Bearer {token}"}
+        )
+    assert response.status_code == 409
+    assert response.json() == {"detail": "Already a creator"}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "message, leaked",
+    [
+        ("upstream rejected password=Hunter2-Distinct-Value", "Hunter2-Distinct-Value"),
+        ('config {"api_key": "key-Distinct-9981"} invalid', "key-Distinct-9981"),
+        ("call failed: Authorization: Bearer abc.def.Distinct-jwt", "Distinct-jwt"),
+        ("connect postgresql://app:Distinct-dbpass@db.example.com/x failed", "Distinct-dbpass"),
+        ("refresh_token=Distinct-refresh-777 expired", "Distinct-refresh-777"),
+    ],
+)
+async def test_secrets_labelled_in_an_exception_message_are_redacted_from_the_log(
+    catalyst_auth, capsys, message, leaked
+):
+    """Redaction is best effort: it covers labelled secrets (name=value, JSON, bearer, DB URL)."""
+    from app.core.observability import JsonFormatter
+
+    identity, _ = catalyst_auth
+    email = f"enroll-redact-{uuid.uuid4().hex}@example.com"
+    records: list[logging.LogRecord] = []
+
+    class Capture(logging.Handler):
+        def emit(self, record):
+            records.append(record)
+
+    handler = Capture()
+    logger = logging.getLogger("app")
+    logger.addHandler(handler)
+    try:
+        async with new_client() as client:
+            await register(client, email)
+            token = (
+                await client.post("/api/v1/auth/login", json={"email": email, "password": PASSWORD})
+            ).json()["access_token"]
+
+            async def explode(user_id):
+                raise RuntimeError(message)
+
+            identity.enroll_creator = explode
+            response = await client.post(
+                "/api/v1/auth/creator/enroll", headers={"Authorization": f"Bearer {token}"}
+            )
+    finally:
+        logger.removeHandler(handler)
+
+    assert response.status_code == 500 and leaked not in response.text
+    failure = [r for r in records if r.getMessage() == "creator_enrollment_failed"]
+    assert len(failure) == 1
+    rendered = JsonFormatter().format(failure[0])
+    assert leaked not in rendered
+    assert "[REDACTED]" in rendered
