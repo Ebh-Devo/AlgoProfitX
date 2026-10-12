@@ -140,8 +140,10 @@ def _refresh_cookie(request: Request) -> str:
 def _unexpected_failure_response(request: Request, event: str) -> JSONResponse:
     """Generic 500 for an unexpected failure: never echo exception text to the client.
 
-    The detail is logged server-side with the request id (log redaction scrubs secrets); the client
-    gets a stable body carrying only that request id.
+    The exception and its traceback are logged server-side with the request id; the client gets a
+    stable body carrying only that request id. Log redaction is best effort (bearer tokens, database
+    URL credentials and ``name=value`` pairs with a secret-looking name), not a guarantee: code must
+    not put secrets in exception messages.
     """
     request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
     log_event(event, level=logging.ERROR, exc_info=True, request_id=request_id)
@@ -190,6 +192,8 @@ async def register(
             status_code=status.HTTP_409_CONFLICT,
             detail=str(exc),
         )
+    except HTTPException:
+        raise
     except Exception:
         return _unexpected_failure_response(request, "registration_failed")
 
@@ -371,6 +375,8 @@ async def enroll_as_creator(
         else:
             user = await enroll_creator(session, current_user)
             await session.commit()
+    except HTTPException:
+        raise
     except Exception:
         return _unexpected_failure_response(request, "creator_enrollment_failed")
 

@@ -20,6 +20,11 @@ SENSITIVE_KEYS = {
 REDACTED = "[REDACTED]"
 BEARER_PATTERN = re.compile(r"(?i)bearer\s+[A-Za-z0-9._~+/=-]+")
 URL_CREDENTIAL_PATTERN = re.compile(r"(?i)(postgres(?:ql)?(?:\+asyncpg)?://[^:\s/]+:)[^@\s]+(@)")
+# "name=value" / "name: value" / '"name": "value"' where the name looks secret-bearing. Best effort: it
+# cannot recognise a secret that appears in free text without such a label.
+SECRET_ASSIGNMENT_PATTERN = re.compile(
+    r"""(?i)((?:pass(?:word|wd)?|secret|token|api[_-]?key|credential|authorization|cookie)[\w-]*["']?\s*[:=]\s*["']?)(?!\[REDACTED\])[^\s"',;&}]+"""
+)
 
 
 def _sensitive_key(key: str) -> bool:
@@ -38,7 +43,8 @@ def redact(value: Any, key: str | None = None) -> Any:
         return [redact(item) for item in value]
     if isinstance(value, str):
         sanitized = BEARER_PATTERN.sub(f"Bearer {REDACTED}", value)
-        return URL_CREDENTIAL_PATTERN.sub(r"\1[REDACTED]\2", sanitized)
+        sanitized = URL_CREDENTIAL_PATTERN.sub(r"\1[REDACTED]\2", sanitized)
+        return SECRET_ASSIGNMENT_PATTERN.sub(rf"\1{REDACTED}", sanitized)
     if value is None or isinstance(value, (bool, int, float)):
         return value
     return str(value)
