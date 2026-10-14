@@ -199,7 +199,7 @@ SQLALCHEMY_IMPORTERS = frozenset(
         "app/core/health.py",
         "app/db/base.py",
         "app/db/session.py",
-        "app/market_data/infrastructure.py",
+        "app/market_data/sql_mapping.py",
         "app/models/allocation.py",
         "app/models/auth_session.py",
         "app/models/backtest.py",
