@@ -7,6 +7,12 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.domain.execution_support import (  # noqa: F401  (re-exported for existing importers)
+    UNSUPPORTED_EXECUTION_VERSION_CODE,
+    V1_SCHEMA_VERSION,
+    UnsupportedExecutionVersionError,
+    require_execution_supported,
+)
 from app.models.instrument import Exchange, Instrument
 from app.models.strategy import Strategy, StrategyStatus, StrategyVersion
 from app.schemas.strategy import (
@@ -40,40 +46,6 @@ class StrategyConflict(Exception):
 
 class StrategyVersionValidationError(Exception):
     pass
-
-
-UNSUPPORTED_EXECUTION_VERSION_CODE = "strategy_definition_version_unsupported_for_execution"
-
-
-class UnsupportedExecutionVersionError(ValueError):
-    """A strategy whose version this execution environment cannot run (V2 is backtest-only).
-
-    A ``ValueError`` so existing lifecycle handlers still treat it as a 409; routes map it to the
-    stable structured detail ``{"code", "message"}``.
-    """
-
-    code = UNSUPPORTED_EXECUTION_VERSION_CODE
-
-    def __init__(self, action: str, schema_version: object):
-        self.message = (
-            f"Cannot {action}: strategy definition schema version {schema_version!r} is not "
-            "supported by the current execution environment. Version 2 definitions can be "
-            "backtested only."
-        )
-        super().__init__(self.message)
-
-    def detail(self) -> dict[str, str]:
-        return {"code": self.code, "message": self.message}
-
-
-def require_execution_supported(version: StrategyVersion | None, action: str) -> None:
-    """Only legacy/V1 versions can be published, deployed or allocated: paper and live execution
-    understand the V1 configuration only. The persisted column decides; the JSON is never read."""
-    if version is None:
-        return
-    schema_version = getattr(version, "definition_schema_version", None)
-    if schema_version is not None and schema_version != V1_SCHEMA_VERSION:
-        raise UnsupportedExecutionVersionError(action, schema_version)
 
 
 _SLUG_MAX_LENGTH = 180
@@ -231,7 +203,6 @@ async def delete_strategy(
         ) from exc
 
 
-V1_SCHEMA_VERSION = 1
 V2_SCHEMA_VERSION = 2
 
 

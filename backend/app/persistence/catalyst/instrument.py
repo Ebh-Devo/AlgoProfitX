@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
-from app.bootstrap.instruments import EXCHANGES, INSTRUMENTS
+from app.domain.market_seed import EXCHANGES, INSTRUMENTS
 from app.domain.enums import InstrumentType
 from app.persistence.catalyst.paging import query_all
 from app.persistence.catalyst.client import CatalystPersistenceClient, CatalystPersistenceError

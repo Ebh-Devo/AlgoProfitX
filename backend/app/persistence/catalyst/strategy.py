@@ -24,7 +24,7 @@ from app.persistence.catalyst.schema import (
     parse_schema_version,
     schema_capabilities,
 )
-from app.services.strategy import require_execution_supported
+from app.domain.execution_support import require_execution_supported
 from app.persistence.strategy import (
     DuplicateStrategySlug,
     ExchangeSnapshotRecord,
