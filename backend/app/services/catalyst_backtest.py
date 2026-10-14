@@ -16,7 +16,7 @@ from app.market_calendar.contracts import CalendarError
 from app.market_calendar.reference import IndianReferenceTradingCalendar
 from app.persistence.backtest import BacktestRecord
 from app.persistence.catalyst.backtest import CatalystBacktestConflict, CatalystBacktestRepository
-from app.services.backtest import load_versioned_definition
+from app.services.backtest_definition import load_versioned_definition
 from app.strategy_definition.runtime.engine import StrategyRuntimeEngine
 
 
