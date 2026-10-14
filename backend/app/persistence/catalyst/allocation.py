@@ -15,7 +15,7 @@ from app.persistence.catalyst.client import (
 )
 from app.persistence.catalyst.paging import query_all
 from app.persistence.catalyst.strategy import CatalystStrategyRepository
-from app.services.strategy import require_execution_supported
+from app.domain.execution_support import require_execution_supported
 
 
 ALLOCATIONS_TABLE = "AlgoProfitXAllocations"
