@@ -10,11 +10,7 @@ from app.core.metrics import metrics
 from app.core.observability import log_event
 from typing import Iterable
 
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.backtesting.contracts import Candle, HistoricalMarketDataProvider
-from app.models.instrument import InstrumentVendorMapping
 
 ERROR_CODES = frozenset({
     "market_data_mapping_missing", "market_data_mapping_expired", "market_data_provider_unavailable",
@@ -40,22 +36,6 @@ class ProviderRegistry:
         if provider is None:
             raise MarketDataError("market_data_provider_unavailable", "Configured market data provider is unavailable")
         return provider
-
-
-async def resolve_mapping(session: AsyncSession, instrument_id, provider_code: str, start: date, end: date) -> InstrumentVendorMapping:
-    rows = list((await session.scalars(select(InstrumentVendorMapping).where(
-        InstrumentVendorMapping.instrument_id == instrument_id,
-        InstrumentVendorMapping.provider_code == provider_code,
-        InstrumentVendorMapping.is_active.is_(True),
-    ))).all())
-    if not rows:
-        raise MarketDataError("market_data_mapping_missing", "Instrument mapping is missing for configured provider")
-    applicable = [row for row in rows if (row.valid_from is None or row.valid_from <= start) and (row.valid_to is None or row.valid_to >= end)]
-    if not applicable:
-        raise MarketDataError("market_data_mapping_expired", "Instrument mapping is not valid for requested range")
-    if len(applicable) != 1:
-        raise MarketDataError("market_data_invalid_payload", "Instrument mapping is ambiguous for requested range")
-    return applicable[0]
 
 
 def validate_and_normalize(candles: Iterable[Candle], *, start: date, end: date, max_candles: int) -> tuple[tuple[Candle, ...], int]:
@@ -132,3 +112,13 @@ async def load_with_policy(provider, request, *, timeout_seconds: float, max_ret
                 log_event("market_data_provider_failed", level=logging.WARNING, provider_code=provider_code, error_code="market_data_timeout")
                 metrics.increment("market_data.failures", tags={"provider": provider_code, "error_code": "market_data_timeout"})
                 raise MarketDataError("market_data_timeout", "Market data provider timed out") from exc
+
+
+def __getattr__(name: str):
+    # ``resolve_mapping`` moved to the SQL-only ``app.market_data.sql_mapping``; resolving it lazily keeps
+    # ``from app.market_data.infrastructure import resolve_mapping`` working without importing SQLAlchemy here.
+    if name == "resolve_mapping":
+        from app.market_data.sql_mapping import resolve_mapping
+
+        return resolve_mapping
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

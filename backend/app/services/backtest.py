@@ -24,7 +24,8 @@ from app.backtesting.reference import (
 from app.core.config import get_settings
 from app.core.metrics import metrics
 from app.core.observability import log_event
-from app.market_data.infrastructure import MarketDataError, ProviderRegistry, canonical_checksum, dataset_key, load_with_policy, resolve_mapping, validate_and_normalize
+from app.market_data.infrastructure import MarketDataError, ProviderRegistry, canonical_checksum, dataset_key, load_with_policy, validate_and_normalize
+from app.market_data.sql_mapping import resolve_mapping
 from app.models.backtest import Backtest, BacktestStatus
 from app.models.market_data import MarketDataCandle, MarketDataDataset, MarketDataDatasetStatus
 from app.models.instrument import Exchange
