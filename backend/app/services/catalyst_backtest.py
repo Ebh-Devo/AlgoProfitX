@@ -11,9 +11,9 @@ from app.backtesting.reference import EmaCrossoverReferenceEngine, SyntheticMark
 from app.core.config import get_settings
 from app.core.metrics import metrics
 from app.core.observability import log_event
+from app.domain.exchange import ExchangeSpec
 from app.market_calendar.contracts import CalendarError
 from app.market_calendar.reference import IndianReferenceTradingCalendar
-from app.models.instrument import Exchange
 from app.persistence.backtest import BacktestRecord
 from app.persistence.catalyst.backtest import CatalystBacktestConflict, CatalystBacktestRepository
 from app.services.backtest import load_versioned_definition
@@ -48,13 +48,9 @@ def _historical_request(backtest: BacktestRecord) -> HistoricalCandleRequest:
         raise BacktestExecutionError("Backtest Instrument is unresolved")
     try:
         identity = InstrumentIdentity(id=str(backtest.instrument_id), **snapshot)
-        exchange = Exchange(
+        exchange = ExchangeSpec(
             code=identity.exchange_code,
-            name=identity.exchange_code,
-            country_code="IN",
             timezone=identity.exchange_timezone,
-            default_currency=identity.quote_currency,
-            calendar_code=f"X{identity.exchange_code}",
             is_active=identity.exchange_is_active,
         )
     except (TypeError, ValueError) as exc:
