@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Protocol, Sequence
 
-from app.models.instrument import Exchange
+from app.domain.exchange import ExchangeLike
 
 
 class SessionType(str, enum.Enum):
@@ -26,14 +26,14 @@ class TradingCalendar(Protocol):
     policy_version: str
 
     def sessions_between(
-        self, exchange: Exchange, start: datetime, end: datetime
+        self, exchange: ExchangeLike, start: datetime, end: datetime
     ) -> Sequence[TradingSession]: ...
 
     def session_for(
-        self, exchange: Exchange, instant: datetime
+        self, exchange: ExchangeLike, instant: datetime
     ) -> TradingSession | None: ...
 
-    def is_trading_instant(self, exchange: Exchange, instant: datetime) -> bool: ...
+    def is_trading_instant(self, exchange: ExchangeLike, instant: datetime) -> bool: ...
 
 
 class CalendarError(ValueError):

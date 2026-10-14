@@ -2,8 +2,8 @@ from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from app.domain.exchange import ExchangeLike
 from app.market_calendar.contracts import CalendarError, SessionType, TradingSession
-from app.models.instrument import Exchange
 
 
 @dataclass(frozen=True)
@@ -37,7 +37,7 @@ class IndianReferenceTradingCalendar:
         }
 
     def sessions_between(
-        self, exchange: Exchange, start: datetime, end: datetime
+        self, exchange: ExchangeLike, start: datetime, end: datetime
     ) -> tuple[TradingSession, ...]:
         zone = self._validate(exchange, start)
         self._require_aware(end, "Calendar range end")
@@ -64,7 +64,7 @@ class IndianReferenceTradingCalendar:
         return tuple(sessions)
 
     def session_for(
-        self, exchange: Exchange, instant: datetime
+        self, exchange: ExchangeLike, instant: datetime
     ) -> TradingSession | None:
         zone = self._validate(exchange, instant)
         session = self._session_on(exchange, instant.astimezone(zone).date(), zone)
@@ -73,10 +73,10 @@ class IndianReferenceTradingCalendar:
         utc_instant = instant.astimezone(timezone.utc)
         return session if session.open_utc <= utc_instant < session.close_utc else None
 
-    def is_trading_instant(self, exchange: Exchange, instant: datetime) -> bool:
+    def is_trading_instant(self, exchange: ExchangeLike, instant: datetime) -> bool:
         return self.session_for(exchange, instant) is not None
 
-    def provenance(self, exchange: Exchange, sessions: tuple[TradingSession, ...]) -> dict:
+    def provenance(self, exchange: ExchangeLike, sessions: tuple[TradingSession, ...]) -> dict:
         self._validate_exchange(exchange)
         return {
             "calendar_identifier": self.identifier,
@@ -91,7 +91,7 @@ class IndianReferenceTradingCalendar:
         }
 
     def _session_on(
-        self, exchange: Exchange, local_date: date, zone: ZoneInfo
+        self, exchange: ExchangeLike, local_date: date, zone: ZoneInfo
     ) -> TradingSession | None:
         exception = self._exceptions.get((exchange.code, local_date))
         if exception is not None and exception.session_type is None:
@@ -121,7 +121,7 @@ class IndianReferenceTradingCalendar:
             exchange_code=exchange.code,
         )
 
-    def _validate(self, exchange: Exchange, instant: datetime) -> ZoneInfo:
+    def _validate(self, exchange: ExchangeLike, instant: datetime) -> ZoneInfo:
         self._require_aware(instant, "Calendar instant")
         self._validate_exchange(exchange)
         try:
@@ -129,7 +129,7 @@ class IndianReferenceTradingCalendar:
         except ZoneInfoNotFoundError as exc:
             raise CalendarError("Exchange timezone is unknown") from exc
 
-    def _validate_exchange(self, exchange: Exchange) -> None:
+    def _validate_exchange(self, exchange: ExchangeLike) -> None:
         if not exchange.is_active:
             raise CalendarError("Exchange is inactive")
         if exchange.code not in self.supported_exchanges:
